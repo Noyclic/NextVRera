@@ -1489,8 +1489,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     expect(syncActions(session, &syncInfo) == XR_SUCCESS,
            "sync controller-style sample without camera joints");
     expect(currentProfile(session, leftHand, &profileState) == XR_SUCCESS &&
-               profileState.interactionProfile == touchProfile,
-           "fall back to the Touch profile when hand joints are not fresh");
+               profileState.interactionProfile == handProfile,
+           "keep hand interaction bindings active for a controller-style sample without joints");
     poseState = {};
     poseState.type = XR_TYPE_ACTION_STATE_POSE;
     expect(getPose(session, &poseGetInfo, &poseState) == XR_SUCCESS &&
