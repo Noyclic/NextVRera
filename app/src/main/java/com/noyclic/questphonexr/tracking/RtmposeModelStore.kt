@@ -29,6 +29,12 @@ object RtmposeModelStore {
     fun installedFile(context: Context): File =
         File(File(context.noBackupFilesDir, MODEL_DIRECTORY), MODEL_FILE_NAME)
 
+    /** Fast presence/size check for UI and service decisions; not a substitute for SHA-256. */
+    fun isPresent(context: Context): Boolean {
+        val file = installedFile(context)
+        return file.isFile && file.length() == EXPECTED_SIZE_BYTES
+    }
+
     fun isInstalled(context: Context): Boolean = verify(installedFile(context))
 
     /**

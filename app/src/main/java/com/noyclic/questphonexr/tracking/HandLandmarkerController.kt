@@ -49,6 +49,8 @@ class HandLandmarkerController(
         rawHeightPx: Int,
         rotationDegrees: Int
     ) -> Unit)? = null,
+    /** Keep raw-pixel extraction completely off the hot path while refinement is disabled. */
+    private val shouldCaptureSourceFrame: () -> Boolean = { true },
     private val preferredDelegate: Delegate = Delegate.CPU,
     /** The same single-thread executor used by CameraX analyzer; GPU delegates are thread-affine. */
     private val ownerExecutor: ExecutorService
@@ -591,7 +593,7 @@ class HandLandmarkerController(
                 preprocessingLatencyMs = preprocessingMs
             )
             val sourceCallback = onFrameWithSource
-            if (sourceCallback == null) {
+            if (sourceCallback == null || !shouldCaptureSourceFrame()) {
                 onFrame(completedFrame)
             } else {
                 // The analyzer is still gated while this callback runs. Snapshot into one

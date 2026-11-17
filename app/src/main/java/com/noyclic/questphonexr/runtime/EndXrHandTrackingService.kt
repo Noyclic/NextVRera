@@ -486,7 +486,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
      */
     private fun startRtmposeRefinement() {
         if (!rtmposeRefinementEnabled || !activeOrPending) return
-        if (!RtmposeModelStore.isInstalled(applicationContext)) {
+        if (!RtmposeModelStore.isPresent(applicationContext)) {
             Log.w(TAG, "RTMPose refinement enabled, but no verified model is installed.")
             EndXrTrackingInputBridge.updateProviderAvailability(
                 TrackingProviderId.LITERT_CUSTOM,
@@ -550,7 +550,10 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
         EndXrTrackingInputBridge.publish(TrackingProviderId.MEDIAPIPE, frame)
     }
 
-    private fun publishRefinementResult(result: Result<RtmposeRefinementOutcome>) {
+    private fun publishRefinementResult(
+        result: Result<RtmposeRefinementOutcome>,
+        fallbackFrame: HandTrackingFrame
+    ) {
         result.fold(
             onSuccess = { outcome ->
                 if (outcome.refinedHands > 0) {
@@ -565,6 +568,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
             },
             onFailure = { error ->
                 Log.w(TAG, "RTMPose frame failed; retaining MediaPipe output", error)
+                publishMediaPipeFrame(fallbackFrame)
             }
         )
     }
@@ -615,6 +619,9 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                                 publishMediaPipeFrame(frame)
                             }
                         },
+                        shouldCaptureSourceFrame = {
+                            rtmposeRefinementEnabled && rtmposeRefinementCoordinator != null
+                        },
                         onFrameWithSource = { frame, sourceArgb, rawWidth, rawHeight, rotationDegrees ->
                             if (activeOrPending && generation == cameraGeneration) {
                                 val coordinator = rtmposeRefinementCoordinator
@@ -629,7 +636,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                                         sourceRotationDegrees = rotationDegrees
                                     ) { outcome ->
                                         if (activeOrPending && generation == cameraGeneration) {
-                                            publishRefinementResult(outcome)
+                                            publishRefinementResult(outcome, frame)
                                         }
                                     }
                                     if (!accepted) publishMediaPipeFrame(frame)
@@ -948,7 +955,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
          * stopped without restarting the MediaPipe camera graph.
          */
         fun setRtmposeRefinementEnabled(context: Context, enabled: Boolean): Boolean {
-            if (enabled && !RtmposeModelStore.isInstalled(context)) return false
+            if (enabled && !RtmposeModelStore.isPresent(context)) return false
             context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_RTMPOSE_REFINEMENT_ENABLED, enabled)

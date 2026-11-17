@@ -979,16 +979,20 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 text = "RTMPose: уточнять руки в фоне (экспериментально)"
                 isChecked = EndXrHandTrackingService.isRtmposeRefinementEnabled(this@SandboxActivity)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
+                var updatingProgrammatically = false
                 setOnCheckedChangeListener { _, enabled ->
+                    if (updatingProgrammatically) return@setOnCheckedChangeListener
                     val saved = EndXrHandTrackingService.setRtmposeRefinementEnabled(
                         this@SandboxActivity,
                         enabled
                     )
                     if (!saved) {
+                        updatingProgrammatically = true
                         isChecked = false
+                        updatingProgrammatically = false
                         Toast.makeText(
                             this@SandboxActivity,
-                            "Сначала скачай и проверь модель RTMPose-Hand.",
+                            "Сначала скачай модель RTMPose-Hand.",
                             Toast.LENGTH_LONG
                         ).show()
                     } else {
