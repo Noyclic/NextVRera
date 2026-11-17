@@ -1692,8 +1692,7 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Источник отслеживания рук")
-            .setMessage(message)
+            .setTitle("Источник отслеживания рук · $modeLabel")
             .setItems(choices) { _, which ->
                 when (which) {
                     0 -> {
@@ -1733,6 +1732,13 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                         Toast.LENGTH_LONG
                     ).show()
                 }
+            }
+            .setNeutralButton("Справка") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle("Как выбирается источник")
+                    .setMessage(message)
+                    .setPositiveButton("Понятно", null)
+                    .show()
             }
             .setNegativeButton("Закрыть", null)
             .show()
