@@ -155,7 +155,7 @@ internal object EndXrHandInputEncoder {
 
         val rawTrigger = hand.pinchStrength.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
         val trigger = if (hand.isPinching) maxOf(rawTrigger, PINCH_ACTIVE_FLOOR) else rawTrigger
-        val grip = if (HandGestureEstimator.isPowerGrip(hand)) 1f else 0f
+        val grip = HandGestureEstimator.graspStrength(hand)
         return floatArrayOf(1f, trigger, grip, 0f, 0f, 0f)
     }
 
