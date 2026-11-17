@@ -1007,7 +1007,7 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                                 enabled ->
                                     "Настройка сохранена. RTMPose запустится вместе с фоновой камерой рук."
                                 serviceRunning ->
-                                    "RTMPose выключен. Продолжает работать обычный MediaPipe."
+                                    "RTMPose выключен. Если был выбран MANUAL hybrid, выбери MediaPipe или AUTO."
                                 else ->
                                     "RTMPose выключен для следующих запусков фоновой камеры."
                             },
