@@ -1245,6 +1245,9 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     XrPath leftHand = XR_NULL_PATH;
     XrPath rightHand = XR_NULL_PATH;
     XrPath handProfile = XR_NULL_PATH;
+    XrPath touchProfile = XR_NULL_PATH;
+    XrPath touchPinchPosePath = XR_NULL_PATH;
+    XrPath touchPokePosePath = XR_NULL_PATH;
     XrPath pinchValuePath = XR_NULL_PATH;
     XrPath pinchReadyPath = XR_NULL_PATH;
     XrPath graspValuePath = XR_NULL_PATH;
@@ -1255,8 +1258,15 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                stringToPath(instance, "/user/hand/right", &rightHand) == XR_SUCCESS,
            "intern hand-interaction subaction paths");
     expect(stringToPath(instance, "/interaction_profiles/ext/hand_interaction_ext",
-                        &handProfile) == XR_SUCCESS,
-           "intern XR_EXT_hand_interaction profile");
+                        &handProfile) == XR_SUCCESS &&
+               stringToPath(instance, "/interaction_profiles/oculus/touch_controller",
+                        &touchProfile) == XR_SUCCESS,
+           "intern XR_EXT_hand_interaction and Touch profiles");
+    expect(stringToPath(instance, "/user/hand/left/input/pinch_ext/pose",
+                        &touchPinchPosePath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/poke_ext/pose",
+                        &touchPokePosePath) == XR_SUCCESS,
+           "intern Touch-profile pinch and poke pose paths");
     expect(stringToPath(instance, "/user/hand/left/input/pinch_ext/value",
                         &pinchValuePath) == XR_SUCCESS &&
                stringToPath(instance, "/user/hand/left/input/pinch_ext/ready_ext",
@@ -1318,6 +1328,16 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     suggested.suggestedBindings = bindings;
     expect(suggestBindings(instance, &suggested) == XR_SUCCESS,
            "accept standard hand-interaction bindings");
+    const XrActionSuggestedBinding touchPoseBindings[] = {
+        {pinchPoseAction, touchPinchPosePath},
+        {pokePoseAction, touchPokePosePath}
+    };
+    suggested.interactionProfile = touchProfile;
+    suggested.countSuggestedBindings = static_cast<std::uint32_t>(
+        sizeof(touchPoseBindings) / sizeof(touchPoseBindings[0]));
+    suggested.suggestedBindings = touchPoseBindings;
+    expect(suggestBindings(instance, &suggested) == XR_SUCCESS,
+           "accept required pinch and poke pose bindings on a Touch controller profile");
 
     XrSystemGetInfo systemInfo{};
     systemInfo.type = XR_TYPE_SYSTEM_GET_INFO;
@@ -1452,6 +1472,31 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                std::abs(location.pose.position.y - 0.13f) < 0.0001f &&
                std::abs(location.pose.position.z + 1.49f) < 0.0001f,
            "locate poke pose at the camera-derived index fingertip");
+
+    // Without a fresh joint buffer, the Touch profile must still expose the
+    // standard pinch/poke pose paths using conservative grip-relative offsets.
+    endxrSetHandJointData(0, 0, nullptr, 0);
+    expect(syncActions(session, &syncInfo) == XR_SUCCESS,
+           "sync controller-style sample without camera joints");
+    expect(currentProfile(session, leftHand, &profileState) == XR_SUCCESS &&
+               profileState.interactionProfile == touchProfile,
+           "fall back to the Touch profile when hand joints are not fresh");
+    location = {};
+    location.type = XR_TYPE_SPACE_LOCATION;
+    expect(locateSpace(pinchSpace, localSpace, 1, &location) == XR_SUCCESS &&
+               (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+               std::abs(location.pose.position.x - 0.25f) < 0.0001f &&
+               std::abs(location.pose.position.y - 0.10f) < 0.0001f &&
+               std::abs(location.pose.position.z + 1.56f) < 0.0001f,
+           "provide a grip-relative pinch pose for controller profiles");
+    location = {};
+    location.type = XR_TYPE_SPACE_LOCATION;
+    expect(locateSpace(pokeSpace, localSpace, 1, &location) == XR_SUCCESS &&
+               (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+               std::abs(location.pose.position.x - 0.25f) < 0.0001f &&
+               std::abs(location.pose.position.y - 0.10f) < 0.0001f &&
+               std::abs(location.pose.position.z + 1.60f) < 0.0001f,
+           "provide a grip-relative poke pose for controller profiles");
 
     endxrClearControllerInput();
     endxrClearHandPoses();
