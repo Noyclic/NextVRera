@@ -156,10 +156,12 @@ object ApkRuntimeCompatibility {
         nativeStringReferences = archiveInspection.nativeStringReferences
     )
 
-    private fun archiveCacheKey(archive: File): String? = runCatching {
+    private fun archiveCacheKey(archive: File): String? {
         if (!archive.isFile) return null
-        "${archive.canonicalPath}|${archive.length()}|${archive.lastModified()}"
-    }.getOrNull()
+        return runCatching {
+            "${archive.canonicalPath}|${archive.length()}|${archive.lastModified()}"
+        }.getOrNull()
+    }
 
     private fun cachedArchiveInspection(archive: File): ArchiveInspection? {
         val key = archiveCacheKey(archive) ?: return null
