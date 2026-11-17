@@ -435,10 +435,6 @@ class ApkImportActivity : ComponentActivity() {
                 .apply { setPadding(0, dp(6), 0, 0) })
         }
 
-        val apkFile = File(filesDir, "imported-apks/${info.fileName}")
-        val missingFeatures = info.requiredFeatures.filterNot {
-            packageManager.hasSystemFeature(it)
-        }.toSet()
         if (runtimeAssessment == null) {
             card.addView(text(
                 "Анализ APK выполняется в фоне. Можно продолжать пользоваться библиотекой — экран не будет ждать сканирования нативных библиотек.",
@@ -494,9 +490,11 @@ class ApkImportActivity : ComponentActivity() {
                     .apply { setPadding(0, dp(4), 0, 0) })
             }
         }
-        card.addView(button("Скопировать полный отчёт").apply {
-            setOnClickListener { copyAuditReport(info, runtimeAssessment) }
-        })
+        if (runtimeAssessment != null) {
+            card.addView(button("Скопировать полный отчёт").apply {
+                setOnClickListener { copyAuditReport(info, runtimeAssessment) }
+            })
+        }
         card.addView(text(
             "Импортировано: " + SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
                 .format(Date(info.importedAtEpochMs)),
@@ -505,6 +503,8 @@ class ApkImportActivity : ComponentActivity() {
         card.addView(button(
             if (canLaunchImportedVersion) {
                 "Открыть установленное приложение"
+            } else if (installMatch == ImportedApkInstallMatch.MATCHES_IMPORTED_VERSION && hasLauncherActivity) {
+                "Анализ APK…"
             } else {
                 "Сначала установи импортированную версию APK"
             }
@@ -512,7 +512,7 @@ class ApkImportActivity : ComponentActivity() {
             isEnabled = canLaunchImportedVersion
             setOnClickListener { launchInstalled(info) }
         })
-        if (runtimeAssessment.route == ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE) {
+        if (runtimeAssessment?.route == ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE) {
             card.addView(button(
                 if (canLaunchImportedVersion) {
                     "Запустить через NextVRera + EndXR"
