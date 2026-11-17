@@ -449,6 +449,9 @@ class ApkImportActivity : ComponentActivity() {
         if (audit.openXrExtensionReferences.isNotEmpty()) {
             addAuditLine(card, "OpenXR extension-строки в native-коде", audit.openXrExtensionReferences)
         }
+        if (audit.openXrEntryPointReferences.isNotEmpty()) {
+            addAuditLine(card, "OpenXR-вызовы в native-коде", audit.openXrEntryPointReferences)
+        }
         if (audit.graphicsApiMarkers.isNotEmpty()) {
             addAuditLine(card, "Графические API-маркеры", audit.graphicsApiMarkers)
         }
@@ -1564,6 +1567,7 @@ class ApkImportActivity : ComponentActivity() {
             appendLine("VR-значения метаданных: ${audit.metadataValues.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("VR-компоненты: ${audit.componentReferences.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("OpenXR extension-строки в native-коде: ${audit.openXrExtensionReferences.joinToString().ifBlank { "не обнаружены" }}")
+            appendLine("OpenXR-вызовы в native-коде: ${audit.openXrEntryPointReferences.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("Графические API-маркеры: ${audit.graphicsApiMarkers.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("Разрешения: ${info.requestedPermissions.joinToString().ifBlank { "не перечислены" }}")
             appendLine("Activities: ${info.activityNames.joinToString().ifBlank { "не перечислены" }}")
