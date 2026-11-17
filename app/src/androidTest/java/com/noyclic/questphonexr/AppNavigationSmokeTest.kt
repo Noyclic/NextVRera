@@ -277,14 +277,17 @@ class AppNavigationSmokeTest {
         )
         device.findObject(trackingSourceButton).click()
         assertTrue(
-            "Tracking provider mode is missing",
-            device.wait(Until.hasObject(By.textContains("Режим:")), 2_000)
+            "Tracking provider dialog title is missing",
+            device.wait(
+                Until.hasObject(By.textContains("Источник отслеживания рук · Автоматический выбор")),
+                2_000
+            )
         )
         // Capture the actual selector before assertions so a future accessibility/text
         // regression leaves a useful dialog screenshot in the CI diagnostics artifact.
         saveScreenshot(context, device, "sandbox-tracking-provider-selector.png")
-        // Match the stable provider token instead of punctuation in the localized label.
-        val autoProviderChoice = By.textContains("выбирать по качеству и задержке")
+        // The choices must be actual list rows, not text hidden in an explanatory message.
+        val autoProviderChoice = By.text("AUTO — выбирать по качеству и задержке")
         assertTrue(
             "AUTO provider choice is missing",
             device.wait(Until.hasObject(autoProviderChoice), 5_000)
