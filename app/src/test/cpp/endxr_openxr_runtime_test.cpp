@@ -1257,6 +1257,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     XrPath pinchReadyPath = XR_NULL_PATH;
     XrPath graspValuePath = XR_NULL_PATH;
     XrPath graspReadyPath = XR_NULL_PATH;
+    XrPath aimActivatePath = XR_NULL_PATH;
+    XrPath aimActivateReadyPath = XR_NULL_PATH;
     XrPath pinchPosePath = XR_NULL_PATH;
     XrPath pokePosePath = XR_NULL_PATH;
     expect(stringToPath(instance, "/user/hand/left", &leftHand) == XR_SUCCESS &&
@@ -1282,6 +1284,10 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                         &graspValuePath) == XR_SUCCESS &&
                stringToPath(instance, "/user/hand/left/input/grasp_ext/ready_ext",
                         &graspReadyPath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/aim_activate_ext/value",
+                        &aimActivatePath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/aim_activate_ext/ready_ext",
+                        &aimActivateReadyPath) == XR_SUCCESS &&
                stringToPath(instance, "/user/hand/left/input/pinch_ext/pose",
                         &pinchPosePath) == XR_SUCCESS &&
                stringToPath(instance, "/user/hand/left/input/poke_ext/pose",
@@ -1316,6 +1322,10 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     const XrAction pinchReadyAction = makeAction("pinch_ready", XR_ACTION_TYPE_BOOLEAN_INPUT);
     const XrAction graspValueAction = makeAction("grasp_value", XR_ACTION_TYPE_FLOAT_INPUT);
     const XrAction graspReadyAction = makeAction("grasp_ready", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    const XrAction aimActivateValueAction = makeAction(
+        "aim_activate_value", XR_ACTION_TYPE_FLOAT_INPUT);
+    const XrAction aimActivateReadyAction = makeAction(
+        "aim_activate_ready", XR_ACTION_TYPE_BOOLEAN_INPUT);
     const XrAction pinchPoseAction = makeAction("pinch_pose", XR_ACTION_TYPE_POSE_INPUT);
     const XrAction pokePoseAction = makeAction("poke_pose", XR_ACTION_TYPE_POSE_INPUT);
     const XrAction aimPoseAction = makeAction("aim_pose", XR_ACTION_TYPE_POSE_INPUT);
@@ -1325,6 +1335,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
         {pinchReadyAction, pinchReadyPath},
         {graspValueAction, graspValuePath},
         {graspReadyAction, graspReadyPath},
+        {aimActivateValueAction, aimActivatePath},
+        {aimActivateReadyAction, aimActivateReadyPath},
         {pinchPoseAction, pinchPosePath},
         {pokePoseAction, pokePosePath},
         {aimPoseAction, aimPosePath}
@@ -1398,6 +1410,30 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     joints[10u * 8u] = 0.04f;
     joints[10u * 8u + 1u] = 0.03f;
     joints[10u * 8u + 2u] = 0.01f;
+    // Point with the index finger while curling the middle, ring and little
+    // fingers. This is an aim_activate gesture, distinct from pinch strength.
+    joints[6u * 8u] = 0.02f;
+    joints[6u * 8u + 1u] = 0.01f;
+    joints[7u * 8u] = 0.04f;
+    joints[7u * 8u + 1u] = 0.015f;
+    joints[8u * 8u] = 0.06f;
+    joints[8u * 8u + 1u] = 0.02f;
+    joints[9u * 8u] = 0.08f;
+    joints[9u * 8u + 1u] = 0.025f;
+    joints[10u * 8u] = 0.10f;
+    joints[10u * 8u + 1u] = 0.03f;
+    joints[11u * 8u] = 0.015f;
+    joints[11u * 8u + 1u] = -0.015f;
+    joints[15u * 8u] = 0.02f;
+    joints[15u * 8u + 1u] = -0.015f;
+    joints[16u * 8u] = -0.01f;
+    joints[16u * 8u + 1u] = -0.02f;
+    joints[20u * 8u] = -0.005f;
+    joints[20u * 8u + 1u] = -0.02f;
+    joints[21u * 8u] = -0.02f;
+    joints[21u * 8u + 1u] = -0.015f;
+    joints[25u * 8u] = -0.01f;
+    joints[25u * 8u + 1u] = -0.02f;
     endxrSetControllerInput(0, 1, 0.82f, 0.64f, 0.0f, 0.0f, 0);
     endxrSetHandPose(0, 1, 0.25f, 0.10f, -1.5f, 0.0f, 0.0f, 0.0f, 1.0f);
     endxrSetHandJointData(0, 1, joints.data(), static_cast<std::uint32_t>(joints.size()));
@@ -1442,6 +1478,11 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                floatState.isActive == XR_TRUE &&
                std::abs(floatState.currentState - 0.64f) < 0.0001f,
            "map MediaPipe grip strength to grasp_ext/value");
+    getInfo.action = aimActivateValueAction;
+    expect(getFloat(session, &getInfo, &floatState) == XR_SUCCESS &&
+               floatState.isActive == XR_TRUE &&
+               floatState.currentState > 0.5f,
+           "derive aim_activate independently from index pointing and curled support fingers");
 
     XrActionStateBoolean booleanState{};
     booleanState.type = XR_TYPE_ACTION_STATE_BOOLEAN;
@@ -1455,6 +1496,11 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                booleanState.isActive == XR_TRUE &&
                booleanState.currentState == XR_TRUE,
            "report grasp readiness while all camera hand joints are fresh");
+    getInfo.action = aimActivateReadyAction;
+    expect(getBoolean(session, &getInfo, &booleanState) == XR_SUCCESS &&
+               booleanState.isActive == XR_TRUE &&
+               booleanState.currentState == XR_TRUE,
+           "report aim activation readiness while the pointing hand joints are fresh");
 
     auto makeActionSpace = [&](XrAction action) {
         XrActionSpaceCreateInfo info{};
@@ -1555,7 +1601,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     expect(destroySession(session) == XR_SUCCESS,
            "destroy hand-interaction session");
     for (XrAction action : {pinchValueAction, pinchReadyAction, graspValueAction,
-                            graspReadyAction, pinchPoseAction, pokePoseAction, aimPoseAction}) {
+                            graspReadyAction, aimActivateValueAction, aimActivateReadyAction,
+                            pinchPoseAction, pokePoseAction, aimPoseAction}) {
         expect(destroyAction(action) == XR_SUCCESS,
                "destroy hand-interaction action");
     }
