@@ -126,7 +126,8 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
         if (!accessManager.isPackageAuthorized(
                 callerPackage,
                 callingUid,
-                requireRuntimeTelemetry = true
+                requireRuntimeTelemetry = true,
+                requireRuntimeTrace = event == EVENT_TRACE
             )
         ) {
             throw SecurityException(

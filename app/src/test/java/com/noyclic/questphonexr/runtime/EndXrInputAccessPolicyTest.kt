@@ -79,9 +79,45 @@ class EndXrInputAccessPolicyTest {
     }
 
     @Test
+    fun oldLifecycleTelemetryConsentDoesNotGrantDetailedTrace() {
+        val lifecycleOnly = "com.example.vrgame|$fingerprint|1"
+        val decoded = EndXrInputGrantCodec.decode(setOf(lifecycleOnly)).single()
+
+        assertTrue(decoded.runtimeTelemetryGranted)
+        assertFalse(decoded.runtimeTraceGranted)
+    }
+
+    @Test
+    fun detailedTraceConsentRequiresAndPersistsTheSeparateFlag() {
+        val consent = EndXrInputGrantRecord(
+            packageName = "com.example.vrgame",
+            signingCertificateSha256 = fingerprint,
+            runtimeTelemetryGranted = true,
+            runtimeTraceGranted = true
+        )
+
+        val decoded = EndXrInputGrantCodec.decode(
+            EndXrInputGrantCodec.encode(listOf(consent))
+        ).single()
+
+        assertTrue(decoded.runtimeTelemetryGranted)
+        assertTrue(decoded.runtimeTraceGranted)
+        assertEquals(consent, decoded)
+    }
+
+    @Test
     fun malformedTelemetryConsentFlagIsIgnored() {
         val decoded = EndXrInputGrantCodec.decode(
             setOf("com.example.vrgame|$fingerprint|yes")
+        )
+
+        assertTrue(decoded.isEmpty())
+    }
+
+    @Test
+    fun malformedTraceConsentFlagIsIgnored() {
+        val decoded = EndXrInputGrantCodec.decode(
+            setOf("com.example.vrgame|$fingerprint|1|yes")
         )
 
         assertTrue(decoded.isEmpty())

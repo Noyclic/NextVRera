@@ -309,6 +309,10 @@ class AppNavigationSmokeTest {
             "Selecting MediaPipe did not close the provider selector",
             device.wait(Until.gone(By.text("MediaPipe — подключён")), 2_000)
         )
+        assertTrue(
+            "Tracking provider selector did not return after closing the selection dialog",
+            device.wait(Until.hasObject(trackingSourceButton), 5_000)
+        )
         device.findObject(trackingSourceButton).click()
         assertTrue(
             "AUTO choice did not reappear after reopening provider selector",

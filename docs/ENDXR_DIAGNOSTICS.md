@@ -133,3 +133,75 @@ This path improves launch preparation and prevents an obvious wrong-runtime laun
 The probe is a diagnostic client, not a real game. Its successful session/frame test is a stronger interoperability checkpoint than service discovery, but it still submits no projection layer to a headset and does not establish Quest game compatibility. A phone without an installable or system RuntimeBroker cannot prove active-runtime selection through the broker route.
 
 See [External OpenXR Loader validation](OPENXR_LOADER_VALIDATION.md), [IPC security](IPC_SECURITY.md) and [EndXR runtime status](ENDXR_RUNTIME.md) for details.
+
+## Низкоуровневая трассировка OpenXR
+
+Кнопка **«Скопировать низкоуровневую трассировку EndXR»** находится в меню
+«Возможности EndXR». Она выгружает журнал последнего процесса/экземпляра,
+который действительно отправил события в защищённый runtime_event provider.
+Доступ к записи по-прежнему выдаётся отдельно для конкретной игры и её
+подписи; чтение журнала доступно только самому NextVRera.
+
+Каждая запись содержит порядковый номер, monotonic timestamp, package,
+PID игрового процесса, instance/session ID, поток, стадию, имя реального
+OpenXR вызова, числовой XrResult, длительность вызова, номер кадра и
+ограниченные диагностические параметры. Журнал хранит последние 192 записи
+и экспортируется как читаемый TXT или JSON-массив. Отчёт дополнительно
+показывает первую зафиксированную ошибочную стадию и последнюю успешную
+стадию. Новое xrCreateInstance начинает новую историю трассировки.
+
+Инструментирование проходит через dispatch table EndXR, поэтому измеряются
+реальные вызовы runtime, а не предполагаемая последовательность на основании
+наличия API-строк в APK:
+
+- **LOADER** — xrNegotiateLoaderRuntimeInterface: диапазоны интерфейса/API,
+  выбранная версия runtime и длительность переговоров.
+- **INSTANCE / SYSTEM** — xrCreateInstance, xrGetSystem, xrDestroyInstance;
+  при создании instance записываются запрошенная версия OpenXR и список
+  extension names.
+- **GRAPHICS / SESSION** — требования OpenGL ES, xrCreateSession,
+  xrBeginSession, xrEndSession, xrDestroySession. При создании session
+  фиксируются наличие EGL binding и совпадение EGL context/display с
+  текущим контекстом потока.
+- **SWAPCHAIN** — xrCreateSwapchain с размерами, форматом и usage flags;
+  xrAcquireSwapchainImage, xrWaitSwapchainImage и xrReleaseSwapchainImage
+  подробно сохраняются при ошибке.
+- **FRAME / COMPOSITOR** — xrWaitFrame, xrBeginFrame, xrLocateViews,
+  xrEndFrame; ошибки записываются всегда, а успешные frame/swapchain
+  checkpoints сохраняются примерно раз в 30 кадров, вместе с накопленным
+  счётчиком композиции.
+- **INPUT_IPC** — раз в ~1 секунду фиксируется реальный результат чтения
+  snapshot из input provider фоновым polling worker и длительность операции.
+  Неудачный snapshot означает provider snapshot unavailable or stale;
+  запись не выдаёт себя за точный Binder exception, если Android его не дал.
+
+Вызовы на игровом render thread не ожидают завершения Binder/ContentProvider:
+трассировка только добавляется в ограниченную очередь, а существующий worker
+доставляет её отдельно. При переполнении очереди сначала удаляются успешные
+frame checkpoints; ошибки сохраняются с более высоким приоритетом. Успешные
+частые frame и swapchain операции не записываются по одному, чтобы журнал
+не стал источником просадок производительности.
+
+Есть ограничение раннего Loader-этапа: xrNegotiateLoaderRuntimeInterface
+вызывается до того, как Android передаёт runtime Activity/JavaVM. Поэтому
+результат переговоров немедленно пишется в Android logcat с тегом EndXRTrace.
+Успешная negotiation дополнительно переносится в защищённый журнал, когда
+тот же процесс доходит до успешного xrCreateInstance. Ошибка до instance
+остаётся в logcat; получить её можно так:
+
+    adb logcat -d -s EndXRTrace
+
+Журнал является best-effort package-scoped telemetry, а не системной
+attestation: он подтверждает только записанные вызовы в процессе, которому
+пользователь выдал разрешение. Он не доказывает, что Android выбрал EndXR
+для конкретной игры, что игра вывела кадр на экран или что она совместима.
+Пустой журнал может означать, что игра не использовала Khronos OpenXR Loader,
+не выбрала EndXR, не получила telemetry consent или завершилась до instance.
+
+**Дополнительное согласие на детальную трассировку.** Старые записи согласия
+сохраняют lifecycle-телеметрию, но не дают права отправлять новый подробный
+trace-журнал. Для этого у grant record есть отдельный флаг; он включается
+только после повторного подтверждения пользователя в меню «Управление
+доступом к вводу». В списке игр старое разрешение помечается как lifecycle-
+only до повторного подтверждения. Это не создаёт новое Android URI-разрешение:
+провайдер дополнительно проверяет app-level consent для каждого trace-event.

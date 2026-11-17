@@ -22,6 +22,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #if defined(__ANDROID__)
@@ -117,6 +118,15 @@ struct PendingRuntimeTelemetry {
     std::string eventName;
     std::uint64_t sessionId = 0;
     std::uint64_t frameCount = 0;
+    std::string traceStage;
+    std::string traceOperation;
+    std::string traceResult;
+    std::string traceDetails;
+    std::int32_t traceResultCode = 0;
+    std::uint64_t traceDurationNs = 0;
+    std::uint64_t traceFrameIndex = 0;
+    std::uint64_t traceThreadId = 0;
+    std::uint64_t traceMonotonicNs = 0;
 };
 
 struct XrInstance_T {
@@ -133,6 +143,7 @@ struct XrInstance_T {
     std::deque<PendingRuntimeTelemetry> pendingRuntimeTelemetry;
     std::chrono::steady_clock::time_point runtimeTelemetryRetryAt{};
     std::atomic<bool> runtimeTelemetryUnavailableLogged{false};
+    std::atomic<std::uint64_t> externalInputPollCount{0};
 #else
     void* applicationVm = nullptr;
     void* applicationActivity = nullptr;
@@ -169,6 +180,7 @@ struct XrSession_T {
     std::unordered_set<XrHandTrackerEXT> handTrackers;
     std::uint64_t telemetryId = 0;
     std::uint64_t telemetryFrameCount = 0;
+    std::uint64_t diagnosticFrameIndex = 0;
     bool actionSetsAttached = false;
     bool actionSyncCompleted = false;
     std::unordered_set<XrActionSet> attachedActionSets;
@@ -233,7 +245,18 @@ void enqueueRuntimeTelemetry(
     std::uint64_t sessionId = 0,
     std::uint64_t frameCount = 0
 );
+void enqueueRuntimeTrace(
+    XrInstance_T* instance,
+    std::uint64_t sessionId,
+    const char* stage,
+    const char* operation,
+    XrResult result,
+    std::uint64_t durationNs,
+    std::uint64_t frameIndex,
+    const char* details
+);
 bool flushRuntimeTelemetryImpl(XrInstance_T* instance);
+const char* openXrTraceResultName(XrResult result);
 #endif
 bool locateEstimatedHandPose(XrSpace_T* object, XrSpace_T* base, XrPosef* pose);
 XrPosef composePose(const XrPosef& parent, const XrPosef& child);
@@ -730,7 +753,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateInstanceExtensionProperties(
     return capacity < *count ? XR_ERROR_SIZE_INSUFFICIENT : XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
     const XrInstanceCreateInfo* createInfo, XrInstance* instance
 ) {
     if (instance == nullptr) return XR_ERROR_VALIDATION_FAILURE;
@@ -858,7 +881,10 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrDestroyInstanceImpl(XrInstance instance) {
+#if defined(__ANDROID__)
+    const auto traceStartedAt = std::chrono::steady_clock::now();
+#endif
     XrInstance_T* object = nullptr;
     {
         std::lock_guard<std::mutex> actionLock(g_actionMutex);
@@ -880,6 +906,13 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
         g_instances.erase(found);
     }
 #if defined(__ANDROID__)
+    const auto traceDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - traceStartedAt).count();
+    enqueueRuntimeTrace(
+        object, 0, "INSTANCE", "xrDestroyInstance", XR_SUCCESS,
+        static_cast<std::uint64_t>(std::max<std::int64_t>(0, traceDuration)),
+        0, "instance_destroyed=true"
+    );
     enqueueRuntimeTelemetry(object, "xr_destroy_instance");
     stopExternalControllerInputPolling(object);
     if (object->applicationVm != nullptr && object->applicationActivity != nullptr) {
@@ -915,7 +948,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetInstanceProperties(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystem(
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystemImpl(
     XrInstance instance, const XrSystemGetInfo* getInfo, XrSystemId* systemId
 ) {
     if (!isValidInstance(instance)) return XR_ERROR_HANDLE_INVALID;
@@ -1041,7 +1074,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateEnvironmentBlendModes(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHRImpl(
     XrInstance instance, XrSystemId systemId,
     XrGraphicsRequirementsOpenGLESKHR* requirements
 ) {
@@ -1059,7 +1092,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSession(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSessionImpl(
     XrInstance instance, const XrSessionCreateInfo* createInfo, XrSession* session
 ) {
     XrInstance_T* owner = getInstance(instance);
@@ -1112,7 +1145,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSession(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrDestroySessionImpl(XrSession session) {
     XrSession_T* object = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_sessionMutex);
@@ -1145,7 +1178,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrBeginSession(
+XRAPI_ATTR XrResult XRAPI_CALL endxrBeginSessionImpl(
     XrSession session, const XrSessionBeginInfo* beginInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -1183,7 +1216,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrRequestExitSession(XrSession session) {
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrEndSession(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrEndSessionImpl(XrSession session) {
     XrSession_T* object = getSession(session);
     if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
     if (!object->running || !object->exitRequested ||
@@ -1217,7 +1250,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrPollEvent(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrameImpl(
     XrSession session, const XrFrameWaitInfo* waitInfo, XrFrameState* frameState
 ) {
     XrSession_T* object = getSession(session);
@@ -1244,7 +1277,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrame(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrBeginFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrBeginFrameImpl(
     XrSession session, const XrFrameBeginInfo* beginInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -1258,7 +1291,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrBeginFrame(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrameImpl(
     XrSession session, const XrFrameEndInfo* endInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -1466,7 +1499,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateSpace(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrLocateViews(
+XRAPI_ATTR XrResult XRAPI_CALL endxrLocateViewsImpl(
     XrSession session, const XrViewLocateInfo* locateInfo, XrViewState* viewState,
     std::uint32_t capacity, std::uint32_t* count, XrView* views
 ) {
@@ -1545,7 +1578,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateSwapchainFormats(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSwapchain(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSwapchainImpl(
     XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain
 ) {
     XrSession_T* owner = getSession(session);
@@ -1632,7 +1665,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateSwapchainImages(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrAcquireSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrAcquireSwapchainImageImpl(
     XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo,
     std::uint32_t* index
 ) {
@@ -1651,7 +1684,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrAcquireSwapchainImage(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrWaitSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrWaitSwapchainImageImpl(
     XrSwapchain swapchain, const XrSwapchainImageWaitInfo* waitInfo
 ) {
     XrSwapchain_T* object = getSwapchain(swapchain);
@@ -1665,7 +1698,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrWaitSwapchainImage(
     return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL endxrReleaseSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrReleaseSwapchainImageImpl(
     XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo
 ) {
     XrSwapchain_T* object = getSwapchain(swapchain);
@@ -2662,6 +2695,56 @@ void enqueueRuntimeTelemetry(
     instance->externalInputWake.notify_one();
 }
 
+void enqueueRuntimeTrace(
+    XrInstance_T* instance,
+    std::uint64_t sessionId,
+    const char* stage,
+    const char* operation,
+    XrResult result,
+    std::uint64_t durationNs,
+    std::uint64_t frameIndex,
+    const char* details
+) {
+    if (instance == nullptr || stage == nullptr || operation == nullptr) return;
+    PendingRuntimeTelemetry event;
+    event.eventName = "xr_trace";
+    event.sessionId = sessionId;
+    event.traceStage = stage;
+    event.traceOperation = operation;
+    event.traceResult = openXrTraceResultName(result);
+    event.traceResultCode = static_cast<std::int32_t>(result);
+    event.traceDurationNs = durationNs;
+    event.traceFrameIndex = frameIndex;
+    event.traceThreadId = static_cast<std::uint64_t>(
+        std::hash<std::thread::id>{}(std::this_thread::get_id())) & 0x7fffffffffffffffULL;
+    event.traceMonotonicNs = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    event.traceDetails = details == nullptr ? "" : details;
+    {
+        std::lock_guard<std::mutex> lock(instance->runtimeTelemetryMutex);
+        auto& queue = instance->pendingRuntimeTelemetry;
+        constexpr std::size_t kMaximumPendingRuntimeEvents = 128;
+        if (queue.size() >= kMaximumPendingRuntimeEvents) {
+            const auto expendable = std::find_if(
+                queue.begin(), queue.end(),
+                [](const PendingRuntimeTelemetry& queued) {
+                    return queued.eventName == "xr_end_frame" ||
+                        (queued.eventName == "xr_trace" && queued.traceResultCode == 0);
+                });
+            if (expendable != queue.end()) {
+                queue.erase(expendable);
+            } else if (result == XR_SUCCESS) {
+                return;
+            } else {
+                queue.pop_front();
+            }
+        }
+        queue.push_back(std::move(event));
+    }
+    instance->externalInputWake.notify_one();
+}
+
 bool flushRuntimeTelemetryImpl(XrInstance_T* instance) {
     if (instance == nullptr || instance->applicationVm == nullptr ||
         instance->applicationActivity == nullptr) return false;
@@ -2684,7 +2767,7 @@ bool flushRuntimeTelemetryImpl(XrInstance_T* instance) {
         }
         // Keep the queue bounded if the provider remains unavailable for a
         // long time. Control/lifecycle events are enqueued before frame events.
-        while (instance->pendingRuntimeTelemetry.size() > 64) {
+        while (instance->pendingRuntimeTelemetry.size() > 128) {
             instance->pendingRuntimeTelemetry.pop_back();
         }
         instance->runtimeTelemetryRetryAt =
@@ -2808,6 +2891,18 @@ bool flushRuntimeTelemetryImpl(XrInstance_T* instance) {
                 if (itemOk && event.sessionId != 0) {
                     itemOk = putText("session_id", std::to_string(event.sessionId));
                 }
+                if (itemOk && event.eventName == "xr_trace") {
+                    itemOk = putText("trace_stage", event.traceStage) &&
+                        putText("trace_operation", event.traceOperation) &&
+                        putText("trace_result", event.traceResult) &&
+                        putNumber("trace_result_code",
+                            static_cast<std::uint64_t>(static_cast<std::int64_t>(event.traceResultCode))) &&
+                        putNumber("trace_duration_ns", event.traceDurationNs) &&
+                        putNumber("trace_frame_index", event.traceFrameIndex) &&
+                        putNumber("trace_thread_id", event.traceThreadId) &&
+                        putNumber("trace_monotonic_ns", event.traceMonotonicNs) &&
+                        putText("trace_details", event.traceDetails);
+                }
                 jobject inserted = nullptr;
                 if (itemOk) {
                     inserted = env->CallObjectMethod(resolver, insert, uri, values);
@@ -2864,13 +2959,30 @@ bool startExternalControllerInputPolling(XrInstance_T* instance) {
                     std::memory_order_acquire
                 );
                 if (!stopping) {
+                    bool inputSnapshotAvailable = false;
+                    const auto inputStartedAt = std::chrono::steady_clock::now();
                     try {
-                        refreshExternalControllerInputImpl(instance);
+                        inputSnapshotAvailable = refreshExternalControllerInputImpl(instance);
                     } catch (...) {
                         // A failed snapshot must not terminate the game process.
                         endxrClearControllerInput();
                         endxrClearHeadOrientation();
                         endxrClearHandPoses();
+                    }
+                    const std::uint64_t pollCount =
+                        instance->externalInputPollCount.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (pollCount % 50 == 0) {
+                        const auto inputDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now() - inputStartedAt).count();
+                        enqueueRuntimeTrace(
+                            instance, 0, "INPUT_IPC", "xrInputSnapshot",
+                            inputSnapshotAvailable ? XR_SUCCESS : XR_ERROR_RUNTIME_FAILURE,
+                            static_cast<std::uint64_t>(std::max<std::int64_t>(0, inputDuration)),
+                            0,
+                            inputSnapshotAvailable
+                                ? "polls=50;result=provider_snapshot_read"
+                                : "polls=50;result=provider_snapshot_unavailable_or_stale"
+                        );
                     }
                 }
                 try {
@@ -3651,6 +3763,412 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateHandJointsEXT(
 }
 
 
+
+/*
+ * Low-overhead OpenXR call tracing. Successful lifecycle/setup operations and
+ * sampled compositor/input checkpoints are persisted through the consent-
+ * protected telemetry worker. Every failed call is retained.
+ */
+std::mutex g_loaderTraceMutex;
+bool g_loaderTracePending = false;
+XrResult g_loaderTraceResult = XR_SUCCESS;
+std::uint64_t g_loaderTraceDurationNs = 0;
+std::string g_loaderTraceDetails;
+
+#if defined(__ANDROID__)
+const char* openXrTraceResultName(XrResult result) {
+    switch (result) {
+        case XR_SUCCESS: return "XR_SUCCESS";
+        case XR_ERROR_VALIDATION_FAILURE: return "XR_ERROR_VALIDATION_FAILURE";
+        case XR_ERROR_FUNCTION_UNSUPPORTED: return "XR_ERROR_FUNCTION_UNSUPPORTED";
+        case XR_ERROR_EXTENSION_NOT_PRESENT: return "XR_ERROR_EXTENSION_NOT_PRESENT";
+        case XR_ERROR_API_VERSION_UNSUPPORTED: return "XR_ERROR_API_VERSION_UNSUPPORTED";
+        case XR_ERROR_INITIALIZATION_FAILED: return "XR_ERROR_INITIALIZATION_FAILED";
+        case XR_ERROR_OUT_OF_MEMORY: return "XR_ERROR_OUT_OF_MEMORY";
+        case XR_ERROR_HANDLE_INVALID: return "XR_ERROR_HANDLE_INVALID";
+        case XR_ERROR_RUNTIME_FAILURE: return "XR_ERROR_RUNTIME_FAILURE";
+        case XR_ERROR_CALL_ORDER_INVALID: return "XR_ERROR_CALL_ORDER_INVALID";
+        case XR_ERROR_SESSION_NOT_RUNNING: return "XR_ERROR_SESSION_NOT_RUNNING";
+        case XR_ERROR_GRAPHICS_DEVICE_INVALID: return "XR_ERROR_GRAPHICS_DEVICE_INVALID";
+        case XR_ERROR_LAYER_INVALID: return "XR_ERROR_LAYER_INVALID";
+        case XR_ERROR_TIME_INVALID: return "XR_ERROR_TIME_INVALID";
+        case XR_ERROR_LIMIT_REACHED: return "XR_ERROR_LIMIT_REACHED";
+        case XR_ERROR_SYSTEM_INVALID: return "XR_ERROR_SYSTEM_INVALID";
+        case XR_ERROR_SESSION_NOT_READY: return "XR_ERROR_SESSION_NOT_READY";
+        default: return result < 0 ? "XR_RESULT_ERROR" : "XR_RESULT_STATUS";
+    }
+}
+#endif
+
+std::uint64_t openXrTraceElapsedNs(std::chrono::steady_clock::time_point startedAt) {
+    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - startedAt).count();
+    return static_cast<std::uint64_t>(std::max<std::int64_t>(0, elapsed));
+}
+
+void recordOpenXrTrace(
+    XrInstance_T* instance,
+    std::uint64_t sessionId,
+    const char* stage,
+    const char* operation,
+    XrResult result,
+    std::uint64_t durationNs,
+    std::uint64_t frameIndex,
+    const std::string& details,
+    bool recordSuccess = true
+) {
+    if (result == XR_SUCCESS && !recordSuccess) return;
+#if defined(__ANDROID__)
+    const char* resultName = openXrTraceResultName(result);
+    if (result < 0 || instance == nullptr) {
+        __android_log_print(
+            result < 0 ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
+            "EndXRTrace",
+            "stage=%s operation=%s result=%s code=%d duration_ns=%llu frame=%llu details=%s",
+            stage, operation, resultName, static_cast<int>(result),
+            static_cast<unsigned long long>(durationNs),
+            static_cast<unsigned long long>(frameIndex), details.c_str()
+        );
+    }
+    if (instance != nullptr) {
+        enqueueRuntimeTrace(
+            instance, sessionId, stage, operation, result, durationNs,
+            frameIndex, details.c_str());
+    }
+#else
+    (void)instance;
+    (void)sessionId;
+    (void)stage;
+    (void)operation;
+    (void)result;
+    (void)durationNs;
+    (void)frameIndex;
+    (void)details;
+#endif
+}
+
+XrResult XRAPI_CALL endxrCreateInstance(
+    const XrInstanceCreateInfo* createInfo, XrInstance* instance
+) {
+    const auto startedAt = std::chrono::steady_clock::now();
+    std::string details = "requested_api=unknown;extensions=";
+    if (createInfo != nullptr) {
+        details = "requested_api=" +
+            std::to_string(XR_VERSION_MAJOR(createInfo->applicationInfo.apiVersion)) + "." +
+            std::to_string(XR_VERSION_MINOR(createInfo->applicationInfo.apiVersion)) + "." +
+            std::to_string(XR_VERSION_PATCH(createInfo->applicationInfo.apiVersion)) +
+            ";extension_count=" + std::to_string(createInfo->enabledExtensionCount) +
+            ";extensions=";
+        if (createInfo->enabledExtensionNames != nullptr) {
+            const std::uint32_t count = std::min<std::uint32_t>(
+                createInfo->enabledExtensionCount, 16);
+            for (std::uint32_t index = 0; index < count; ++index) {
+                if (index != 0) details += ",";
+                const char* extension = createInfo->enabledExtensionNames[index];
+                details += extension == nullptr ? "<null>" : extension;
+                if (details.size() > 440) break;
+            }
+        }
+    }
+    if (details.size() > 480) details.resize(480);
+    const XrResult result = endxrCreateInstanceImpl(createInfo, instance);
+    XrInstance_T* owner = result == XR_SUCCESS && instance != nullptr
+        ? getInstance(*instance) : nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_loaderTraceMutex);
+        if (g_loaderTracePending && owner != nullptr) {
+            recordOpenXrTrace(
+                owner, 0, "LOADER", "xrNegotiateLoaderRuntimeInterface",
+                g_loaderTraceResult, g_loaderTraceDurationNs, 0, g_loaderTraceDetails
+            );
+            g_loaderTracePending = false;
+        }
+    }
+    recordOpenXrTrace(owner, 0, "INSTANCE", "xrCreateInstance", result,
+        openXrTraceElapsedNs(startedAt), 0, details);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrGetSystem(
+    XrInstance instance, const XrSystemGetInfo* getInfo, XrSystemId* systemId
+) {
+    XrInstance_T* owner = getInstance(instance);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrGetSystemImpl(instance, getInfo, systemId);
+    const std::string details = "form_factor=" +
+        std::to_string(getInfo == nullptr ? -1 : static_cast<int>(getInfo->formFactor)) +
+        ";system_id=" + std::to_string(result == XR_SUCCESS && systemId != nullptr ? *systemId : 0);
+    recordOpenXrTrace(owner, 0, "SYSTEM", "xrGetSystem", result,
+        openXrTraceElapsedNs(startedAt), 0, details);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
+    XrInstance instance, XrSystemId systemId,
+    XrGraphicsRequirementsOpenGLESKHR* requirements
+) {
+    XrInstance_T* owner = getInstance(instance);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result =
+        endxrGetOpenGLESGraphicsRequirementsKHRImpl(instance, systemId, requirements);
+    std::string details = "system_id=" + std::to_string(systemId);
+    if (result == XR_SUCCESS && requirements != nullptr) {
+        details += ";min_gles=" +
+            std::to_string(XR_VERSION_MAJOR(requirements->minApiVersionSupported)) + "." +
+            std::to_string(XR_VERSION_MINOR(requirements->minApiVersionSupported));
+        details += ";max_gles=" +
+            std::to_string(XR_VERSION_MAJOR(requirements->maxApiVersionSupported)) + "." +
+            std::to_string(XR_VERSION_MINOR(requirements->maxApiVersionSupported));
+    }
+    recordOpenXrTrace(owner, 0, "GRAPHICS", "xrGetOpenGLESGraphicsRequirementsKHR",
+        result, openXrTraceElapsedNs(startedAt), 0, details);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrCreateSession(
+    XrInstance instance, const XrSessionCreateInfo* createInfo, XrSession* session
+) {
+    XrInstance_T* owner = getInstance(instance);
+    const auto* binding = createInfo == nullptr ? nullptr : findGlesBinding(createInfo->next);
+    bool currentContextMatches = binding != nullptr;
+#if defined(__ANDROID__)
+    currentContextMatches = binding != nullptr &&
+        eglGetCurrentDisplay() == reinterpret_cast<EGLDisplay>(binding->display) &&
+        eglGetCurrentContext() == reinterpret_cast<EGLContext>(binding->context);
+#endif
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrCreateSessionImpl(instance, createInfo, session);
+    XrSession_T* created = result == XR_SUCCESS && session != nullptr
+        ? getSession(*session) : nullptr;
+    const std::uint64_t sessionId = created == nullptr ? 0 : created->telemetryId;
+    std::string details = "system_id=" +
+        std::to_string(createInfo == nullptr ? 0 : createInfo->systemId) +
+        ";egl_binding_present=" + (binding == nullptr ? "false" : "true") +
+        ";egl_current_match=" + (currentContextMatches ? "true" : "false");
+    if (binding != nullptr) details += ";display_config_context_non_null=" +
+        std::string(binding->display != nullptr && binding->config != nullptr &&
+            binding->context != nullptr ? "true" : "false");
+    recordOpenXrTrace(owner, sessionId, "SESSION", "xrCreateSession", result,
+        openXrTraceElapsedNs(startedAt), 0, details);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrBeginSession(
+    XrSession session, const XrSessionBeginInfo* beginInfo
+) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrBeginSessionImpl(session, beginInfo);
+    recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+        "SESSION", "xrBeginSession", result, openXrTraceElapsedNs(startedAt), 0,
+        "primary_view_configuration=" + std::to_string(
+            beginInfo == nullptr ? -1 : static_cast<int>(beginInfo->primaryViewConfigurationType)));
+    return result;
+}
+
+XrResult XRAPI_CALL endxrEndSession(XrSession session) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrEndSessionImpl(session);
+    recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+        "SESSION", "xrEndSession", result, openXrTraceElapsedNs(startedAt), 0,
+        "session_teardown=true", false);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const std::uint64_t sessionId = object == nullptr ? 0 : object->telemetryId;
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrDestroySessionImpl(session);
+    recordOpenXrTrace(owner, sessionId, "SESSION", "xrDestroySession", result,
+        openXrTraceElapsedNs(startedAt), 0,
+        std::string("session_destroyed=") + (result == XR_SUCCESS ? "true" : "false"),
+        result != XR_SUCCESS);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
+    XrInstance_T* owner = getInstance(instance);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrDestroyInstanceImpl(instance);
+    // Successful destruction is traced inside the implementation before the
+    // instance-owned telemetry worker and memory are released. The wrapper only
+    // records errors here, while the original instance remains valid.
+    if (result != XR_SUCCESS) {
+        recordOpenXrTrace(owner, 0, "INSTANCE", "xrDestroyInstance", result,
+            openXrTraceElapsedNs(startedAt), 0, "instance_destroyed=false");
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrWaitFrame(
+    XrSession session, const XrFrameWaitInfo* waitInfo, XrFrameState* frameState
+) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrWaitFrameImpl(session, waitInfo, frameState);
+    std::uint64_t frameIndex = 0;
+    if (object != nullptr && result == XR_SUCCESS) frameIndex = ++object->diagnosticFrameIndex;
+    const bool sampleFrame = frameIndex > 0 && frameIndex % 30 == 0;
+    if (result != XR_SUCCESS || sampleFrame) {
+        std::string details = std::string("frame_state_valid=") +
+            (frameState == nullptr ? "false" : "true");
+        if (result == XR_SUCCESS && frameState != nullptr) {
+            details += ";should_render=" +
+                std::string(frameState->shouldRender == XR_TRUE ? "true" : "false") +
+                ";predicted_display_period_ns=" +
+                std::to_string(frameState->predictedDisplayPeriod);
+        }
+        recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+            "FRAME", "xrWaitFrame", result, openXrTraceElapsedNs(startedAt),
+            frameIndex, details);
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrBeginFrame(
+    XrSession session, const XrFrameBeginInfo* beginInfo
+) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrBeginFrameImpl(session, beginInfo);
+    const std::uint64_t frameIndex =
+        object == nullptr ? 0 : object->diagnosticFrameIndex;
+    if (result != XR_SUCCESS || (frameIndex > 0 && frameIndex % 30 == 0)) {
+        recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+            "FRAME", "xrBeginFrame", result, openXrTraceElapsedNs(startedAt),
+            frameIndex, std::string("frame_waited=") +
+                (object != nullptr && object->frameWaited ? "true" : "false"));
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrEndFrame(
+    XrSession session, const XrFrameEndInfo* endInfo
+) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrEndFrameImpl(session, endInfo);
+    const std::uint64_t compositedFrames =
+        object == nullptr ? 0 : object->telemetryFrameCount;
+    const bool hasProjection = endInfo != nullptr && endInfo->layerCount == 1;
+    const bool sampleSuccess = result == XR_SUCCESS && hasProjection &&
+        compositedFrames > 0 && compositedFrames % 30 == 0;
+    if (result != XR_SUCCESS || sampleSuccess) {
+        recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+            hasProjection ? "COMPOSITOR" : "FRAME", "xrEndFrame", result,
+            openXrTraceElapsedNs(startedAt),
+            object == nullptr ? 0 : object->diagnosticFrameIndex,
+            "layers=" + std::to_string(endInfo == nullptr ? 0 : endInfo->layerCount) +
+                ";composited_frames=" + std::to_string(compositedFrames));
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrCreateSwapchain(
+    XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain
+) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrCreateSwapchainImpl(session, createInfo, swapchain);
+    const std::string details = "width=" +
+        std::to_string(createInfo == nullptr ? 0 : createInfo->width) +
+        ";height=" + std::to_string(createInfo == nullptr ? 0 : createInfo->height) +
+        ";format=" + std::to_string(createInfo == nullptr ? 0 : createInfo->format) +
+        ";usage_flags=" + std::to_string(createInfo == nullptr ? 0 : createInfo->usageFlags) +
+        ";image_count=3";
+    recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+        "SWAPCHAIN", "xrCreateSwapchain", result, openXrTraceElapsedNs(startedAt),
+        object == nullptr ? 0 : object->diagnosticFrameIndex, details);
+    return result;
+}
+
+XrResult XRAPI_CALL endxrAcquireSwapchainImage(
+    XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo,
+    std::uint32_t* index
+) {
+    XrSwapchain_T* chain = getSwapchain(swapchain);
+    XrSession_T* session = chain == nullptr ? nullptr : getSession(chain->owner);
+    XrInstance_T* owner = session == nullptr ? nullptr : getInstance(session->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrAcquireSwapchainImageImpl(swapchain, acquireInfo, index);
+    const std::uint64_t frameIndex =
+        session == nullptr ? 0 : session->diagnosticFrameIndex;
+    if (result != XR_SUCCESS || (frameIndex > 0 && frameIndex % 30 == 0)) {
+        recordOpenXrTrace(owner, session == nullptr ? 0 : session->telemetryId,
+            "SWAPCHAIN", "xrAcquireSwapchainImage", result, openXrTraceElapsedNs(startedAt),
+            frameIndex, "image_index=" +
+                std::to_string(result == XR_SUCCESS && index != nullptr ? *index : 0));
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrWaitSwapchainImage(
+    XrSwapchain swapchain, const XrSwapchainImageWaitInfo* waitInfo
+) {
+    XrSwapchain_T* chain = getSwapchain(swapchain);
+    XrSession_T* session = chain == nullptr ? nullptr : getSession(chain->owner);
+    XrInstance_T* owner = session == nullptr ? nullptr : getInstance(session->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrWaitSwapchainImageImpl(swapchain, waitInfo);
+    const std::uint64_t frameIndex =
+        session == nullptr ? 0 : session->diagnosticFrameIndex;
+    if (result != XR_SUCCESS || (frameIndex > 0 && frameIndex % 30 == 0)) {
+        recordOpenXrTrace(owner, session == nullptr ? 0 : session->telemetryId,
+            "SWAPCHAIN", "xrWaitSwapchainImage", result, openXrTraceElapsedNs(startedAt),
+            frameIndex, "acquired_index=" +
+                std::to_string(chain == nullptr ? 0 : chain->acquiredIndex));
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrReleaseSwapchainImage(
+    XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo
+) {
+    XrSwapchain_T* chain = getSwapchain(swapchain);
+    XrSession_T* session = chain == nullptr ? nullptr : getSession(chain->owner);
+    XrInstance_T* owner = session == nullptr ? nullptr : getInstance(session->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result = endxrReleaseSwapchainImageImpl(swapchain, releaseInfo);
+    const std::uint64_t frameIndex =
+        session == nullptr ? 0 : session->diagnosticFrameIndex;
+    if (result != XR_SUCCESS || (frameIndex > 0 && frameIndex % 30 == 0)) {
+        recordOpenXrTrace(owner, session == nullptr ? 0 : session->telemetryId,
+            "SWAPCHAIN", "xrReleaseSwapchainImage", result, openXrTraceElapsedNs(startedAt),
+            frameIndex, "released_index=" +
+                std::to_string(chain == nullptr ? 0 : chain->lastReleasedIndex));
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL endxrLocateViews(
+    XrSession session, const XrViewLocateInfo* locateInfo, XrViewState* viewState,
+    std::uint32_t capacity, std::uint32_t* count, XrView* views
+) {
+    XrSession_T* object = getSession(session);
+    XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result =
+        endxrLocateViewsImpl(session, locateInfo, viewState, capacity, count, views);
+    const std::uint64_t frameIndex =
+        object == nullptr ? 0 : object->diagnosticFrameIndex;
+    if (result != XR_SUCCESS || (frameIndex > 0 && frameIndex % 30 == 0)) {
+        recordOpenXrTrace(owner, object == nullptr ? 0 : object->telemetryId,
+            "FRAME", "xrLocateViews", result, openXrTraceElapsedNs(startedAt),
+            frameIndex, "view_count=" +
+                std::to_string(result == XR_SUCCESS && count != nullptr ? *count : 0));
+    }
+    return result;
+}
+
 #define ENDXR_PROC(name, fn) {name, reinterpret_cast<PFN_xrVoidFunction>(fn)}
 struct ProcEntry { const char* name; PFN_xrVoidFunction function; };
 const std::array<ProcEntry, 58> kProcTable{{
@@ -3770,7 +4288,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetInstanceProcAddr(
 } // namespace
 
 extern "C" __attribute__((visibility("default"))) XRAPI_ATTR XrResult XRAPI_CALL
-xrNegotiateLoaderRuntimeInterface(
+xrNegotiateLoaderRuntimeInterfaceImpl(
     const XrNegotiateLoaderInfo* loaderInfo,
     XrNegotiateRuntimeRequest* runtimeRequest
 ) {
@@ -3796,6 +4314,54 @@ xrNegotiateLoaderRuntimeInterface(
     runtimeRequest->getInstanceProcAddr = endxrGetInstanceProcAddr;
     return XR_SUCCESS;
 }
+ 
+extern "C" __attribute__((visibility("default"))) XRAPI_ATTR XrResult XRAPI_CALL
+xrNegotiateLoaderRuntimeInterface(
+    const XrNegotiateLoaderInfo* loaderInfo,
+    XrNegotiateRuntimeRequest* runtimeRequest
+) {
+    const auto startedAt = std::chrono::steady_clock::now();
+    const XrResult result =
+        xrNegotiateLoaderRuntimeInterfaceImpl(loaderInfo, runtimeRequest);
+    const std::uint64_t durationNs = openXrTraceElapsedNs(startedAt);
+    std::string details = "loader_info_valid=" +
+        std::string(loaderInfo == nullptr ? "false" : "true");
+    if (loaderInfo != nullptr) {
+        details += ";interface_min=" + std::to_string(loaderInfo->minInterfaceVersion) +
+            ";interface_max=" + std::to_string(loaderInfo->maxInterfaceVersion) +
+            ";api_min=" + std::to_string(XR_VERSION_MAJOR(loaderInfo->minApiVersion)) + "." +
+            std::to_string(XR_VERSION_MINOR(loaderInfo->minApiVersion)) + "." +
+            std::to_string(XR_VERSION_PATCH(loaderInfo->minApiVersion)) +
+            ";api_max=" + std::to_string(XR_VERSION_MAJOR(loaderInfo->maxApiVersion)) + "." +
+            std::to_string(XR_VERSION_MINOR(loaderInfo->maxApiVersion)) + "." +
+            std::to_string(XR_VERSION_PATCH(loaderInfo->maxApiVersion));
+    }
+    if (result == XR_SUCCESS && runtimeRequest != nullptr) {
+        details += ";runtime_interface=" +
+            std::to_string(runtimeRequest->runtimeInterfaceVersion) +
+            ";runtime_api=" + std::to_string(XR_VERSION_MAJOR(runtimeRequest->runtimeApiVersion)) +
+            "." + std::to_string(XR_VERSION_MINOR(runtimeRequest->runtimeApiVersion)) +
+            "." + std::to_string(XR_VERSION_PATCH(runtimeRequest->runtimeApiVersion));
+    }
+#if defined(__ANDROID__)
+    __android_log_print(
+        result < 0 ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
+        "EndXRTrace",
+        "stage=LOADER operation=xrNegotiateLoaderRuntimeInterface result=%s code=%d duration_ns=%llu %s",
+        openXrTraceResultName(result), static_cast<int>(result),
+        static_cast<unsigned long long>(durationNs), details.c_str()
+    );
+#endif
+    {
+        std::lock_guard<std::mutex> lock(g_loaderTraceMutex);
+        g_loaderTracePending = result == XR_SUCCESS;
+        g_loaderTraceResult = result;
+        g_loaderTraceDurationNs = durationNs;
+        g_loaderTraceDetails = details;
+    }
+    return result;
+}
+
 
 extern "C" __attribute__((visibility("default"))) void endxrSetControllerInput(
     std::uint32_t hand, std::uint32_t active, float trigger, float grip,

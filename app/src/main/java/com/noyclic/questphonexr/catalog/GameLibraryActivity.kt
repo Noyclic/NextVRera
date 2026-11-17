@@ -204,9 +204,11 @@ class GameLibraryActivity : ComponentActivity() {
         val labels = candidates.map { client ->
             val inputGranted = manager.isAuthorized(client)
             val telemetryGranted = manager.isRuntimeTelemetryAuthorized(client)
+            val traceGranted = manager.isRuntimeTraceAuthorized(client)
             val state = when {
-                inputGranted && telemetryGranted -> " · ВВОД + ТЕЛЕМЕТРИЯ РАЗРЕШЕНЫ"
-                inputGranted -> " · ТОЛЬКО ВВОД (СТАРОЕ СОГЛАСИЕ)"
+                inputGranted && traceGranted -> " · ВВОД + ПОДРОБНАЯ ТРАССИРОВКА"
+                inputGranted && telemetryGranted -> " · ВВОД + ЖИЗНЕННЫЙ ЦИКЛ (НУЖНО ПОДТВЕРДИТЬ TRACE)"
+                inputGranted -> " · ТОЛЬКО ВВОД"
                 else -> ""
             }
             client.label + " · " + client.packageName + state
@@ -217,7 +219,8 @@ class GameLibraryActivity : ComponentActivity() {
                 val selected = candidates[index]
                 val inputGranted = manager.isAuthorized(selected)
                 val telemetryGranted = manager.isRuntimeTelemetryAuthorized(selected)
-                if (inputGranted && telemetryGranted) {
+                val traceGranted = manager.isRuntimeTraceAuthorized(selected)
+                if (inputGranted && telemetryGranted && traceGranted) {
                     confirmRevokeInputAccess(manager, selected)
                 } else {
                     confirmGrantInputAndTelemetryAccess(manager, selected)
@@ -232,24 +235,33 @@ class GameLibraryActivity : ComponentActivity() {
         client: com.noyclic.questphonexr.runtime.EndXrInputClient
     ) {
         val inputAlreadyGranted = manager.isAuthorized(client)
+        val lifecycleAlreadyGranted = manager.isRuntimeTelemetryAuthorized(client)
+        val traceAlreadyGranted = manager.isRuntimeTraceAuthorized(client)
         val message = buildString {
             append("Приложение: ").append(client.label).append('\n')
             append("Пакет: ").append(client.packageName).append("\n\n")
-            append("NextVRera выдаст два отдельных разрешения для этого пакета:\n")
-            append("• READ: controller_state — кнопки и оси контроллеров, ориентация телефона и приблизительные позы ладоней.\n")
-            append("• WRITE: runtime_event — события xrCreateInstance, xrCreateSession, xrBeginSession, xrEndSession, композиция кадров и завершение runtime.\n\n")
-            append("Телеметрия содержит имя пакета, PID игрового процесса, идентификаторы runtime instance/session, время событий и число скомпонованных кадров. ")
-            append("Она не читает файлы игры, экран или игровые данные.\n\n")
+            append("NextVRera запросит доступы только для этого пакета и его текущей подписи:\n")
+            append("• READ controller_state — кнопки/оси контроллеров, ориентация телефона и приблизительные позы ладоней.\n")
+            append("• WRITE runtime_event — события жизненного цикла и, после отдельного согласия, подробная трассировка реальных OpenXR-вызовов.\n\n")
+            append("Подробная трассировка содержит имена вызовов и расширений, XrResult/числовые коды ошибок, длительность, frame/instance/session ID, PID и thread ID, а также ограниченные параметры EGL/GLES/swapchain. ")
+            append("Журнал ограничен последними 192 событиями. Он не читает файлы игры, экран, игровые сохранения или содержимое игры.\n\n")
             if (inputAlreadyGranted) {
-                append("Старое согласие на чтение ввода сохранится; сейчас ты отдельно включаешь write-only телеметрию.\n\n")
+                append("Текущий доступ к чтению ввода сохранится. ")
+            }
+            if (lifecycleAlreadyGranted && !traceAlreadyGranted) {
+                append("Старое согласие WRITE покрывало только lifecycle-события; сейчас ты отдельно подтверждаешь более подробную trace-телеметрию.\n\n")
             }
             append("Обычные Android-кнопки в игру не внедряются: игра должна поддерживать OpenXR input или контракт EndXR. ")
-            append("Оба разрешения привязаны к подписи приложения и могут быть отозваны здесь.")
+            append("Разрешения привязаны к подписи приложения и могут быть отозваны здесь.")
         }
         AlertDialog.Builder(this)
             .setTitle(
-                if (inputAlreadyGranted) "Разрешить телеметрию EndXR?"
-                else "Разрешить ввод и телеметрию EndXR?"
+                when {
+                    lifecycleAlreadyGranted && !traceAlreadyGranted ->
+                        "Разрешить подробную трассировку EndXR?"
+                    inputAlreadyGranted -> "Обновить разрешение EndXR?"
+                    else -> "Разрешить ввод и телеметрию EndXR?"
+                }
             )
             .setMessage(message)
             .setNegativeButton("Отмена", null)

@@ -12,8 +12,8 @@ import java.security.MessageDigest
 import java.util.Locale
 
 /**
- * User-approved, package-scoped access for one app: read-only controller state
- * plus write-only runtime lifecycle telemetry.
+ * User-approved, package-scoped access for one app: read-only controller state,
+ * write-only lifecycle telemetry, and separately confirmed detailed runtime tracing.
  *
  * The providers keep signature permissions as their defaults. Explicit URI
  * grants are limited to controller_state (read) and runtime_event (write).
@@ -82,6 +82,13 @@ class EndXrInputAccessManager(context: Context) {
             EndXrInputGrantCodec.matches(it, client) && it.runtimeTelemetryGranted
         }
 
+    /** Detailed call tracing has a separate opt-in from the older lifecycle-only consent. */
+    fun isRuntimeTraceAuthorized(client: EndXrInputClient): Boolean =
+        readRecords().any {
+            EndXrInputGrantCodec.matches(it, client) &&
+                it.runtimeTelemetryGranted && it.runtimeTraceGranted
+        }
+
     /**
      * Provider hot-path check. Controller input is queried around 50 times per
      * second by the game's background worker, so avoid doing PackageManager and
@@ -90,11 +97,15 @@ class EndXrInputAccessManager(context: Context) {
     internal fun isPackageAuthorized(
         packageName: String,
         callingUid: Int,
-        requireRuntimeTelemetry: Boolean
+        requireRuntimeTelemetry: Boolean,
+        requireRuntimeTrace: Boolean = false
     ): Boolean {
         if (!EndXrInputGrantCodec.isValidPackageName(packageName)) return false
-        val cacheKey = "$packageName|$callingUid|" +
-            if (requireRuntimeTelemetry) "telemetry" else "input"
+        val cacheKey = "$packageName|$callingUid|" + when {
+            requireRuntimeTrace -> "trace"
+            requireRuntimeTelemetry -> "telemetry"
+            else -> "input"
+        }
         val now = SystemClock.elapsedRealtime()
         val cached = CALLER_ACCESS_CACHE[cacheKey]
         if (cached != null) {
@@ -110,13 +121,11 @@ class EndXrInputAccessManager(context: Context) {
         } else {
             null
         }
-        val allowed = client != null && (
-            if (requireRuntimeTelemetry) {
-                isRuntimeTelemetryAuthorized(client)
-            } else {
-                isAuthorized(client)
-            }
-        )
+        val allowed = client != null && when {
+            requireRuntimeTrace -> isRuntimeTraceAuthorized(client)
+            requireRuntimeTelemetry -> isRuntimeTelemetryAuthorized(client)
+            else -> isAuthorized(client)
+        }
         CALLER_ACCESS_CACHE[cacheKey] = CachedCallerAuthorization(allowed, now)
         return allowed
     }
@@ -197,7 +206,8 @@ class EndXrInputAccessManager(context: Context) {
                         EndXrInputGrantRecord(
                             client.packageName,
                             client.signingCertificateSha256,
-                            runtimeTelemetryGranted = true
+                            runtimeTelemetryGranted = true,
+                            runtimeTraceGranted = true
                         )
                 )
             } catch (error: Throwable) {
@@ -332,7 +342,8 @@ class EndXrInputAccessManager(context: Context) {
 internal data class EndXrInputGrantRecord(
     val packageName: String,
     val signingCertificateSha256: String,
-    val runtimeTelemetryGranted: Boolean = false
+    val runtimeTelemetryGranted: Boolean = false,
+    val runtimeTraceGranted: Boolean = false
 )
 
 internal object EndXrInputGrantCodec {
@@ -357,14 +368,15 @@ internal object EndXrInputGrantCodec {
             .distinctBy { it.packageName }
             .map {
                 it.packageName + "|" + it.signingCertificateSha256 + "|" +
-                    if (it.runtimeTelemetryGranted) "1" else "0"
+                    (if (it.runtimeTelemetryGranted) "1" else "0") + "|" +
+                    (if (it.runtimeTraceGranted && it.runtimeTelemetryGranted) "1" else "0")
             }
             .toSet()
 
     fun decode(values: Set<String>?): List<EndXrInputGrantRecord> =
         values.orEmpty().mapNotNull { value ->
             val parts = value.split('|')
-            if (parts.size !in 2..3) return@mapNotNull null
+            if (parts.size !in 2..4) return@mapNotNull null
             val packageName = parts[0]
             val fingerprint = parts[1]
             if (!isValidPackageName(packageName) || !isValidFingerprint(fingerprint)) {
@@ -377,6 +389,11 @@ internal object EndXrInputGrantCodec {
                 "1" -> true
                 else -> return@mapNotNull null
             }
-            EndXrInputGrantRecord(packageName, fingerprint, telemetryGranted)
+            val traceGranted = when (parts.getOrNull(3)) {
+                null, "0" -> false
+                "1" -> telemetryGranted
+                else -> return@mapNotNull null
+            }
+            EndXrInputGrantRecord(packageName, fingerprint, telemetryGranted, traceGranted)
         }.distinctBy { it.packageName }
 }
