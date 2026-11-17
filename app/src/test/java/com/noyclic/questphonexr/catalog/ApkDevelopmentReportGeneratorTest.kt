@@ -103,7 +103,7 @@ class ApkDevelopmentReportGeneratorTest {
         val denied = ApkDevelopmentReportGenerator.technicalReport(
             context(installedVersionCode = 24L, permissionStates = mapOf("android.permission.CAMERA" to false))
         )
-        assertTrue(denied.contains("не разрешено (или ещё не запрошено)"))
+        assertTrue(denied.contains("не разрешено (или ещё не запрошено игрой)"))
     }
 
     @Test
