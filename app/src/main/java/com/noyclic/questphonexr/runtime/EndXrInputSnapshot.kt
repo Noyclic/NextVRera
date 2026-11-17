@@ -44,7 +44,9 @@ internal data class EndXrControllerSample(
     val grip: Float = 0f,
     val stickX: Float = 0f,
     val stickY: Float = 0f,
-    val buttons: Int = 0
+    val buttons: Int = 0,
+    /** Hand-interaction aim_activate value; zero for legacy/controller rows. */
+    val aimActivate: Float = 0f
 ) {
     companion object {
         fun fromNativeRow(row: FloatArray): EndXrControllerSample {
@@ -56,7 +58,8 @@ internal data class EndXrControllerSample(
                 grip = finite(row[2]).coerceIn(0f, 1f),
                 stickX = finite(row[3]).coerceIn(-1f, 1f),
                 stickY = finite(row[4]).coerceIn(-1f, 1f),
-                buttons = finite(row[5]).coerceAtLeast(0f).roundToInt()
+                buttons = finite(row[5]).coerceAtLeast(0f).roundToInt(),
+                aimActivate = finite(row.getOrNull(6) ?: 0f).coerceIn(0f, 1f)
             ).let { sample -> if (sample.active) sample else EMPTY }
         }
 
