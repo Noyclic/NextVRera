@@ -7,7 +7,7 @@ controller rows, gestures, or joints directly. The EndXR tracking input bridge s
 provider frame and sends it through the existing shared encoder:
 
 ```text
-MediaPipe / future LiteRT adapter / future GVXRS Dock adapter
+MediaPipe baseline / MediaPipe + RTMPose hybrid / future GVXRS Dock adapter
                          |
                          v
                  HandTrackingFrame
@@ -23,7 +23,11 @@ MediaPipe / future LiteRT adapter / future GVXRS Dock adapter
               EndXR input snapshot
 ```
 
-This keeps app-facing input stable when the tracking implementation changes.
+This keeps app-facing input stable when the tracking implementation changes. The RTMPose
+path is deliberately a **hybrid refinement**, not a second standalone tracker: MediaPipe owns
+full-frame detection, hand association, handedness, world landmarks and pinch state; LiteRT
+RTMPose refines only the 2D image landmarks for a successfully prepared hand crop. When a crop
+is skipped or fails, its original MediaPipe points remain in the published hybrid frame.
 
 ## Provider state
 
