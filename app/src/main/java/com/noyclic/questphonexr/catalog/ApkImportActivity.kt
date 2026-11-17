@@ -446,6 +446,12 @@ class ApkImportActivity : ComponentActivity() {
         if (audit.componentReferences.isNotEmpty()) {
             addAuditLine(card, "VR-компоненты Android", audit.componentReferences)
         }
+        if (audit.openXrExtensionReferences.isNotEmpty()) {
+            addAuditLine(card, "OpenXR extension-строки в native-коде", audit.openXrExtensionReferences)
+        }
+        if (audit.graphicsApiMarkers.isNotEmpty()) {
+            addAuditLine(card, "Графические API-маркеры", audit.graphicsApiMarkers)
+        }
         runtimeAssessment.details.forEach { detail ->
             card.addView(text("• $detail", 11f, 0xFFAAB4C2.toInt())
                 .apply { setPadding(0, dp(4), 0, 0) })
@@ -1557,6 +1563,8 @@ class ApkImportActivity : ComponentActivity() {
             appendLine("VR-маркеры манифеста: ${audit.manifestReferences.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("VR-значения метаданных: ${audit.metadataValues.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("VR-компоненты: ${audit.componentReferences.joinToString().ifBlank { "не обнаружены" }}")
+            appendLine("OpenXR extension-строки в native-коде: ${audit.openXrExtensionReferences.joinToString().ifBlank { "не обнаружены" }}")
+            appendLine("Графические API-маркеры: ${audit.graphicsApiMarkers.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("Разрешения: ${info.requestedPermissions.joinToString().ifBlank { "не перечислены" }}")
             appendLine("Activities: ${info.activityNames.joinToString().ifBlank { "не перечислены" }}")
             appendLine("Services: ${info.serviceNames.joinToString().ifBlank { "не перечислены" }}")
