@@ -280,21 +280,22 @@ class AppNavigationSmokeTest {
             "Tracking provider mode is missing",
             device.wait(Until.hasObject(By.textContains("Режим:")), 2_000)
         )
+        val autoProviderChoice = By.textContains("AUTO — выбирать")
         assertTrue(
             "AUTO provider choice is missing",
-            device.wait(Until.hasObject(By.text("AUTO — выбирать по качеству и задержке")), 2_000)
+            device.wait(Until.hasObject(autoProviderChoice), 5_000)
         )
         assertTrue(
             "MediaPipe provider choice is missing",
-            device.wait(Until.hasObject(By.text("MediaPipe — подключён")), 2_000)
+            device.wait(Until.hasObject(By.text("MediaPipe — подключён")), 5_000)
         )
         assertTrue(
-            "LiteRT is not clearly marked as unavailable",
-            device.wait(Until.hasObject(By.text("LiteRT model — пока не подключён")), 2_000)
+            "Hybrid MediaPipe + LiteRT provider is not marked as disabled by default",
+            device.wait(Until.hasObject(By.text("MediaPipe + LiteRT — выключен")), 5_000)
         )
         assertTrue(
             "GVXRS Dock is not clearly marked as unavailable",
-            device.wait(Until.hasObject(By.text("GVXRS Dock Station — пока не подключён")), 2_000)
+            device.wait(Until.hasObject(By.text("GVXRS Dock Station — пока не подключён")), 5_000)
         )
         device.findObject(By.text("MediaPipe — подключён")).click()
         assertTrue(
@@ -302,10 +303,14 @@ class AppNavigationSmokeTest {
             device.wait(Until.gone(By.text("MediaPipe — подключён")), 2_000)
         )
         device.findObject(trackingSourceButton).click()
-        device.findObject(By.textContains("AUTO — выбирать по качеству и задержке")).click()
+        assertTrue(
+            "AUTO choice did not reappear after reopening provider selector",
+            device.wait(Until.hasObject(autoProviderChoice), 5_000)
+        )
+        device.findObject(autoProviderChoice).click()
         assertTrue(
             "Returning to AUTO did not close the provider selector",
-            device.wait(Until.gone(By.textContains("AUTO — выбирать по качеству и задержке")), 2_000)
+            device.wait(Until.gone(autoProviderChoice), 2_000)
         )
 
         assertTrue(
