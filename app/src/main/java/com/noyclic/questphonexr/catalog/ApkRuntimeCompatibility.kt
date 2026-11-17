@@ -1,6 +1,8 @@
 package com.noyclic.questphonexr.catalog
 
 import java.io.File
+import java.io.InputStream
+import java.nio.charset.StandardCharsets
 import java.util.zip.ZipFile
 import com.noyclic.questphonexr.gvr.EndGvrClassification
 import com.noyclic.questphonexr.gvr.EndGvrCompatibility
@@ -37,6 +39,8 @@ data class ApkStaticAudit(
     val manifestReferences: List<String> = emptyList(),
     val metadataValues: List<String> = emptyList(),
     val componentReferences: List<String> = emptyList(),
+    val openXrExtensionReferences: List<String> = emptyList(),
+    val graphicsApiMarkers: List<String> = emptyList(),
     val abiSummary: String = "ABI не проверен."
 )
 
@@ -55,6 +59,34 @@ data class ApkRuntimeAssessment(
  * It never executes APK code and never labels an APK as VR-compatible based on heuristics.
  */
 object ApkRuntimeCompatibility {
+    private data class ArchiveInspection(
+        val entries: List<String>,
+        val nativeStringReferences: List<String>
+    )
+
+    private companion object {
+        const val MAX_NATIVE_SCAN_BYTES_PER_LIBRARY = 16L * 1024L * 1024L
+        const val MAX_TOTAL_NATIVE_SCAN_BYTES = 64L * 1024L * 1024L
+        const val MAX_STRING_CARRY = 192
+        const val MAX_EXTENSION_REFERENCES = 48
+        val XR_EXTENSION_PATTERN = Regex("""XR_[A-Z0-9]+_[A-Za-z0-9_]+""")
+        val GRAPHICS_API_MARKERS = listOf(
+            "libvulkan.so",
+            "vkCreateInstance",
+            "vkGetInstanceProcAddr",
+            "vkQueueSubmit",
+            "vkCreateSwapchainKHR",
+            "eglCreateContext",
+            "eglSwapBuffers",
+            "glCreateShader"
+        )
+        val ENDXR_ADVERTISED_EXTENSIONS = setOf(
+            "XR_KHR_android_create_instance",
+            "XR_KHR_opengl_es_enable",
+            "XR_EXT_hand_tracking"
+        )
+    }
+
     fun inspect(
         info: ImportedApkInfo,
         archive: File,
@@ -62,16 +94,15 @@ object ApkRuntimeCompatibility {
         supportedAbis: Collection<String>,
         missingRequiredFeatures: Set<String>
     ): ApkRuntimeAssessment {
-        val entries = if (archive.isFile) runCatching {
-            ZipFile(archive).use { zip ->
-                buildList {
-                    val enumeration = zip.entries()
-                    while (enumeration.hasMoreElements()) add(enumeration.nextElement().name)
-                }
-            }
-        }.getOrDefault(emptyList()) else emptyList()
-
-        return assess(info, entries, deviceApiLevel, supportedAbis, missingRequiredFeatures)
+        val archiveInspection = inspectArchive(archive)
+        return assess(
+            info = info,
+            archiveEntries = archiveInspection.entries,
+            deviceApiLevel = deviceApiLevel,
+            supportedAbis = supportedAbis,
+            missingRequiredFeatures = missingRequiredFeatures,
+            nativeStringReferences = archiveInspection.nativeStringReferences
+        )
     }
 
     internal fun assess(
@@ -79,7 +110,8 @@ object ApkRuntimeCompatibility {
         archiveEntries: Collection<String>,
         deviceApiLevel: Int,
         supportedAbis: Collection<String>,
-        missingRequiredFeatures: Set<String>
+        missingRequiredFeatures: Set<String>,
+        nativeStringReferences: Collection<String> = emptyList()
     ): ApkRuntimeAssessment {
         val lowerEntries = archiveEntries.map { it.lowercase() }
         val nativeLibraries = lowerEntries.filter { it.startsWith("lib/") && it.endsWith(".so") }
@@ -165,6 +197,16 @@ object ApkRuntimeCompatibility {
         val componentReferences = (
             info.activityNames + info.serviceNames + info.providerNames
             ).filter(::looksLikeXrReference).distinct().sorted()
+        val openXrExtensionReferences = nativeStringReferences
+            .filter { XR_EXTENSION_PATTERN.matches(it) }
+            .distinct()
+            .sorted()
+            .take(MAX_EXTENSION_REFERENCES)
+        val graphicsApiMarkers = GRAPHICS_API_MARKERS.filter { marker ->
+            nativeStringReferences.any { it.equals(marker, ignoreCase = true) }
+        }
+        val unsupportedOpenXrExtensions = openXrExtensionReferences
+            .filterNot { it in ENDXR_ADVERTISED_EXTENSIONS }
         val packagedLibraries = nativeLibraries
             .map { it.substringAfterLast('/') }
             .distinct()
@@ -180,6 +222,8 @@ object ApkRuntimeCompatibility {
             manifestReferences = manifestReferences,
             metadataValues = info.vrMetadataValues.values.filter(::looksLikeXrReference).distinct().sorted(),
             componentReferences = componentReferences,
+            openXrExtensionReferences = openXrExtensionReferences,
+            graphicsApiMarkers = graphicsApiMarkers,
             abiSummary = abiSummary
         )
 
@@ -234,6 +278,18 @@ object ApkRuntimeCompatibility {
             }
             if (engine != "Не определён") add("Обнаруженный движок: $engine.")
             if (xrTechnologies.isNotEmpty()) add("XR-признаки: ${xrTechnologies.joinToString()}.")
+            if (graphicsApiMarkers.any { it.startsWith("vk", ignoreCase = true) || it.equals("libvulkan.so", true) }) {
+                add(
+                    "В нативных библиотеках найдены Vulkan-маркеры: ${graphicsApiMarkers.filter { it.startsWith("vk", true) || it.equals("libvulkan.so", true) }.joinToString()}. " +
+                        "Текущий EndXR предоставляет OpenGL ES binding, но не Vulkan binding. Это риск для APK, если игра выберет Vulkan как единственный графический backend; статические строки не доказывают, какой backend реально выберется."
+                )
+            }
+            if (unsupportedOpenXrExtensions.isNotEmpty()) {
+                add(
+                    "В нативных библиотеках найдены ссылки на OpenXR extensions, которые EndXR сейчас не рекламирует: ${unsupportedOpenXrExtensions.joinToString()}. " +
+                        "Это строки-маркеры, а не доказательство обязательности расширений; игра может отключить необязательные функции или отказаться от запуска, если расширение обязательно."
+                )
+            }
             addAll(EndXrRuntimeReadiness.warningsFor(xrTechnologies))
             if (questSignals.isNotEmpty()) add("Quest-признаки: ${questSignals.joinToString()}.")
             if (endGvrAssessment.gearVrMarkers.isNotEmpty()) {
@@ -245,6 +301,73 @@ object ApkRuntimeCompatibility {
         }
 
         return ApkRuntimeAssessment(route, engine, xrTechnologies, details, audit)
+    }
+
+    private fun inspectArchive(archive: File): ArchiveInspection {
+        if (!archive.isFile) return ArchiveInspection(emptyList(), emptyList())
+        return runCatching {
+            ZipFile(archive).use { zip ->
+                val entries = mutableListOf<String>()
+                val references = sortedSetOf<String>()
+                var remainingBudget = MAX_TOTAL_NATIVE_SCAN_BYTES
+                val enumeration = zip.entries()
+                while (enumeration.hasMoreElements()) {
+                    val entry = enumeration.nextElement()
+                    entries += entry.name
+                    val normalizedName = entry.name.lowercase()
+                    val isAppNativeLibrary = normalizedName.startsWith("lib/") &&
+                        normalizedName.endsWith(".so") &&
+                        !normalizedName.endsWith("/libopenxr_loader.so")
+                    if (isAppNativeLibrary && remainingBudget > 0L) {
+                        val byteLimit = minOf(
+                            MAX_NATIVE_SCAN_BYTES_PER_LIBRARY,
+                            remainingBudget
+                        )
+                        val scannedBytes = runCatching {
+                            zip.getInputStream(entry).use { input ->
+                                scanNativeLibrary(input, byteLimit, references)
+                            }
+                        }.getOrDefault(0L)
+                        remainingBudget -= scannedBytes
+                    }
+                }
+                ArchiveInspection(entries, references.toList())
+            }
+        }.getOrDefault(ArchiveInspection(emptyList(), emptyList()))
+    }
+
+    /**
+     * Scans bounded chunks only. This is a heuristic over ELF string tables and
+     * read-only data; it does not prove that a referenced API or XR extension is
+     * required, loaded, or selected at runtime.
+     */
+    private fun scanNativeLibrary(
+        input: InputStream,
+        byteLimit: Long,
+        references: MutableSet<String>
+    ): Long {
+        val buffer = ByteArray(32 * 1024)
+        var scannedBytes = 0L
+        var carry = ""
+        while (scannedBytes < byteLimit) {
+            val requested = minOf(buffer.size.toLong(), byteLimit - scannedBytes).toInt()
+            val read = input.read(buffer, 0, requested)
+            if (read <= 0) break
+            scannedBytes += read
+            val chunk = String(buffer, 0, read, StandardCharsets.ISO_8859_1)
+            val searchable = carry + chunk
+            XR_EXTENSION_PATTERN.findAll(searchable).forEach { match ->
+                if (references.count { it.startsWith("XR_") } < MAX_EXTENSION_REFERENCES) {
+                    references += match.value
+                }
+            }
+            val lower = searchable.lowercase()
+            GRAPHICS_API_MARKERS.forEach { marker ->
+                if (lower.contains(marker.lowercase())) references += marker
+            }
+            carry = searchable.takeLast(MAX_STRING_CARRY)
+        }
+        return scannedBytes
     }
 
     private fun looksLikeXrReference(value: String): Boolean {
