@@ -156,7 +156,10 @@ internal object EndXrHandInputEncoder {
         val rawTrigger = hand.pinchStrength.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
         val trigger = if (hand.isPinching) maxOf(rawTrigger, PINCH_ACTIVE_FLOOR) else rawTrigger
         val grip = HandGestureEstimator.graspStrength(hand)
-        return floatArrayOf(1f, trigger, grip, 0f, 0f, 0f)
+        val aimActivate = HandGestureEstimator.aimActivationStrength(hand)
+        // Keep the original six controller fields stable and append the separate
+        // hand-interaction aim activation value as field 7 for the IPC provider.
+        return floatArrayOf(1f, trigger, grip, 0f, 0f, 0f, aimActivate)
     }
 
     private fun encodeHand(
