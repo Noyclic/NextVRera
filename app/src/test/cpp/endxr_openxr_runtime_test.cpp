@@ -826,6 +826,16 @@ void testActionInputApiLifecycleAndNeutralState() {
     stateInfo.type = XR_TYPE_ACTION_STATE_GET_INFO;
     stateInfo.action = triggerAction;
     stateInfo.subactionPath = leftHand;
+    XrActionStateGetInfo poseGetInfo{};
+    poseGetInfo.type = XR_TYPE_ACTION_STATE_GET_INFO;
+    poseGetInfo.action = pinchPoseAction;
+    poseGetInfo.subactionPath = leftHand;
+    XrActionStatePose poseState{};
+    poseState.type = XR_TYPE_ACTION_STATE_POSE;
+    expect(getPose(session, &poseGetInfo, &poseState) == XR_SUCCESS &&
+               poseState.isActive == XR_TRUE,
+           "expose the pinch action pose while the hand-interaction profile is active");
+
     XrActionStateBoolean booleanState{};
     booleanState.type = XR_TYPE_ACTION_STATE_BOOLEAN;
     expect(getBoolean(session, &stateInfo, &booleanState) == XR_SUCCESS &&
@@ -1481,6 +1491,11 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     expect(currentProfile(session, leftHand, &profileState) == XR_SUCCESS &&
                profileState.interactionProfile == touchProfile,
            "fall back to the Touch profile when hand joints are not fresh");
+    poseState = {};
+    poseState.type = XR_TYPE_ACTION_STATE_POSE;
+    expect(getPose(session, &poseGetInfo, &poseState) == XR_SUCCESS &&
+               poseState.isActive == XR_TRUE,
+           "keep the pinch action pose active on the Touch controller profile");
     location = {};
     location.type = XR_TYPE_SPACE_LOCATION;
     expect(locateSpace(pinchSpace, localSpace, 1, &location) == XR_SUCCESS &&
