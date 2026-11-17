@@ -40,6 +40,7 @@ data class ApkStaticAudit(
     val metadataValues: List<String> = emptyList(),
     val componentReferences: List<String> = emptyList(),
     val openXrExtensionReferences: List<String> = emptyList(),
+    val openXrEntryPointReferences: List<String> = emptyList(),
     val graphicsApiMarkers: List<String> = emptyList(),
     val abiSummary: String = "ABI не проверен."
 )
@@ -84,6 +85,20 @@ object ApkRuntimeCompatibility {
         "XR_KHR_android_create_instance",
         "XR_KHR_opengl_es_enable",
         "XR_EXT_hand_tracking"
+    )
+    private val OPENXR_ENTRY_POINT_MARKERS = listOf(
+        "xrInitializeLoaderKHR",
+        "xrCreateInstance",
+        "xrGetSystem",
+        "xrCreateSession",
+        "xrCreateSwapchain",
+        "xrBeginFrame",
+        "xrEndFrame",
+        "xrLocateViews",
+        "xrSyncActions",
+        "xrGetActionStateBoolean",
+        "xrCreateHandTrackerEXT",
+        "xrLocateHandJointsEXT"
     )
 
     fun inspect(
@@ -201,6 +216,9 @@ object ApkRuntimeCompatibility {
             .distinct()
             .sorted()
             .take(MAX_EXTENSION_REFERENCES)
+        val openXrEntryPointReferences = OPENXR_ENTRY_POINT_MARKERS.filter { marker ->
+            nativeStringReferences.any { it.equals(marker, ignoreCase = true) }
+        }
         val graphicsApiMarkers = (
             GRAPHICS_API_MARKERS.filter { marker ->
                 nativeStringReferences.any { it.equals(marker, ignoreCase = true) }
@@ -226,6 +244,7 @@ object ApkRuntimeCompatibility {
             metadataValues = info.vrMetadataValues.values.filter(::looksLikeXrReference).distinct().sorted(),
             componentReferences = componentReferences,
             openXrExtensionReferences = openXrExtensionReferences,
+            openXrEntryPointReferences = openXrEntryPointReferences,
             graphicsApiMarkers = graphicsApiMarkers,
             abiSummary = abiSummary
         )
@@ -373,6 +392,9 @@ object ApkRuntimeCompatibility {
             }
             val lower = searchable.lowercase()
             GRAPHICS_API_MARKERS.forEach { marker ->
+                if (lower.contains(marker.lowercase())) references += marker
+            }
+            OPENXR_ENTRY_POINT_MARKERS.forEach { marker ->
                 if (lower.contains(marker.lowercase())) references += marker
             }
             carry = searchable.takeLast(MAX_STRING_CARRY)
