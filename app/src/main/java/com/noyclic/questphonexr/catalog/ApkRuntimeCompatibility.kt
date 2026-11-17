@@ -300,6 +300,12 @@ object ApkRuntimeCompatibility {
             }
             if (engine != "Не определён") add("Обнаруженный движок: $engine.")
             if (xrTechnologies.isNotEmpty()) add("XR-признаки: ${xrTechnologies.joinToString()}.")
+            if ("OpenXR" in xrTechnologies && openXrEntryPointReferences.isEmpty()) {
+                add(
+                    "Найден OpenXR Loader или другие OpenXR-маркеры, но известные клиентские вызовы не обнаружены в нативных библиотеках приложения. " +
+                        "Это не исключает динамический вызов через собственные обёртки или удалённые символы; реальное использование подтвердит только runtime-телеметрия."
+                )
+            }
             if (graphicsApiMarkers.any {
                 it.startsWith("vk", ignoreCase = true) ||
                     it.equals("libvulkan.so", true) ||
