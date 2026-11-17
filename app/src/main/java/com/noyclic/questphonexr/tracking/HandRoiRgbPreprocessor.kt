@@ -153,11 +153,6 @@ object HandRoiRgbPreprocessor {
         return true
     }
 
-    private fun normalizeRightAngleRotation(rotationDegrees: Int): Int? {
-        val normalized = ((rotationDegrees % 360) + 360) % 360
-        return normalized.takeIf { it == 0 || it == 90 || it == 180 || it == 270 }
-    }
-
     private fun rawDimensionsFor(crop: HandRoiCrop, rotation: Int): Pair<Int, Int> =
         when (rotation) {
             0, 180 -> crop.sourceWidthPx to crop.sourceHeightPx

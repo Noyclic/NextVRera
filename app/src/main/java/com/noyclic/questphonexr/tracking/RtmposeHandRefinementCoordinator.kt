@@ -71,7 +71,6 @@ class RtmposeHandRefinementCoordinator(
         sourceArgb.copyInto(sourcePixelSnapshot, endIndex = pixelCount)
 
         val outputHands = frame.hands.toMutableList()
-        val pendingHands = frame.hands.indices
         var nextHandIndex = 0
         var refinedCount = 0
         var skippedCount = 0
@@ -107,12 +106,12 @@ class RtmposeHandRefinementCoordinator(
                 finish()
                 return
             }
-            if (nextHandIndex >= pendingHands.count()) {
+            if (nextHandIndex >= frame.hands.size) {
                 finish()
                 return
             }
 
-            val handIndex = pendingHands[nextHandIndex++]
+            val handIndex = nextHandIndex++
             val originalHand = frame.hands[handIndex]
             val crop = HandRoiCrop.fromLandmarks(
                 points = originalHand.points,

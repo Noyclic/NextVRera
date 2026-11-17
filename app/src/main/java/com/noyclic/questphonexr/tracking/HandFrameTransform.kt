@@ -35,6 +35,18 @@ data class HandFrameTransform(
     }
 }
 
+/**
+ * Normalize an external image rotation to a supported right-angle transform.
+ *
+ * Unlike [normalizeCameraRotationDegrees], this strict helper rejects values such as 45°
+ * instead of silently treating them as unrotated. Top-down ROI crops require an exact
+ * source-to-camera mapping.
+ */
+internal fun normalizeRightAngleRotation(rotationDegrees: Int): Int? {
+    val normalized = ((rotationDegrees % 360) + 360) % 360
+    return normalized.takeIf { it == 0 || it == 90 || it == 180 || it == 270 }
+}
+
 /** Normalize CameraX rotation to the right-angle transforms supported by the bitmap pipeline. */
 internal fun normalizeCameraRotationDegrees(rotationDegrees: Int): Int {
     val normalized = ((rotationDegrees % 360) + 360) % 360
