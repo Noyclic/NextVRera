@@ -7,6 +7,7 @@ import java.util.zip.ZipFile
 import com.noyclic.questphonexr.gvr.EndGvrClassification
 import com.noyclic.questphonexr.gvr.EndGvrCompatibility
 import com.noyclic.questphonexr.runtime.EndXrRuntimeReadiness
+import com.noyclic.questphonexr.runtime.RuntimeCapabilityState
 
 internal enum class ImportedApkInstallMatch {
     NOT_INSTALLED,
@@ -39,6 +40,7 @@ data class ApkStaticAudit(
     val manifestReferences: List<String> = emptyList(),
     val metadataValues: List<String> = emptyList(),
     val componentReferences: List<String> = emptyList(),
+    val vendorRuntimeReferences: List<String> = emptyList(),
     val openXrExtensionReferences: List<String> = emptyList(),
     val openXrEntryPointReferences: List<String> = emptyList(),
     val graphicsApiMarkers: List<String> = emptyList(),
@@ -50,12 +52,28 @@ data class ApkStaticAudit(
     val abiSummary: String = "ABI не проверен."
 )
 
+enum class ApkCompatibilityFindingSeverity(val label: String) {
+    BLOCKER("БЛОКЕР"),
+    WARNING("ПРЕДУПРЕЖДЕНИЕ"),
+    INFO("ИНФОРМАЦИЯ")
+}
+
+data class ApkCompatibilityFinding(
+    val id: String,
+    val severity: ApkCompatibilityFindingSeverity,
+    val title: String,
+    val evidence: String,
+    val impact: String,
+    val nextStep: String
+)
+
 data class ApkRuntimeAssessment(
     val route: ApkLaunchRoute,
     val engine: String,
     val xrTechnologies: List<String>,
     val details: List<String>,
-    val audit: ApkStaticAudit = ApkStaticAudit()
+    val audit: ApkStaticAudit = ApkStaticAudit(),
+    val findings: List<ApkCompatibilityFinding> = emptyList()
 )
 
 /**
@@ -93,12 +111,6 @@ object ApkRuntimeCompatibility {
         "eglCreateContext",
         "eglSwapBuffers",
         "glCreateShader"
-    )
-    private val ENDXR_ADVERTISED_EXTENSIONS = setOf(
-        "XR_KHR_android_create_instance",
-        "XR_KHR_opengl_es_enable",
-        "XR_EXT_hand_tracking",
-        "XR_EXT_hand_interaction"
     )
     private val OPENXR_ENTRY_POINT_MARKERS = listOf(
         "xrInitializeLoaderKHR",
@@ -211,6 +223,20 @@ object ApkRuntimeCompatibility {
         }
 
         val metadata = info.vrMetadataKeys.map { it.lowercase() }
+        val vendorManifestReferences = (
+            info.requestedPermissions +
+                info.activityNames +
+                info.serviceNames +
+                info.providerNames +
+                info.vrMetadataKeys +
+                info.vrMetadataValues.values
+            ).filter(::looksLikeQuestRuntimeReference).distinct().sorted()
+        val vendorRuntimeReferences = (
+            vendorManifestReferences +
+                nativeLibraries.map { it.substringAfterLast('/') }
+                    .filter(::looksLikeQuestRuntimeReference) +
+                nativeStringReferences.filter(::looksLikeQuestRuntimeReference)
+            ).distinct().sorted().take(MAX_VENDOR_RUNTIME_REFERENCES)
         val questSignals = buildList {
             if (
                 info.packageName.contains("oculus", ignoreCase = true) ||
@@ -227,9 +253,13 @@ object ApkRuntimeCompatibility {
             ) add("Oculus/Meta native library")
             if (info.requiredFeatures.any {
                     it.contains("oculus", ignoreCase = true) ||
-                        it.contains("quest", ignoreCase = true)
+                        it.contains("quest", ignoreCase = true) ||
+                        it.contains("meta", ignoreCase = true)
                 }
             ) add("Quest-specific required feature")
+            if (vendorManifestReferences.isNotEmpty()) {
+                add("Meta/Oculus permission or Android component reference")
+            }
         }.distinct()
 
         val xrTechnologies = buildList {
@@ -275,6 +305,9 @@ object ApkRuntimeCompatibility {
             .distinct()
             .sorted()
             .take(MAX_EXTENSION_REFERENCES)
+        val advertisedOpenXrExtensions = EndXrRuntimeReadiness.openXrExtensions
+            .map { it.name }
+            .toSet()
         val openXrEntryPointReferences = OPENXR_ENTRY_POINT_MARKERS.filter { marker ->
             nativeStringReferences.any { it.equals(marker, ignoreCase = true) }
         }
@@ -286,7 +319,7 @@ object ApkRuntimeCompatibility {
             }
         ).distinct().sorted()
         val unsupportedOpenXrExtensions = openXrExtensionReferences
-            .filterNot { it in ENDXR_ADVERTISED_EXTENSIONS }
+            .filterNot { it in advertisedOpenXrExtensions }
         val packagedLibraries = nativeLibraries
             .map { it.substringAfterLast('/') }
             .distinct()
@@ -302,6 +335,7 @@ object ApkRuntimeCompatibility {
             manifestReferences = manifestReferences,
             metadataValues = info.vrMetadataValues.values.filter(::looksLikeXrReference).distinct().sorted(),
             componentReferences = componentReferences,
+            vendorRuntimeReferences = vendorRuntimeReferences,
             openXrExtensionReferences = openXrExtensionReferences,
             openXrEntryPointReferences = openXrEntryPointReferences,
             graphicsApiMarkers = graphicsApiMarkers,
@@ -325,7 +359,7 @@ object ApkRuntimeCompatibility {
             }
         }
         val missingFeatureWarning = missingRequiredFeatures.takeIf { it.isNotEmpty() }?.let {
-            "Отсутствуют обязательные Android-функции: ${it.sorted().joinToString()}."
+            "Не найдены заявленные uses-feature: ${it.sorted().joinToString()}. Это может повлиять на функции приложения и фильтрацию Google Play, но само по себе не доказывает запрет sideload-установки APK."
         }
 
         val route = when {
@@ -338,7 +372,6 @@ object ApkRuntimeCompatibility {
             // managed EndXR preflight. The missing feature remains a visible warning;
             // it must not hide the only route that can test the external runtime.
             "OpenXR" in xrTechnologies -> ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE
-            missingRequiredFeatures.isNotEmpty() -> ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED
             questSignals.isNotEmpty() -> ApkLaunchRoute.QUEST_RUNTIME_REQUIRED
             xrTechnologies.isNotEmpty() -> ApkLaunchRoute.XR_SOURCE_ADAPTATION_REQUIRED
             else -> ApkLaunchRoute.ANDROID_APP_CANDIDATE
@@ -411,7 +444,153 @@ object ApkRuntimeCompatibility {
             }
         }
 
-        return ApkRuntimeAssessment(route, engine, xrTechnologies, details, audit)
+        val findings = buildList {
+            if (hardBlockers.isNotEmpty()) {
+                add(
+                    ApkCompatibilityFinding(
+                        id = "device-hard-blocker",
+                        severity = ApkCompatibilityFindingSeverity.BLOCKER,
+                        title = "Обнаружено ограничение API или ABI",
+                        evidence = hardBlockers.joinToString(" "),
+                        impact = "APK использует Android API выше доступного уровня или содержит native-код без подходящего ABI.",
+                        nextStep = "Нужна совместимая сборка APK под доступный Android API и ABI телефона."
+                    )
+                )
+            }
+            if (missingRequiredFeatures.isNotEmpty()) {
+                add(
+                    ApkCompatibilityFinding(
+                        id = "missing-uses-feature",
+                        severity = ApkCompatibilityFindingSeverity.WARNING,
+                        title = "Не хватает заявленных Android-функций",
+                        evidence = missingRequiredFeatures.sorted().joinToString(),
+                        impact = "APK может установиться вручную, но игра может отключить функцию, завершиться с ошибкой или быть отфильтрована Google Play.",
+                        nextStep = "Проверить, действительно ли игра использует эти функции во время запуска; не считать этот маркер самостоятельным запретом sideload."
+                    )
+                )
+            }
+            if (questSignals.isNotEmpty()) {
+                add(
+                    ApkCompatibilityFinding(
+                        id = "meta-runtime-dependency",
+                        severity = ApkCompatibilityFindingSeverity.WARNING,
+                        title = "Найдены зависимости Meta/Oculus/Quest",
+                        evidence = vendorRuntimeReferences.ifEmpty { questSignals }.joinToString(),
+                        impact = "EndXR предоставляет собственный OpenXR Runtime, но не подменяет автоматически приватные Meta Runtime API, системные Quest-службы или vendor-permissions.",
+                        nextStep = "Сопоставить разрешения, службы и библиотеки с реальными вызовами игры; для обязательных Meta API потребуется отдельная реализация или порт."
+                    )
+                )
+            }
+            if ("OpenXR" in xrTechnologies) {
+                if (openXrExtensionReferences.isEmpty()) {
+                    add(
+                        ApkCompatibilityFinding(
+                            id = "openxr-extension-evidence-missing",
+                            severity = ApkCompatibilityFindingSeverity.INFO,
+                            title = "OpenXR extensions не подтверждены статически",
+                            evidence = "В ограниченном сканировании native-строк явные XR_* extension-имена не найдены.",
+                            impact = "Строки могли быть удалены линкером, собраны динамически или находиться в split APK; отсутствие совпадений не означает, что игра не использует расширения.",
+                            nextStep = "Проверить запрашиваемые расширения в реальном вызове xrCreateInstance через диагностический runtime-клиент."
+                        )
+                    )
+                }
+                openXrExtensionReferences.forEach { extensionName ->
+                    val capability = EndXrRuntimeReadiness.openXrExtensions.firstOrNull {
+                        it.name == extensionName
+                    }
+                    if (capability == null) {
+                        add(
+                            ApkCompatibilityFinding(
+                                id = "unsupported-openxr-extension",
+                                severity = ApkCompatibilityFindingSeverity.WARNING,
+                                title = "OpenXR extension не рекламируется EndXR",
+                                evidence = extensionName,
+                                impact = "Если игра требует это расширение при создании instance, EndXR отклонит такой запрос. Статическая строка не доказывает, что расширение обязательно.",
+                                nextStep = "Проверить, запрашивает ли игра расширение реально и обязательно ли оно; затем реализовывать только подтверждённый API-контракт."
+                            )
+                        )
+                    } else {
+                        val partial = capability.state == RuntimeCapabilityState.PARTIAL
+                        add(
+                            ApkCompatibilityFinding(
+                                id = if (partial) "partial-openxr-extension" else "available-openxr-extension",
+                                severity = if (partial) ApkCompatibilityFindingSeverity.WARNING else ApkCompatibilityFindingSeverity.INFO,
+                                title = if (partial) "OpenXR extension поддерживается частично" else "OpenXR extension есть в EndXR",
+                                evidence = extensionName,
+                                impact = capability.details,
+                                nextStep = "Считать это предварительным совпадением API, а не подтверждением работы игры; нужен внешний запуск и runtime-телеметрия."
+                            )
+                        )
+                    }
+                }
+                val vulkanMarkers = graphicsApiMarkers.filter {
+                    it.startsWith("vk", ignoreCase = true) || it.equals("libvulkan.so", true) ||
+                        it.startsWith("android.hardware.vulkan.", ignoreCase = true)
+                }
+                if (vulkanMarkers.isNotEmpty()) {
+                    add(
+                        ApkCompatibilityFinding(
+                            id = "vulkan-backend-risk",
+                            severity = ApkCompatibilityFindingSeverity.WARNING,
+                            title = "В APK найдены Vulkan-маркеры",
+                            evidence = vulkanMarkers.joinToString(),
+                            impact = "EndXR сейчас предоставляет OpenGL ES binding, а не Vulkan binding. Маркеры могут принадлежать неактивному backend; они не доказывают, что игра выберет Vulkan.",
+                            nextStep = "Проверить renderer/backend в настройках игры или runtime-логе. Для Vulkan-only игры потребуется Vulkan binding в EndXR."
+                        )
+                    )
+                }
+                add(
+                    ApkCompatibilityFinding(
+                        id = "endxr-input-limitations",
+                        severity = ApkCompatibilityFindingSeverity.WARNING,
+                        title = "Ввод EndXR пока не эквивалентен контроллерам Quest",
+                        evidence = "MediaPipe hand tracking и IPC-контракт EndXR; внешний игровой процесс ещё не подтверждён.",
+                        impact = "Поза рук приблизительная и не имеет TRACKED-флагов; настоящие 6DoF-контроллеры, физические кнопки/sticks и haptics не реализованы. Совместимость зависит от OpenXR actions и interaction profiles, которые запрашивает игра.",
+                        nextStep = "После подтверждения xrCreateInstance проверить input actions и frame telemetry; для конкретной игры может понадобиться отдельная схема bindings или адаптер."
+                    )
+                )
+                add(
+                    ApkCompatibilityFinding(
+                        id = "external-runtime-unverified",
+                        severity = ApkCompatibilityFindingSeverity.INFO,
+                        title = "Внешний запуск ещё не доказан",
+                        evidence = "Sandbox проверяет bundled runtime внутри NextVRera, но не выбор EndXR Android RuntimeBroker отдельным процессом игры.",
+                        impact = "Статический анализ не подтверждает xrCreateInstance, создание сессии или вывод игровых кадров.",
+                        nextStep = "Провести запуск установленной игры через управляемый preflight и проверить runtime-телеметрию instance/session/frame."
+                    )
+                )
+            }
+            if (route == ApkLaunchRoute.GEAR_VR_LEGACY_CANDIDATE ||
+                route == ApkLaunchRoute.LEGACY_OCULUS_MOBILE_CANDIDATE
+            ) {
+                add(
+                    ApkCompatibilityFinding(
+                        id = "legacy-oculus-runtime",
+                        severity = ApkCompatibilityFindingSeverity.WARNING,
+                        title = "Обнаружен legacy Oculus/Gear VR runtime",
+                        evidence = (audit.sdkRuntimeMarkers + audit.componentReferences)
+                            .filter { it.contains("vrapi", true) || it.contains("samsung", true) || it.contains("oculus", true) }
+                            .distinct().joinToString().ifBlank { route.label },
+                        impact = "EndXR автоматически не реализует старый Oculus Mobile/Gear VR API. EndGVR остаётся отдельным путём исследования, а не подтверждённой средой запуска.",
+                        nextStep = "Определить точный VR SDK и сервисный контракт; наличие libvrapi.so само по себе не доказывает совместимость."
+                    )
+                )
+            }
+            if (isEmpty()) {
+                add(
+                    ApkCompatibilityFinding(
+                        id = "no-static-blocker-found",
+                        severity = ApkCompatibilityFindingSeverity.INFO,
+                        title = "Явный блокер статически не найден",
+                        evidence = "APK-манифест и ограниченный анализ архива не выявили известных несовместимостей.",
+                        impact = "Это не подтверждает, что приложение запускается или поддерживает VR на телефоне.",
+                        nextStep = "Проверить обычный Android-запуск и отдельно XR-поведение на устройстве."
+                    )
+                )
+            }
+        }
+
+        return ApkRuntimeAssessment(route, engine, xrTechnologies, details, audit, findings)
     }
 
     private fun inspectArchive(archive: File): ArchiveInspection {
@@ -482,6 +661,21 @@ object ApkRuntimeCompatibility {
             carry = searchable.takeLast(MAX_STRING_CARRY)
         }
         return scannedBytes
+    }
+
+    private const val MAX_VENDOR_RUNTIME_REFERENCES = 64
+
+    private fun looksLikeQuestRuntimeReference(value: String): Boolean {
+        val normalized = value.lowercase()
+        return listOf(
+            "com.oculus.",
+            "com.meta.",
+            "oculus",
+            "quest",
+            "ovrplugin",
+            "ovrplatformloader",
+            "meta.xr"
+        ).any(normalized::contains)
     }
 
     private fun looksLikeXrReference(value: String): Boolean {

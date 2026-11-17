@@ -477,6 +477,9 @@ class ApkImportActivity : ComponentActivity() {
             if (audit.componentReferences.isNotEmpty()) {
                 addAuditLine(card, "VR-компоненты Android", audit.componentReferences)
             }
+            if (audit.vendorRuntimeReferences.isNotEmpty()) {
+                addAuditLine(card, "Meta/Oculus runtime-зависимости", audit.vendorRuntimeReferences)
+            }
             if (audit.openXrExtensionReferences.isNotEmpty()) {
                 addAuditLine(card, "OpenXR extension-строки в native-коде", audit.openXrExtensionReferences)
             }
@@ -500,6 +503,26 @@ class ApkImportActivity : ComponentActivity() {
             }
             if (audit.declaredProviders.isNotEmpty()) {
                 addAuditLine(card, "Providers", audit.declaredProviders)
+            }
+            if (runtimeAssessment.findings.isNotEmpty()) {
+                card.addView(text(
+                    "Карта совместимости с EndXR",
+                    12f, 0xFF9BC7F5.toInt(), Typeface.BOLD
+                ).apply { setPadding(0, dp(10), 0, dp(3)) })
+                runtimeAssessment.findings.forEach { finding ->
+                    val findingColor = when (finding.severity) {
+                        ApkCompatibilityFindingSeverity.BLOCKER -> 0xFFFF8F8F.toInt()
+                        ApkCompatibilityFindingSeverity.WARNING -> 0xFFFFD28A.toInt()
+                        ApkCompatibilityFindingSeverity.INFO -> 0xFF9BC7F5.toInt()
+                    }
+                    card.addView(text(
+                        "${finding.severity.label} · ${finding.title}",
+                        11f, findingColor, Typeface.BOLD
+                    ).apply { setPadding(0, dp(6), 0, dp(2)) })
+                    card.addView(text("Доказательства: ${finding.evidence}", 10f, 0xFFB8C7DB.toInt()))
+                    card.addView(text("Что это значит: ${finding.impact}", 10f, 0xFFAAB4C2.toInt()))
+                    card.addView(text("Следующий шаг: ${finding.nextStep}", 10f, 0xFFAAB4C2.toInt()))
+                }
             }
             runtimeAssessment.details.forEach { detail ->
                 card.addView(text("• $detail", 11f, 0xFFAAB4C2.toInt())
@@ -1630,6 +1653,16 @@ class ApkImportActivity : ComponentActivity() {
             appendLine("OpenXR extension-строки в native-коде: ${audit.openXrExtensionReferences.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("OpenXR-вызовы в native-коде: ${audit.openXrEntryPointReferences.joinToString().ifBlank { "не обнаружены" }}")
             appendLine("Графические API-маркеры: ${audit.graphicsApiMarkers.joinToString().ifBlank { "не обнаружены" }}")
+            appendLine("Meta/Oculus runtime-зависимости: ${audit.vendorRuntimeReferences.joinToString().ifBlank { "не обнаружены" }}")
+            appendLine()
+            appendLine("Карта совместимости с EndXR:")
+            assessment.findings.forEach { finding ->
+                appendLine("[${finding.severity.label}] ${finding.title}")
+                appendLine("  Доказательства: ${finding.evidence}")
+                appendLine("  Что это значит: ${finding.impact}")
+                appendLine("  Следующий шаг: ${finding.nextStep}")
+            }
+            appendLine()
             appendLine("Разрешения: ${info.requestedPermissions.joinToString().ifBlank { "не перечислены" }}")
             appendLine("Activities: ${info.activityNames.joinToString().ifBlank { "не перечислены" }}")
             appendLine("Services: ${info.serviceNames.joinToString().ifBlank { "не перечислены" }}")

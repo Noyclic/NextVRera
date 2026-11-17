@@ -250,7 +250,7 @@ class ApkRuntimeCompatibilityTest {
     }
 
     @Test
-    fun missingRequiredFeatureStillBlocksNonOpenXrApk() {
+    fun missingRequiredFeatureWarnsWithoutClaimingSideloadInstallIsBlocked() {
         val result = ApkRuntimeCompatibility.assess(
             info = sample(requiredFeatures = listOf("android.hardware.vr.headtracking")),
             archiveEntries = listOf("lib/arm64-v8a/libexample.so"),
@@ -259,8 +259,52 @@ class ApkRuntimeCompatibilityTest {
             missingRequiredFeatures = setOf("android.hardware.vr.headtracking")
         )
 
-        assertEquals(ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED, result.route)
-        assertTrue(result.details.any { it.contains("android.hardware.vr.headtracking") })
+        assertEquals(ApkLaunchRoute.XR_SOURCE_ADAPTATION_REQUIRED, result.route)
+        assertTrue(result.details.any { it.contains("не доказывает запрет sideload") })
+        assertTrue(result.findings.any { it.id == "missing-uses-feature" })
+        assertTrue(result.findings.none { it.severity == ApkCompatibilityFindingSeverity.BLOCKER })
+    }
+
+    @Test
+    fun detectsMetaRuntimeFromManifestPermissionsAndServicesWithoutOvrLibraries() {
+        val info = sample().copy(
+            requestedPermissions = listOf("com.oculus.permission.USE_SCENE"),
+            serviceNames = listOf("com.oculus.vr.OVRService")
+        )
+        val result = ApkRuntimeCompatibility.assess(
+            info = info,
+            archiveEntries = listOf("lib/arm64-v8a/libunity.so"),
+            deviceApiLevel = 35,
+            supportedAbis = listOf("arm64-v8a"),
+            missingRequiredFeatures = emptySet()
+        )
+
+        assertEquals(ApkLaunchRoute.QUEST_RUNTIME_REQUIRED, result.route)
+        assertTrue(result.xrTechnologies.contains("Meta/Oculus XR"))
+        assertTrue(result.audit.vendorRuntimeReferences.contains("com.oculus.permission.USE_SCENE"))
+        assertTrue(result.audit.vendorRuntimeReferences.contains("com.oculus.vr.OVRService"))
+        assertTrue(result.findings.any { it.id == "meta-runtime-dependency" })
+    }
+
+    @Test
+    fun keepsOpenXrPreflightButReportsMetaDependenciesWhenBothAppear() {
+        val info = sample().copy(
+            requestedPermissions = listOf("com.oculus.permission.HAND_TRACKING")
+        )
+        val result = ApkRuntimeCompatibility.assess(
+            info = info,
+            archiveEntries = listOf(
+                "lib/arm64-v8a/libopenxr_loader.so",
+                "lib/arm64-v8a/libunity.so"
+            ),
+            deviceApiLevel = 35,
+            supportedAbis = listOf("arm64-v8a"),
+            missingRequiredFeatures = emptySet()
+        )
+
+        assertEquals(ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE, result.route)
+        assertTrue(result.findings.any { it.id == "meta-runtime-dependency" })
+        assertTrue(result.findings.any { it.id == "external-runtime-unverified" })
     }
 
     @Test
@@ -374,6 +418,13 @@ class ApkRuntimeCompatibilityTest {
             assertTrue(result.audit.graphicsApiMarkers.contains("eglCreateContext"))
             assertTrue(result.details.any { it.contains("Vulkan-маркеры") })
             assertTrue(result.details.any { it.contains("не рекламирует") })
+            assertTrue(result.findings.any { it.id == "vulkan-backend-risk" })
+            assertTrue(result.findings.any {
+                it.id == "unsupported-openxr-extension" && it.evidence == "XR_KHR_vulkan_enable"
+            })
+            assertTrue(result.findings.any {
+                it.id == "partial-openxr-extension" && it.evidence == "XR_EXT_hand_interaction"
+            })
         } finally {
             apk.delete()
         }

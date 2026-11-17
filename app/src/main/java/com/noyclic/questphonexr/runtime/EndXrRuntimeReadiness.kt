@@ -14,11 +14,45 @@ data class RuntimeCapability(
     val details: String
 )
 
+data class RuntimeOpenXrExtensionCapability(
+    val name: String,
+    val state: RuntimeCapabilityState,
+    val details: String
+)
+
 /**
  * Conservative capability inventory for the bundled EndXR implementation.
  * In-process verification is not a claim of third-party process or headset compatibility.
  */
 object EndXrRuntimeReadiness {
+    /**
+     * Mirrors the extension names exposed by endxr_openxr_runtime.cpp.
+     * VERIFIED_IN_PROCESS covers bundled tests and Sandbox only; it does not
+     * claim RuntimeBroker selection or third-party game compatibility.
+     */
+    val openXrExtensions: List<RuntimeOpenXrExtensionCapability> = listOf(
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_android_create_instance",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Android instance creation is advertised and exercised by bundled runtime tests. External Loader/RuntimeBroker selection by a separate game process is not yet verified."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_opengl_es_enable",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "The OpenGL ES binding, session setup and swapchain path are exercised in the bundled Sandbox. Third-party game compatibility remains a separate test."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_EXT_hand_tracking",
+            RuntimeCapabilityState.PARTIAL,
+            "26 camera-estimated joints are exposed, but several joints are inferred, poses are not marked TRACKED, and external-game behavior is not yet verified."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_EXT_hand_interaction",
+            RuntimeCapabilityState.PARTIAL,
+            "Pinch, grasp and aim-activate interaction values are exposed through the current input path; physical 6DoF controllers, real controller buttons/sticks and haptics are not implemented."
+        )
+    )
+
     val capabilities: List<RuntimeCapability> = listOf(
         RuntimeCapability("loader-negotiation", "OpenXR loader negotiation",
             RuntimeCapabilityState.VERIFIED_IN_PROCESS,
