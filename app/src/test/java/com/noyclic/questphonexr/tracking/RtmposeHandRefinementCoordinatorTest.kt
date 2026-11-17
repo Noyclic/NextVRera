@@ -46,8 +46,16 @@ class RtmposeHandRefinementCoordinatorTest {
         assertEquals(HandSide.RIGHT, result.frame.hands[1].side)
         assertEquals(firstWorld, result.frame.hands[0].worldPoints)
         assertEquals(secondWorld, result.frame.hands[1].worldPoints)
+        assertEquals(original.hands[0].rawWorldPoints, result.frame.hands[0].rawWorldPoints)
+        assertEquals(original.hands[1].rawWorldPoints, result.frame.hands[1].rawWorldPoints)
         assertEquals(original.hands[0].trackingId, result.frame.hands[0].trackingId)
         assertEquals(original.hands[1].pinchStrength, result.frame.hands[1].pinchStrength, 0f)
+        assertTrue(result.frame.hands.all { it.isPinching })
+        assertTrue(result.frame.hands.all { it.pinchUsesWorldLandmarks })
+        assertTrue(result.frame.hands.all { it.pinchDistanceRatio == 0.42f })
+        assertTrue(result.frame.hands.all { it.rawTimestampMs == 120L })
+        assertEquals(result.frame.hands[0].points, result.frame.hands[0].rawPoints)
+        assertEquals(result.frame.hands[1].points, result.frame.hands[1].rawPoints)
         assertEquals(42L, result.frame.pipelineLatencyMs)
         assertEquals(24L, result.addedInferenceLatencyMs)
         assertEquals(0.5f, result.roiQualityScore!!, 0.0001f)
@@ -81,6 +89,8 @@ class RtmposeHandRefinementCoordinatorTest {
         assertEquals(1, outcome.refinedHands)
         assertEquals(1, outcome.skippedHands)
         assertEquals(original.hands[0].points, outcome.frame.hands[0].points)
+        assertEquals(original.hands[0].rawPoints, outcome.frame.hands[0].rawPoints)
+        assertEquals(original.hands[0].rawWorldPoints, outcome.frame.hands[0].rawWorldPoints)
         assertEquals(HandSide.LEFT, outcome.frame.hands[0].side)
         assertEquals(HandSide.RIGHT, outcome.frame.hands[1].side)
         assertEquals(12L, outcome.addedInferenceLatencyMs)
@@ -144,7 +154,11 @@ class RtmposeHandRefinementCoordinatorTest {
             side = side,
             worldPoints = world,
             trackingId = id,
-            rawPoints = List(21) { HandPoint(0.1f, 0.1f, 0f) }
+            pinchDistanceRatio = 0.42f,
+            pinchUsesWorldLandmarks = true,
+            rawPoints = List(21) { HandPoint(0.1f, 0.1f, 0f) },
+            rawWorldPoints = world,
+            rawTimestampMs = 120L
         )
 
     private class FakeEngine(
