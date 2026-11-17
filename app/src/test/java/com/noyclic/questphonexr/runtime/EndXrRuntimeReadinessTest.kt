@@ -13,6 +13,7 @@ class EndXrRuntimeReadinessTest {
         assertEquals(RuntimeCapabilityState.PARTIAL, byId.getValue("input-package-authorization").state)
         assertTrue(byId.getValue("controller-input").details.contains("foreground service"))
         assertTrue(byId.getValue("controller-input").details.contains("power grip"))
+        assertTrue(byId.getValue("controller-input").details.contains("continuous 0..1 finger-closure grasp strength"))
         assertTrue(byId.getValue("controller-input").details.contains("26-joint"))
         assertTrue(byId.getValue("controller-input").details.contains("can be revoked"))
         assertTrue(byId.getValue("controller-input").details.contains("does not inject"))
