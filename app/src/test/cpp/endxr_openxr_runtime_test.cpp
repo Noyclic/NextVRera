@@ -1556,6 +1556,16 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     expect(currentProfile(session, leftHand, &profileState) == XR_SUCCESS &&
                profileState.interactionProfile == handProfile,
            "keep hand interaction bindings active for a controller-style sample without joints");
+    getInfo.action = aimActivateValueAction;
+    expect(getFloat(session, &getInfo, &floatState) == XR_SUCCESS &&
+               floatState.isActive == XR_TRUE &&
+               std::abs(floatState.currentState - 0.82f) < 0.0001f,
+           "map controller trigger to aim_activate when no hand-joint stream is available");
+    getInfo.action = aimActivateReadyAction;
+    expect(getBoolean(session, &getInfo, &booleanState) == XR_SUCCESS &&
+               booleanState.isActive == XR_TRUE &&
+               booleanState.currentState == XR_TRUE,
+           "controller input keeps aim activation ready without camera joints");
     poseState = {};
     poseState.type = XR_TYPE_ACTION_STATE_POSE;
     expect(getPose(session, &poseGetInfo, &poseState) == XR_SUCCESS &&
