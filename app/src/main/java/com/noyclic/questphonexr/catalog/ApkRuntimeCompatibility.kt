@@ -42,6 +42,11 @@ data class ApkStaticAudit(
     val openXrExtensionReferences: List<String> = emptyList(),
     val openXrEntryPointReferences: List<String> = emptyList(),
     val graphicsApiMarkers: List<String> = emptyList(),
+    val requestedPermissions: List<String> = emptyList(),
+    val requiredFeatures: List<String> = emptyList(),
+    val declaredActivities: List<String> = emptyList(),
+    val declaredServices: List<String> = emptyList(),
+    val declaredProviders: List<String> = emptyList(),
     val abiSummary: String = "ABI не проверен."
 )
 
@@ -300,6 +305,11 @@ object ApkRuntimeCompatibility {
             openXrExtensionReferences = openXrExtensionReferences,
             openXrEntryPointReferences = openXrEntryPointReferences,
             graphicsApiMarkers = graphicsApiMarkers,
+            requestedPermissions = info.requestedPermissions.distinct().sorted(),
+            requiredFeatures = info.requiredFeatures.distinct().sorted(),
+            declaredActivities = info.activityNames.distinct().sorted(),
+            declaredServices = info.serviceNames.distinct().sorted(),
+            declaredProviders = info.providerNames.distinct().sorted(),
             abiSummary = abiSummary
         )
 

@@ -429,6 +429,7 @@ class ApkImportActivity : ComponentActivity() {
                 11f, 0xFFB8C7DB.toInt()
             ).apply { setPadding(0, dp(3), 0, 0) })
         }
+        addPermissionDiagnostics(card, info, installMatch == ImportedApkInstallMatch.MATCHES_IMPORTED_VERSION)
         val report = ApkCompatibilityAnalyzer.warnings(this, info)
         report.forEach { warning ->
             card.addView(text("• $warning", 12f, 0xFFFFD28A.toInt())
@@ -484,6 +485,21 @@ class ApkImportActivity : ComponentActivity() {
             }
             if (audit.graphicsApiMarkers.isNotEmpty()) {
                 addAuditLine(card, "Графические API-маркеры", audit.graphicsApiMarkers)
+            }
+            if (audit.requestedPermissions.isNotEmpty()) {
+                addAuditLine(card, "Все разрешения из AndroidManifest", audit.requestedPermissions)
+            }
+            if (audit.requiredFeatures.isNotEmpty()) {
+                addAuditLine(card, "Все uses-feature", audit.requiredFeatures)
+            }
+            if (audit.declaredActivities.isNotEmpty()) {
+                addAuditLine(card, "Activities", audit.declaredActivities)
+            }
+            if (audit.declaredServices.isNotEmpty()) {
+                addAuditLine(card, "Services", audit.declaredServices)
+            }
+            if (audit.declaredProviders.isNotEmpty()) {
+                addAuditLine(card, "Providers", audit.declaredProviders)
             }
             runtimeAssessment.details.forEach { detail ->
                 card.addView(text("• $detail", 11f, 0xFFAAB4C2.toInt())
@@ -1627,6 +1643,71 @@ class ApkImportActivity : ComponentActivity() {
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("QuestPhoneXR APK audit", report))
         Toast.makeText(this, "Полный APK-отчёт скопирован.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun addPermissionDiagnostics(
+        card: LinearLayout,
+        info: ImportedApkInfo,
+        installed: Boolean
+    ) {
+        val runtimePermissions = ApkPermissionDiagnostics.runtimePermissions(info.requestedPermissions)
+        val vendorPermissions = ApkPermissionDiagnostics.vendorPermissions(info.requestedPermissions)
+        if (runtimePermissions.isNotEmpty()) {
+            card.addView(text(
+                "Android runtime-разрешения:",
+                11f, 0xFFB8C7DB.toInt(), Typeface.BOLD
+            ).apply { setPadding(0, dp(7), 0, dp(2)) })
+            runtimePermissions.forEach { permission ->
+                val granted = installed && packageManager.checkPermission(permission, info.packageName) ==
+                    PackageManager.PERMISSION_GRANTED
+                val state = when {
+                    !installed -> "не установлено — состояние неизвестно"
+                    granted -> "разрешено"
+                    else -> "не разрешено / ещё не запрошено"
+                }
+                card.addView(text(
+                    "• $permission — $state",
+                    11f, if (granted) 0xFF8FE0B5.toInt() else 0xFFFFD28A.toInt()
+                ).apply { setPadding(dp(4), dp(2), 0, 0) })
+            }
+            if (installed && runtimePermissions.any {
+                    packageManager.checkPermission(it, info.packageName) != PackageManager.PERMISSION_GRANTED
+                }
+            ) {
+                card.addView(button("Открыть настройки разрешений игры").apply {
+                    setOnClickListener { openInstalledAppSettings(info.packageName) }
+                })
+                card.addView(text(
+                    "Системный диалог должен запросить сама игра. NextVRera не может запросить runtime-разрешение от имени другого пакета. Если окно не появляется, проверь состояние здесь и в настройках Android.",
+                    10f, 0xFFFFD28A.toInt()
+                ))
+            }
+        }
+        if (vendorPermissions.isNotEmpty()) {
+            card.addView(text(
+                "Meta / Oculus / Quest / Samsung permissions:",
+                11f, 0xFFFFD28A.toInt(), Typeface.BOLD
+            ).apply { setPadding(0, dp(7), 0, dp(2)) })
+            vendorPermissions.forEach { permission ->
+                card.addView(text("• $permission", 10f, 0xFFB8C7DB.toInt())
+                    .apply { setPadding(dp(4), dp(2), 0, 0) })
+            }
+            card.addView(text(
+                "Vendor-разрешение может быть signature/privileged и требовать системного Quest/Meta/Samsung компонента. Для него Android не обязан показывать обычное окно «Разрешить», и настройки телефона не могут выдать его произвольному приложению.",
+                10f, 0xFFFFD28A.toInt()
+            ))
+        }
+    }
+
+    private fun openInstalledAppSettings(packageName: String) {
+        runCatching {
+            startActivity(Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")
+            ))
+        }.onFailure { error ->
+            Toast.makeText(this, "Не удалось открыть настройки приложения: ${error.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun addAuditLine(container: LinearLayout, label: String, value: String) {
