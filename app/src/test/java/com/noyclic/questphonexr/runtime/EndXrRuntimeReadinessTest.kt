@@ -22,7 +22,9 @@ class EndXrRuntimeReadinessTest {
         assertEquals(RuntimeCapabilityState.NOT_IMPLEMENTED, byId.getValue("position-tracking").state)
         assertEquals(RuntimeCapabilityState.PARTIAL, byId.getValue("openxr-hand-tracking").state)
         assertTrue(byId.getValue("openxr-hand-tracking").details.contains("XR_EXT_hand_tracking"))
-        assertTrue(byId.getValue("openxr-hand-tracking").details.contains("26 joints"))
+        assertTrue(byId.getValue("openxr-hand-tracking").details.contains("XR_EXT_hand_interaction"))
+        assertTrue(byId.getValue("openxr-hand-tracking").details.contains("26 camera-estimated joints"))
+        assertTrue(byId.getValue("openxr-hand-tracking").details.contains("pinch/grasp"))
         assertTrue(byId.getValue("openxr-hand-tracking").details.contains("never TRACKED"))
         assertEquals(RuntimeCapabilityState.NOT_VERIFIED, byId.getValue("runtime-broker").state)
     }
