@@ -2316,6 +2316,28 @@ ResolvedActionPose resolveActionPose(
         if (profile == XR_NULL_PATH || profileBindings == instance->suggestedBindings.end()) {
             continue;
         }
+        std::string profileName;
+        if (!pathBelongsToInstance(session->owner, profile, &profileName)) continue;
+        const bool handInteractionProfile =
+            profileName == "/interaction_profiles/ext/hand_interaction_ext";
+
+        auto localJointPose = [&input](std::uint32_t joint) {
+            const std::size_t offset = static_cast<std::size_t>(joint) * 8u;
+            XrPosef pose{};
+            pose.position = {
+                input.handJoints[offset],
+                input.handJoints[offset + 1u],
+                input.handJoints[offset + 2u]
+            };
+            pose.orientation = {
+                input.handJoints[offset + 4u],
+                input.handJoints[offset + 5u],
+                input.handJoints[offset + 6u],
+                input.handJoints[offset + 7u]
+            };
+            return pose;
+        };
+
         for (const auto& binding : profileBindings->second) {
             if (binding.action != reinterpret_cast<XrAction>(action)) continue;
             std::string path;
@@ -2323,11 +2345,48 @@ ResolvedActionPose resolveActionPose(
                 handIndexFromPath(path) != hand) continue;
             const auto marker = path.find("/input/");
             if (marker == std::string::npos) continue;
-            const std::string component = path.substr(marker + 7);
-            if (component != "grip/pose" && component != "aim/pose") continue;
-            result.active = true;
-            result.pose = input.gripPose;
-            return result;
+            const std::string component = path.substr(marker + 7u);
+
+            if (component == "grip/pose") {
+                result.active = true;
+                result.pose = input.gripPose;
+                return result;
+            }
+
+            if (!handInteractionProfile || !input.handJointsActive) {
+                if (component == "aim/pose") {
+                    // Controller-style aim is currently estimated from the palm
+                    // orientation; a real tracked aim axis needs a distinct sensor.
+                    result.active = true;
+                    result.pose = input.gripPose;
+                    return result;
+                }
+                continue;
+            }
+
+            if (component == "aim/pose" || component == "poke_ext/pose") {
+                // Camera-derived index fingertip location and distal orientation.
+                result.active = true;
+                result.pose = composePose(
+                    input.gripPose, localJointPose(XR_HAND_JOINT_INDEX_TIP_EXT));
+                return result;
+            }
+            if (component == "pinch_ext/pose") {
+                // Place the pinch interaction at the midpoint between the thumb
+                // and index fingertips, with the index-tip orientation as a
+                // stable hand-relative orientation estimate.
+                const XrPosef thumbTip = localJointPose(XR_HAND_JOINT_THUMB_TIP_EXT);
+                const XrPosef indexTip = localJointPose(XR_HAND_JOINT_INDEX_TIP_EXT);
+                XrPosef pinchPose = indexTip;
+                pinchPose.position = {
+                    (thumbTip.position.x + indexTip.position.x) * 0.5f,
+                    (thumbTip.position.y + indexTip.position.y) * 0.5f,
+                    (thumbTip.position.z + indexTip.position.z) * 0.5f
+                };
+                result.active = true;
+                result.pose = composePose(input.gripPose, pinchPose);
+                return result;
+            }
         }
     }
     return result;
