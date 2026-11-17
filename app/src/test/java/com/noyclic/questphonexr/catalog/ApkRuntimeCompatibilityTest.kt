@@ -207,6 +207,8 @@ class ApkRuntimeCompatibilityTest {
 
         assertTrue(result.audit.nativeLibraries.contains("libopenxr_loader.so"))
         assertTrue(result.audit.sdkRuntimeMarkers.contains("libopenxr_loader.so"))
+        assertTrue(result.audit.openXrEntryPointReferences.isEmpty())
+        assertTrue(result.details.any { it.contains("клиентские вызовы не обнаружены") })
         assertTrue(result.audit.sdkRuntimeMarkers.none { it == "libvrapi.so" })
     }
 
