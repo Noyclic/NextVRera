@@ -998,12 +998,18 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                             Toast.LENGTH_LONG
                         ).show()
                     } else {
+                        val serviceRunning = EndXrHandTrackingService.isRunning()
                         Toast.makeText(
                             this@SandboxActivity,
-                            if (enabled) {
-                                "RTMPose включён для фонового трекинга. MediaPipe останется детектором и резервом."
-                            } else {
-                                "RTMPose выключен. Используется обычный MediaPipe."
+                            when {
+                                enabled && serviceRunning ->
+                                    "RTMPose включён для фонового трекинга. MediaPipe останется детектором и резервом."
+                                enabled ->
+                                    "Настройка сохранена. RTMPose запустится вместе с фоновой камерой рук."
+                                serviceRunning ->
+                                    "RTMPose выключен. Продолжает работать обычный MediaPipe."
+                                else ->
+                                    "RTMPose выключен для следующих запусков фоновой камеры."
                             },
                             Toast.LENGTH_LONG
                         ).show()

@@ -561,17 +561,21 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
     ) {
         result.fold(
             onSuccess = { outcome ->
-                if (outcome.refinedHands > 0) {
-                    EndXrTrackingInputBridge.publish(
-                        providerId = TrackingProviderId.LITERT_CUSTOM,
-                        frame = outcome.frame,
-                        qualityScore = outcome.roiQualityScore ?: 0.5f
-                    )
-                } else {
-                    publishMediaPipeFrame(outcome.frame)
-                }
+                // This is a hybrid provider, not a pure RTMPose provider. A coordinator
+                // result is always published under LITERT_CUSTOM, even when one or all
+                // crops were skipped: those hands deliberately retain their MediaPipe
+                // landmarks. This keeps MANUAL hybrid mode live and publishes empty-hand
+                // frames too, so old controller poses are cleared without waiting for TTL.
+                EndXrTrackingInputBridge.publish(
+                    providerId = TrackingProviderId.LITERT_CUSTOM,
+                    frame = outcome.frame,
+                    qualityScore = outcome.roiQualityScore
+                        ?: RtmposeHandRefinementCoordinator.DEFAULT_DETECTOR_CONFIDENCE
+                )
             },
             onFailure = { error ->
+                // A failed refinement pipeline is a provider failure, not a successful
+                // hybrid observation. Only AUTO may choose MediaPipe independently.
                 Log.w(TAG, "RTMPose frame failed; retaining MediaPipe output", error)
                 publishMediaPipeFrame(fallbackFrame)
             }
