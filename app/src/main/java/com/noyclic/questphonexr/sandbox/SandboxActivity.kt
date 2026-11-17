@@ -1743,9 +1743,11 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             .setTitle("Установка модели RTMPose-Hand")
             .setMessage(
                 "Загрузка: около 27.8 МБ. Файл будет сохранён в приватном хранилище " +
-                    "и проверен по SHA-256. Это только установка модели: LiteRT пока не " +
-                    "подменяет MediaPipe и не включается в AUTO. Для инференса ещё нужна " +
-                    "проверка GPU на этом устройстве."
+                    "и проверен по SHA-256. MediaPipe останется детектором рук и источником " +
+                    "3D-позы/жестов; RTMPose через LiteRT уточняет только 2D-координаты точек. " +
+                    "После проверки модели и успешной GPU-инициализации гибрид станет доступен " +
+                    "для ручного выбора и оценки в AUTO. Совместимость GPU на этом устройстве " +
+                    "проверяется отдельно."
             )
             .setNegativeButton("Отмена", null)
             .setPositiveButton("Скачать") { _, _ ->
@@ -1903,9 +1905,11 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                                     "Выходы: ${info.outputElementCounts.joinToString()}\\n" +
                                     "Замер: ${benchmark.sampleCount} прогонов\\n" +
                                     benchmarkText +
-                                    "\\n\\nЭто измерение одной модели без CameraX, ROI и второго crop. " +
-                                    "Оно не равно FPS приложения. Реальные landmarks ещё не подключены " +
-                                    "к камере и AUTO; MediaPipe остаётся активным."
+                                    "\\n\\nЭто только изолированный замер одного crop, а не FPS приложения и не " +
+                                    "полная задержка CameraX → EndXR. Гибрид уже подключён: MediaPipe " +
+                                    "обнаруживает руки и сохраняет 3D-позу, handedness и pinch; RTMPose " +
+                                    "уточняет 2D landmarks. Проверь реальную задержку, пропуски кадров " +
+                                    "и устойчивость двух рук на самом устройстве."
                             )
                             .setNegativeButton("Оставить загруженным", null)
                             .setPositiveButton("Освободить GPU") { _, _ ->
