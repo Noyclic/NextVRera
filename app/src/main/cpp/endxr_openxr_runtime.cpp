@@ -2109,6 +2109,67 @@ XrPath currentProfileForHand(XrSession_T* session, int hand) {
         });
     return profiles.empty() ? XR_NULL_PATH : profiles.front().second;
 }
+float handAimActivationStrength(const XrControllerInputSample& input) {
+    if (!input.handJointsActive) return 0.0f;
+    auto jointPosition = [&input](std::uint32_t joint) {
+        const std::size_t offset = static_cast<std::size_t>(joint) * 8u;
+        return XrVector3f{
+            input.handJoints[offset],
+            input.handJoints[offset + 1u],
+            input.handJoints[offset + 2u]
+        };
+    };
+    auto distance = [](const XrVector3f& a, const XrVector3f& b) {
+        const float dx = a.x - b.x;
+        const float dy = a.y - b.y;
+        const float dz = a.z - b.z;
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+    auto foldRatio = [&](std::uint32_t metacarpal, std::uint32_t tip, float* ratio) {
+        if (ratio == nullptr) return false;
+        const XrVector3f palm = jointPosition(XR_HAND_JOINT_PALM_EXT);
+        const XrVector3f base = jointPosition(metacarpal);
+        const XrVector3f fingertip = jointPosition(tip);
+        const float palmLength = distance(palm, base);
+        const float foldedLength = distance(base, fingertip);
+        if (!std::isfinite(palmLength) || !std::isfinite(foldedLength) ||
+            palmLength < 0.015f || foldedLength < 0.001f || foldedLength > 0.5f) {
+            return false;
+        }
+        *ratio = foldedLength / palmLength;
+        return std::isfinite(*ratio) && *ratio > 0.1f && *ratio < 6.0f;
+    };
+
+    float indexFold = 0.0f;
+    if (!foldRatio(
+            XR_HAND_JOINT_INDEX_METACARPAL_EXT,
+            XR_HAND_JOINT_INDEX_TIP_EXT,
+            &indexFold)) {
+        return 0.0f;
+    }
+
+    // EndXR's runtime-defined aim gesture is a pointing index finger while
+    // the other long fingers remain curled. This is intentionally independent
+    // from pinch_ext/value and grasp_ext/value.
+    const float indexExtended = std::clamp((indexFold - 1.0f) / 0.65f, 0.0f, 1.0f);
+    constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 3> supportFingers{{
+        {XR_HAND_JOINT_MIDDLE_METACARPAL_EXT, XR_HAND_JOINT_MIDDLE_TIP_EXT},
+        {XR_HAND_JOINT_RING_METACARPAL_EXT, XR_HAND_JOINT_RING_TIP_EXT},
+        {XR_HAND_JOINT_LITTLE_METACARPAL_EXT, XR_HAND_JOINT_LITTLE_TIP_EXT}
+    }};
+    float supportCurl = 0.0f;
+    std::uint32_t validSupportCount = 0;
+    for (const auto& finger : supportFingers) {
+        float ratio = 0.0f;
+        if (!foldRatio(finger.first, finger.second, &ratio)) continue;
+        supportCurl += std::clamp((1.60f - ratio) / 0.95f, 0.0f, 1.0f);
+        ++validSupportCount;
+    }
+    if (validSupportCount < 2) return 0.0f;
+    supportCurl /= static_cast<float>(validSupportCount);
+    return std::clamp(indexExtended * supportCurl, 0.0f, 1.0f);
+}
+
 struct ResolvedActionInput {
     bool active = false, booleanValue = false;
     float scalarValue = 0.0f;
@@ -2158,8 +2219,15 @@ ResolvedActionInput resolveActionInput(XrSession_T* session, XrAction_T* action,
             XrVector2f vector{input.stickX, input.stickY};
             if (component == "select/click" || component == "trigger/click" ||
                 component == "select/value" || component == "trigger/value" ||
-                component == "pinch_ext/value" || component == "aim_activate_ext/value") {
+                component == "pinch_ext/value") {
                 scalar = input.trigger; pressed = scalar >= 0.5f;
+            } else if (component == "aim_activate_ext/value") {
+                // Hand-tracking input uses an independent index-point gesture.
+                // Controller-only input maps aim activation to its trigger.
+                scalar = input.handJointsActive
+                    ? handAimActivationStrength(input)
+                    : input.trigger;
+                pressed = scalar >= 0.5f;
             } else if (component == "squeeze/click" || component == "grip/click" ||
                        component == "squeeze/value" || component == "grip/value" ||
                        component == "grasp_ext/value") {
