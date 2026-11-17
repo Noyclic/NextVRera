@@ -5,6 +5,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -340,6 +342,41 @@ class ApkRuntimeCompatibilityTest {
             assertTrue(result.audit.graphicsApiMarkers.contains("eglCreateContext"))
             assertTrue(result.details.any { it.contains("Vulkan-маркеры") })
             assertTrue(result.details.any { it.contains("не рекламирует") })
+        } finally {
+            apk.delete()
+        }
+    }
+
+    @Test
+    fun reusesArchiveScanForRepeatedLibraryRendersAndInvalidatesChangedFile() {
+        val apk = File.createTempFile("nextvrera-audit-cache-", ".apk")
+        try {
+            ZipOutputStream(apk.outputStream().buffered()).use { zip ->
+                zip.putNextEntry(ZipEntry("lib/arm64-v8a/libgame.so"))
+                zip.write("xrCreateInstance XR_KHR_vulkan_enable".toByteArray())
+                zip.closeEntry()
+            }
+            val info = sample()
+            val abis = listOf("arm64-v8a")
+            val missing = emptySet<String>()
+
+            ApkRuntimeCompatibility.inspect(
+                info = info,
+                archive = apk,
+                deviceApiLevel = 35,
+                supportedAbis = abis,
+                missingRequiredFeatures = missing
+            )
+            assertNotNull(
+                "The completed scan should be available to the next library render without ZIP I/O",
+                ApkRuntimeCompatibility.cachedAssessment(info, apk, 35, abis, missing)
+            )
+
+            assertTrue("Could not change the test archive timestamp", apk.setLastModified(apk.lastModified() + 5_000L))
+            assertNull(
+                "A changed archive must not reuse a stale static audit",
+                ApkRuntimeCompatibility.cachedAssessment(info, apk, 35, abis, missing)
+            )
         } finally {
             apk.delete()
         }
