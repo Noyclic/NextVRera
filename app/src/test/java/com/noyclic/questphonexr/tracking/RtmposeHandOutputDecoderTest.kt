@@ -97,6 +97,19 @@ class RtmposeHandOutputDecoderTest {
                 )
             ).reason
         )
+        val badXOutput = base.copy(
+            simccX = base.simccX.copy(
+                values = base.simccX.values.copyOf().also { it[21 * 512 - 1] = Float.POSITIVE_INFINITY }
+            )
+        )
+        assertEquals(
+            RtmposeHandDecodeRejection.NON_FINITE_OUTPUT,
+            assertRejected(
+                RtmposeHandOutputDecoder.decode(
+                    badXOutput, crop, 1L, roiConfidence = 0.8f
+                )
+            ).reason
+        )
         assertEquals(
             RtmposeHandDecodeRejection.INVALID_FRAME_TIMESTAMP,
             assertRejected(
