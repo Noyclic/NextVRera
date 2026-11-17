@@ -2,6 +2,7 @@ package com.noyclic.questphonexr.sandbox
 
 import com.noyclic.questphonexr.tracking.HandTrackingMetricsSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -92,6 +93,17 @@ class HandTrackingDiagnosticianTest {
     @Test fun workingModelWithoutHandsWarns() {
         val result = HandTrackingDiagnostician.diagnose(input(hands = 0))
         assertEquals("MediaPipe работает, но руки не найдены", result.verdict)
+    }
+
+    @Test fun noHandsHintNamesTheCameraSelectedByTheUser() {
+        val rearCameraReport = HandTrackingDiagnostician.diagnose(input(hands = 0)).render()
+        assertTrue(rearCameraReport.contains("перед задней камерой"))
+
+        val frontCameraReport = HandTrackingDiagnostician.diagnose(
+            input(hands = 0, frontEnabled = true)
+        ).render()
+        assertTrue(frontCameraReport.contains("перед фронтальной камерой"))
+        assertFalse(frontCameraReport.contains("перед задней камерой"))
     }
 
 
