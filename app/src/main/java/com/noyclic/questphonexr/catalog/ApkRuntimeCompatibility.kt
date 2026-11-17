@@ -66,6 +66,14 @@ object ApkRuntimeCompatibility {
         val nativeStringReferences: List<String>
     )
 
+    // APK native-library scans are expensive. Keep a small process-wide LRU so
+    // returning to the library never decompresses the same archive on every resume.
+    private val archiveInspectionCache = object : LinkedHashMap<String, ArchiveInspection>(12, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ArchiveInspection>?): Boolean =
+            size > MAX_CACHED_ARCHIVES
+    }
+
+    private const val MAX_CACHED_ARCHIVES = 8
     private const val MAX_NATIVE_SCAN_BYTES_PER_LIBRARY = 16L * 1024L * 1024L
     private const val MAX_TOTAL_NATIVE_SCAN_BYTES = 64L * 1024L * 1024L
     private const val MAX_STRING_CARRY = 192
@@ -109,15 +117,58 @@ object ApkRuntimeCompatibility {
         supportedAbis: Collection<String>,
         missingRequiredFeatures: Set<String>
     ): ApkRuntimeAssessment {
-        val archiveInspection = inspectArchive(archive)
-        return assess(
-            info = info,
-            archiveEntries = archiveInspection.entries,
-            deviceApiLevel = deviceApiLevel,
-            supportedAbis = supportedAbis,
-            missingRequiredFeatures = missingRequiredFeatures,
-            nativeStringReferences = archiveInspection.nativeStringReferences
+        val archiveInspection = cachedArchiveInspection(archive) ?: inspectArchive(archive).also {
+            rememberArchiveInspection(archive, it)
+        }
+        return assessmentFrom(
+            info,
+            archiveInspection,
+            deviceApiLevel,
+            supportedAbis,
+            missingRequiredFeatures
         )
+    }
+
+    /** Returns a cached assessment without doing ZIP or native-library I/O. */
+    fun cachedAssessment(
+        info: ImportedApkInfo,
+        archive: File,
+        deviceApiLevel: Int,
+        supportedAbis: Collection<String>,
+        missingRequiredFeatures: Set<String>
+    ): ApkRuntimeAssessment? {
+        val cached = cachedArchiveInspection(archive) ?: return null
+        return assessmentFrom(info, cached, deviceApiLevel, supportedAbis, missingRequiredFeatures)
+    }
+
+    private fun assessmentFrom(
+        info: ImportedApkInfo,
+        archiveInspection: ArchiveInspection,
+        deviceApiLevel: Int,
+        supportedAbis: Collection<String>,
+        missingRequiredFeatures: Set<String>
+    ) = assess(
+        info = info,
+        archiveEntries = archiveInspection.entries,
+        deviceApiLevel = deviceApiLevel,
+        supportedAbis = supportedAbis,
+        missingRequiredFeatures = missingRequiredFeatures,
+        nativeStringReferences = archiveInspection.nativeStringReferences
+    )
+
+    private fun archiveCacheKey(archive: File): String? = runCatching {
+        if (!archive.isFile) return null
+        "${archive.canonicalPath}|${archive.length()}|${archive.lastModified()}"
+    }.getOrNull()
+
+    private fun cachedArchiveInspection(archive: File): ArchiveInspection? {
+        val key = archiveCacheKey(archive) ?: return null
+        return synchronized(archiveInspectionCache) { archiveInspectionCache[key] }
+    }
+
+    private fun rememberArchiveInspection(archive: File, inspection: ArchiveInspection) {
+        val key = archiveCacheKey(archive) ?: return
+        synchronized(archiveInspectionCache) { archiveInspectionCache[key] = inspection }
     }
 
     internal fun assess(
