@@ -627,7 +627,12 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                             if (activeOrPending && generation == cameraGeneration) {
                                 val refinementActive =
                                     rtmposeRefinementEnabled && rtmposeRefinementCoordinator != null
-                                if (refinementActive && frame.hands.isEmpty()) {
+                                if (refinementActive) {
+                                    // The hybrid provider must stay live even when this frame
+                                    // cannot be cropped (the GPU is busy, the source pixels were
+                                    // unavailable, or MediaPipe found no landmarks to refine).
+                                    // Such a frame is still a valid MediaPipe observation; only
+                                    // its 2D points were not refined by RTMPose.
                                     EndXrTrackingInputBridge.publish(
                                         providerId = TrackingProviderId.LITERT_CUSTOM,
                                         frame = frame,
