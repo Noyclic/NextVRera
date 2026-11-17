@@ -18,6 +18,7 @@ EndXR is an early, minimal runtime implementation. It is not yet a conformant, g
 - A user-started camera foreground service that can keep CameraX and MediaPipe tracking active while Sandbox is paused and another app is in the foreground, provided the user starts it while QuestPhoneXR is visible and grants camera permission. Android displays a persistent notification while the camera remains active. The service uses `START_STICKY` so Android can recreate it after reclaiming the process, and it restores the last selected camera settings; an explicit user stop remains non-sticky.
 - MediaPipe pinch trigger, natural three-or-more-finger power grip, and approximate left/right palm poses are mapped to the existing controller Action sample. Camera-derived stick axes and physical face buttons remain neutral.
 - A basic `XR_EXT_hand_tracking` runtime path: tracker create/destroy and `xrLocateHandJointsEXT` for 26 joints per hand. MediaPipe's 21 landmarks are mapped to 26 OpenXR joints; the palm and four finger metacarpal bases are estimated. The Android provider transports fixed-size joint samples, and the native runtime supplies estimated positions/orientations with `POSITION_VALID` and `ORIENTATION_VALID`, deliberately without `TRACKED` flags.
+- Partial `XR_EXT_hand_interaction` support: the runtime advertises the instance extension and accepts the `/interaction_profiles/ext/hand_interaction_ext` profile for both hands. Pinch/grasp values and readiness inputs are mapped from the current MediaPipe controller/joint sample. Grip uses the estimated palm pose; pinch uses a thumb/index tip midpoint; poke uses the index fingertip. These are camera-derived estimates, not independently tracked controller poses.
 - Phone head orientation from the rotation-vector sensor. This is orientation-only; phone translation is not measured.
 - Haptic entry points validate their inputs but return `XR_ERROR_FEATURE_UNSUPPORTED` until a device haptic transport exists.
 - In-process Sandbox diagnostics have exercised 30 consecutive stereo projection frames and read back the expected left/right colors on the Sandbox EGL surface.
@@ -44,7 +45,7 @@ EndXR does not currently provide:
 - Verified active-runtime selection through RuntimeBroker on the target physical phone.
 - Verified third-party game GLES session, swapchain and rendered-frame interoperability on the Redmi Note 13 4G.
 - 6DoF positional tracking.
-- Independently measured metric 6DoF hand/controller tracking. The basic `XR_EXT_hand_tracking` extension path is implemented, but continuous delivery to a third-party game and compatibility on the target phone have not been verified. It supplies estimated camera-derived joints, not independently tracked metric joints.
+- Independently measured metric 6DoF hand/controller tracking. `XR_EXT_hand_tracking` and partial `XR_EXT_hand_interaction` paths are implemented, but continuous delivery to a third-party game and compatibility on the target phone have not been verified. Joint, pinch and poke poses are camera-derived estimates, not independently tracked metric poses.
 - Haptic output transport.
 - Global Android gamepad capture while another application owns focus, or system-wide input injection into unrelated apps.
 - Meta/Oculus Android runtime services required by many Quest-only APKs.
@@ -61,7 +62,7 @@ A successful `xrCreateInstance` will still not mean that a particular game is pl
 5. **OpenXR Action API surface** — initial core action, path, attach, sync and state-query entry points are implemented and host-tested.
 6. **Sandbox input bridge** — left/right MediaPipe pinch/power-grip samples, estimated palm poses and 26-joint hand samples are mapped to the Android IPC snapshot. Estimated poses/joints are not marked `TRACKED`.
 7. **Cross-process input IPC** — snapshot provider and native runtime polling are implemented. Signature-level default read access is enforced; one-package, read-only URI grants include explicit confirmation, signer binding, startup reconciliation and revocation. External-game query and continuous physical-device input still need testing.
-8. **Basic OpenXR hand skeleton** — `XR_EXT_hand_tracking` tracker lifecycle and `xrLocateHandJointsEXT` are implemented natively; camera-derived joints are estimates and external-app/device behavior remains unverified.
+8. **OpenXR hand input** — `XR_EXT_hand_tracking` tracker lifecycle plus partial `XR_EXT_hand_interaction` pinch/grasp/readiness and grip/pinch/poke/aim pose mappings are implemented natively; values and poses remain camera-derived estimates and external-app/device behavior remains unverified.
 9. **6DoF position tracking** — not implemented; camera-derived hand joints do not establish room-scale positional tracking.
 10. **Third-party session/frame interoperability** — not yet verified on the target phone.
 11. **Game-by-game APK support** — not yet verified.
