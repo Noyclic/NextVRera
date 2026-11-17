@@ -48,6 +48,7 @@ class ApkImportActivity : ComponentActivity() {
     private lateinit var statusView: TextView
     private val store by lazy { ImportedApkStore(this) }
     private val importExecutor = Executors.newSingleThreadExecutor()
+    private val pendingAuditIds = mutableSetOf<String>()
     private var pendingLaunchReport: String? = null
     private var pendingLaunchTitle: String = "Диагностика запуска Quest APK"
     private var awaitingBrokerReturnForEndXrId: String? = null
@@ -347,10 +348,42 @@ class ApkImportActivity : ComponentActivity() {
             ).apply { setPadding(0, dp(16), 0, dp(16)) })
             return
         }
-        entries.forEach { info -> entriesContainer.addView(createEntryCard(info)) }
+        entries.forEach { info ->
+            val archive = File(filesDir, "imported-apks/${info.fileName}")
+            val missing = info.requiredFeatures.filterNot {
+                packageManager.hasSystemFeature(it)
+            }.toSet()
+            val assessment = ApkRuntimeCompatibility.cachedAssessment(
+                info = info,
+                archive = archive,
+                deviceApiLevel = android.os.Build.VERSION.SDK_INT,
+                supportedAbis = android.os.Build.SUPPORTED_ABIS.toList(),
+                missingRequiredFeatures = missing
+            )
+            entriesContainer.addView(createEntryCard(info, assessment))
+            if (assessment == null && archive.isFile) scheduleRuntimeAssessment(info)
+        }
     }
 
-    private fun createEntryCard(info: ImportedApkInfo): LinearLayout {
+    private fun scheduleRuntimeAssessment(info: ImportedApkInfo) {
+        if (!pendingAuditIds.add(info.id)) return
+        runCatching {
+            importExecutor.execute {
+                runCatching { assessImportedApk(info) }
+                runOnUiThread {
+                    pendingAuditIds.remove(info.id)
+                    if (!isFinishing && !isDestroyed) renderEntries()
+                }
+            }
+        }.onFailure {
+            pendingAuditIds.remove(info.id)
+        }
+    }
+
+    private fun createEntryCard(
+        info: ImportedApkInfo,
+        runtimeAssessment: ApkRuntimeAssessment?
+    ): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = rounded(0xFF202630.toInt(), dp(12).toFloat())
@@ -380,7 +413,8 @@ class ApkImportActivity : ComponentActivity() {
         ).apply { setPadding(0, dp(7), 0, dp(3)) })
         val hasLauncherActivity = packageManager.getLaunchIntentForPackage(info.packageName) != null
         val canLaunchImportedVersion =
-            installMatch == ImportedApkInstallMatch.MATCHES_IMPORTED_VERSION && hasLauncherActivity
+            installMatch == ImportedApkInstallMatch.MATCHES_IMPORTED_VERSION &&
+                hasLauncherActivity && runtimeAssessment != null
         card.addView(text(
             "Android API: минимум ${info.minSdk}, target ${info.targetSdk}",
             12f, 0xFFB8C7DB.toInt()
@@ -405,59 +439,60 @@ class ApkImportActivity : ComponentActivity() {
         val missingFeatures = info.requiredFeatures.filterNot {
             packageManager.hasSystemFeature(it)
         }.toSet()
-        val runtimeAssessment = ApkRuntimeCompatibility.inspect(
-            info = info,
-            archive = apkFile,
-            deviceApiLevel = android.os.Build.VERSION.SDK_INT,
-            supportedAbis = android.os.Build.SUPPORTED_ABIS.toList(),
-            missingRequiredFeatures = missingFeatures
-        )
-        card.addView(text(
-            "Маршрут совместимости: ${runtimeAssessment.route.label}",
-            12f,
-            if (runtimeAssessment.route == ApkLaunchRoute.ANDROID_APP_CANDIDATE) 0xFF8FE0B5.toInt() else 0xFFFFD28A.toInt(),
-            Typeface.BOLD
-        ).apply { setPadding(0, dp(9), 0, dp(3)) })
-        card.addView(text(
-            "Движок: ${runtimeAssessment.engine}" +
-                (runtimeAssessment.xrTechnologies.takeIf { it.isNotEmpty() }?.joinToString(
-                    prefix = " · XR: "
-                ) ?: ""),
-            11f,
-            0xFFB8C7DB.toInt()
-        ))
-        val audit = runtimeAssessment.audit
-        addAuditLine(card, "SHA-256", info.sha256.ifBlank { "не вычислен (старая запись)" })
-        addAuditLine(card, "ABI-проверка", audit.abiSummary)
-        addAuditLine(
-            card,
-            "Нативные библиотеки",
-            audit.nativeLibraries.takeIf { it.isNotEmpty() }?.joinToString() ?: "не обнаружены"
-        )
-        if (audit.sdkRuntimeMarkers.isNotEmpty()) {
-            addAuditLine(card, "SDK / Runtime следы", audit.sdkRuntimeMarkers)
-        }
-        if (audit.manifestReferences.isNotEmpty()) {
-            addAuditLine(card, "VR-записи манифеста", audit.manifestReferences)
-        }
-        if (audit.metadataValues.isNotEmpty()) {
-            addAuditLine(card, "VR-значения метаданных", audit.metadataValues)
-        }
-        if (audit.componentReferences.isNotEmpty()) {
-            addAuditLine(card, "VR-компоненты Android", audit.componentReferences)
-        }
-        if (audit.openXrExtensionReferences.isNotEmpty()) {
-            addAuditLine(card, "OpenXR extension-строки в native-коде", audit.openXrExtensionReferences)
-        }
-        if (audit.openXrEntryPointReferences.isNotEmpty()) {
-            addAuditLine(card, "OpenXR-вызовы в native-коде", audit.openXrEntryPointReferences)
-        }
-        if (audit.graphicsApiMarkers.isNotEmpty()) {
-            addAuditLine(card, "Графические API-маркеры", audit.graphicsApiMarkers)
-        }
-        runtimeAssessment.details.forEach { detail ->
-            card.addView(text("• $detail", 11f, 0xFFAAB4C2.toInt())
-                .apply { setPadding(0, dp(4), 0, 0) })
+        if (runtimeAssessment == null) {
+            card.addView(text(
+                "Анализ APK выполняется в фоне. Можно продолжать пользоваться библиотекой — экран не будет ждать сканирования нативных библиотек.",
+                12f,
+                0xFF9BC7F5.toInt()
+            ).apply { setPadding(0, dp(9), 0, dp(3)) })
+        } else {
+            card.addView(text(
+                "Маршрут совместимости: ${runtimeAssessment.route.label}",
+                12f,
+                if (runtimeAssessment.route == ApkLaunchRoute.ANDROID_APP_CANDIDATE) 0xFF8FE0B5.toInt() else 0xFFFFD28A.toInt(),
+                Typeface.BOLD
+            ).apply { setPadding(0, dp(9), 0, dp(3)) })
+            card.addView(text(
+                "Движок: ${runtimeAssessment.engine}" +
+                    (runtimeAssessment.xrTechnologies.takeIf { it.isNotEmpty() }?.joinToString(
+                        prefix = " · XR: "
+                    ) ?: ""),
+                11f,
+                0xFFB8C7DB.toInt()
+            ))
+            val audit = runtimeAssessment.audit
+            addAuditLine(card, "SHA-256", info.sha256.ifBlank { "не вычислен (старая запись)" })
+            addAuditLine(card, "ABI-проверка", audit.abiSummary)
+            addAuditLine(
+                card,
+                "Нативные библиотеки",
+                audit.nativeLibraries.takeIf { it.isNotEmpty() }?.joinToString() ?: "не обнаружены"
+            )
+            if (audit.sdkRuntimeMarkers.isNotEmpty()) {
+                addAuditLine(card, "SDK / Runtime следы", audit.sdkRuntimeMarkers)
+            }
+            if (audit.manifestReferences.isNotEmpty()) {
+                addAuditLine(card, "VR-записи манифеста", audit.manifestReferences)
+            }
+            if (audit.metadataValues.isNotEmpty()) {
+                addAuditLine(card, "VR-значения метаданных", audit.metadataValues)
+            }
+            if (audit.componentReferences.isNotEmpty()) {
+                addAuditLine(card, "VR-компоненты Android", audit.componentReferences)
+            }
+            if (audit.openXrExtensionReferences.isNotEmpty()) {
+                addAuditLine(card, "OpenXR extension-строки в native-коде", audit.openXrExtensionReferences)
+            }
+            if (audit.openXrEntryPointReferences.isNotEmpty()) {
+                addAuditLine(card, "OpenXR-вызовы в native-коде", audit.openXrEntryPointReferences)
+            }
+            if (audit.graphicsApiMarkers.isNotEmpty()) {
+                addAuditLine(card, "Графические API-маркеры", audit.graphicsApiMarkers)
+            }
+            runtimeAssessment.details.forEach { detail ->
+                card.addView(text("• $detail", 11f, 0xFFAAB4C2.toInt())
+                    .apply { setPadding(0, dp(4), 0, 0) })
+            }
         }
         card.addView(button("Скопировать полный отчёт").apply {
             setOnClickListener { copyAuditReport(info, runtimeAssessment) }
