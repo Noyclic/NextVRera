@@ -84,7 +84,8 @@ object ApkRuntimeCompatibility {
     private val ENDXR_ADVERTISED_EXTENSIONS = setOf(
         "XR_KHR_android_create_instance",
         "XR_KHR_opengl_es_enable",
-        "XR_EXT_hand_tracking"
+        "XR_EXT_hand_tracking",
+        "XR_EXT_hand_interaction"
     )
     private val OPENXR_ENTRY_POINT_MARKERS = listOf(
         "xrInitializeLoaderKHR",
