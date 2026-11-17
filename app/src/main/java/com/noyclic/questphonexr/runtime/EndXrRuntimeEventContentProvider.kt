@@ -52,7 +52,8 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
         // may submit an event from another process while NextVRera is reading.
         val row = synchronized(LOCK) {
             val sequence = prefs.getLong(KEY_SEQUENCE, 0L)
-            if (sequence <= 0L) {
+            val traceJsonLines = prefs.getString(KEY_TRACE_JSONL, "").orEmpty()
+            if (sequence <= 0L && traceJsonLines.isBlank()) {
                 null
             } else {
                 arrayOf<Any?>(
@@ -69,7 +70,11 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
                     prefs.getInt(KEY_INSTANCE_SEEN, 0),
                     prefs.getInt(KEY_SESSION_SEEN, 0),
                     prefs.getInt(KEY_SESSION_EVER_RUNNING, 0),
-                    prefs.getLong(KEY_FRAME_COUNT, 0L)
+                    prefs.getLong(KEY_FRAME_COUNT, 0L),
+                    traceJsonLines,
+                    prefs.getInt(KEY_TRACE_COUNT, 0),
+                    prefs.getString(KEY_TRACE_FIRST_FAILURE_STAGE, null),
+                    prefs.getString(KEY_TRACE_LAST_SUCCESSFUL_STAGE, null)
                 )
             }
         }
@@ -126,16 +131,40 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
         if (!accessManager.isPackageAuthorized(
                 callerPackage,
                 callingUid,
-                requireRuntimeTelemetry = true,
-                requireRuntimeTrace = event == EVENT_TRACE
+                requireRuntimeTelemetry = true
             )
         ) {
             throw SecurityException(
                 "The calling package and signing certificate have no EndXR runtime telemetry consent."
             )
         }
+        if (event == EVENT_TRACE && !accessManager.isPackageAuthorized(
+                callerPackage,
+                callingUid,
+                requireRuntimeTelemetry = true,
+                requireRuntimeTrace = true
+            )
+        ) {
+            // Older approvals cover lifecycle-only telemetry. Drop the new
+            // detailed trace silently so it cannot stall that existing event
+            // queue while the user decides whether to grant the extra scope.
+            return Uri.withAppendedPath(uri, "trace-disabled")
+        }
 
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, 0)
+        if (event == EVENT_TRACE) {
+            appendTraceEvent(
+                prefs = prefs,
+                values = requireNotNull(values),
+                callerPackage = callerPackage,
+                callingPid = callingPid,
+                instanceId = instanceId,
+                sessionId = sessionId,
+                uri = uri
+            )
+            return Uri.withAppendedPath(uri, "trace")
+        }
+
         synchronized(LOCK) {
             val previous = readState(prefs)
             val reduction = previous.reduce(event, instanceId, sessionId, frameCount)
@@ -160,11 +189,92 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
                     .putInt(KEY_SESSION_EVER_RUNNING, state.sessionEverRunning.asInt())
                     .putLong(KEY_FRAME_COUNT, state.frameCount)
                     .putLong(KEY_SESSION_FRAME_COUNT, state.sessionFrameCount)
+                if (event == EVENT_CREATE_INSTANCE) {
+                    editor.putString(KEY_TRACE_JSONL, "")
+                        .putInt(KEY_TRACE_COUNT, 0)
+                        .remove(KEY_TRACE_FIRST_FAILURE_STAGE)
+                        .remove(KEY_TRACE_LAST_SUCCESSFUL_STAGE)
+                }
                 check(editor.commit()) { "Could not persist EndXR runtime telemetry." }
                 context.contentResolver.notifyChange(uri, null)
             }
         }
         return Uri.withAppendedPath(uri, "latest")
+    }
+
+    private fun appendTraceEvent(
+        prefs: android.content.SharedPreferences,
+        values: ContentValues,
+        callerPackage: String,
+        callingPid: Int,
+        instanceId: String,
+        sessionId: String?,
+        uri: Uri
+    ) {
+        val stage = values.getAsString(COLUMN_TRACE_STAGE)
+            ?.takeIf { TRACE_STAGE_PATTERN.matches(it) }
+            ?: throw IllegalArgumentException("Missing or invalid trace stage.")
+        val operation = values.getAsString(COLUMN_TRACE_OPERATION)
+            ?.takeIf { TRACE_OPERATION_PATTERN.matches(it) }
+            ?: throw IllegalArgumentException("Missing or invalid OpenXR trace operation.")
+        val result = values.getAsString(COLUMN_TRACE_RESULT)
+            ?.takeIf { it.isNotBlank() && it.length <= 64 && it.all { ch -> ch.isLetterOrDigit() || ch == '_' } }
+            ?: throw IllegalArgumentException("Missing or invalid trace result.")
+        val resultCode = values.getAsInteger(COLUMN_TRACE_RESULT_CODE)
+            ?: throw IllegalArgumentException("Missing trace result code.")
+        val durationNanos = values.getAsLong(COLUMN_TRACE_DURATION_NS)
+            ?.takeIf { it >= 0L }
+            ?: throw IllegalArgumentException("Invalid trace duration.")
+        val frameIndex = values.getAsLong(COLUMN_TRACE_FRAME_INDEX)
+            ?.takeIf { it >= 0L }
+            ?: throw IllegalArgumentException("Invalid trace frame index.")
+        val threadId = values.getAsLong(COLUMN_TRACE_THREAD_ID)
+            ?.takeIf { it >= 0L }
+            ?: throw IllegalArgumentException("Invalid trace thread id.")
+        val monotonicNanos = values.getAsLong(COLUMN_TRACE_MONOTONIC_NS)
+            ?.takeIf { it > 0L }
+            ?: throw IllegalArgumentException("Invalid trace monotonic timestamp.")
+        val details = values.getAsString(COLUMN_TRACE_DETAILS).orEmpty()
+            .takeIf { it.length <= 512 }
+            ?: throw IllegalArgumentException("Trace details exceed 512 characters.")
+
+        synchronized(LOCK) {
+            val sequence = prefs.getLong(KEY_SEQUENCE, 0L) + 1L
+            val entry = EndXrRuntimeTraceEntry(
+                sequence = sequence,
+                elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos(),
+                monotonicNanos = monotonicNanos,
+                callerPackage = callerPackage,
+                pid = callingPid,
+                instanceId = instanceId,
+                sessionId = sessionId,
+                stage = stage,
+                operation = operation,
+                result = result,
+                resultCode = resultCode,
+                durationNanos = durationNanos,
+                frameIndex = frameIndex,
+                threadId = threadId,
+                details = details
+            )
+            val oldLines = prefs.getString(KEY_TRACE_JSONL, "").orEmpty()
+            val newLines = EndXrRuntimeTraceJournal.append(oldLines, entry)
+            val editor = prefs.edit()
+                .putLong(KEY_SEQUENCE, sequence)
+                .putString(KEY_TRACE_JSONL, newLines)
+                .putInt(KEY_TRACE_COUNT, EndXrRuntimeTraceJournal.count(newLines))
+                .putString(KEY_CALLER_PACKAGE, callerPackage)
+                .putInt(KEY_RUNTIME_PID, callingPid)
+            if (resultCode < 0) {
+                if (prefs.getString(KEY_TRACE_FIRST_FAILURE_STAGE, null) == null) {
+                    editor.putString(KEY_TRACE_FIRST_FAILURE_STAGE, stage)
+                }
+            } else {
+                editor.putString(KEY_TRACE_LAST_SUCCESSFUL_STAGE, stage)
+            }
+            check(editor.commit()) { "Could not persist EndXR low-level trace event." }
+            context?.contentResolver?.notifyChange(uri, null)
+        }
     }
 
     override fun getType(uri: Uri): String? =
@@ -213,6 +323,15 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
         const val COLUMN_INSTANCE_ID = "instance_id"
         const val COLUMN_SESSION_ID = "session_id"
         const val COLUMN_FRAME_COUNT = "frame_count"
+        const val COLUMN_TRACE_STAGE = "trace_stage"
+        const val COLUMN_TRACE_OPERATION = "trace_operation"
+        const val COLUMN_TRACE_RESULT = "trace_result"
+        const val COLUMN_TRACE_RESULT_CODE = "trace_result_code"
+        const val COLUMN_TRACE_DURATION_NS = "trace_duration_ns"
+        const val COLUMN_TRACE_FRAME_INDEX = "trace_frame_index"
+        const val COLUMN_TRACE_THREAD_ID = "trace_thread_id"
+        const val COLUMN_TRACE_MONOTONIC_NS = "trace_monotonic_ns"
+        const val COLUMN_TRACE_DETAILS = "trace_details"
 
         const val EVENT_CREATE_INSTANCE = "xr_create_instance"
         const val EVENT_CREATE_SESSION = "xr_create_session"
@@ -221,6 +340,10 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
         const val EVENT_END_FRAME = "xr_end_frame"
         const val EVENT_DESTROY_SESSION = "xr_destroy_session"
         const val EVENT_DESTROY_INSTANCE = "xr_destroy_instance"
+        const val EVENT_TRACE = "xr_trace"
+
+        private val TRACE_STAGE_PATTERN = Regex("[A-Z][A-Z0-9_]{1,47}")
+        private val TRACE_OPERATION_PATTERN = Regex("[A-Za-z][A-Za-z0-9]{1,63}")
 
         private val ALLOWED_EVENTS = setOf(
             EVENT_CREATE_INSTANCE,
@@ -229,7 +352,8 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
             EVENT_END_SESSION,
             EVENT_END_FRAME,
             EVENT_DESTROY_SESSION,
-            EVENT_DESTROY_INSTANCE
+            EVENT_DESTROY_INSTANCE,
+            EVENT_TRACE
         )
         private val COLUMNS = arrayOf(
             "sequence",
@@ -245,7 +369,11 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
             "instance_seen",
             "session_seen",
             "session_ever_running",
-            "frame_count"
+            "frame_count",
+            "trace_jsonl",
+            "trace_count",
+            "trace_first_failure_stage",
+            "trace_last_successful_stage"
         )
 
         private const val PREFERENCES_NAME = "endxr_runtime_events"
@@ -264,6 +392,10 @@ class EndXrRuntimeEventContentProvider : ContentProvider() {
         private const val KEY_SESSION_EVER_RUNNING = "session_ever_running"
         private const val KEY_FRAME_COUNT = "frame_count"
         private const val KEY_SESSION_FRAME_COUNT = "session_frame_count"
+        private const val KEY_TRACE_JSONL = "trace_jsonl"
+        private const val KEY_TRACE_COUNT = "trace_count"
+        private const val KEY_TRACE_FIRST_FAILURE_STAGE = "trace_first_failure_stage"
+        private const val KEY_TRACE_LAST_SUCCESSFUL_STAGE = "trace_last_successful_stage"
         private val LOCK = Any()
     }
 }
