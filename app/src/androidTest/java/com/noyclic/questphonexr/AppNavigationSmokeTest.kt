@@ -284,7 +284,7 @@ class AppNavigationSmokeTest {
         // regression leaves a useful dialog screenshot in the CI diagnostics artifact.
         saveScreenshot(context, device, "sandbox-tracking-provider-selector.png")
         // Match the stable provider token instead of punctuation in the localized label.
-        val autoProviderChoice = By.textContains("AUTO")
+        val autoProviderChoice = By.textContains("выбирать по качеству и задержке")
         assertTrue(
             "AUTO provider choice is missing",
             device.wait(Until.hasObject(autoProviderChoice), 5_000)
