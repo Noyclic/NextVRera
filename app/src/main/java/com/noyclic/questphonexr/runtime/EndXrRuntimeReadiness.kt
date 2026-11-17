@@ -46,7 +46,7 @@ object EndXrRuntimeReadiness {
             "The UI lists installed third-party launcher apps and asks for confirmation before granting read-only access to only /controller_state. The stored approval is tied to the package signing-certificate fingerprint; the temporary URI grant is re-issued on the next QuestPhoneXR launch only while the same package and signer remain installed. The user can revoke access. The receiving game still needs to implement the EndXR input contract."),
         RuntimeCapability("openxr-hand-tracking", "OpenXR hand-tracking extension",
             RuntimeCapabilityState.PARTIAL,
-            "The native runtime advertises XR_EXT_hand_tracking (26 camera-estimated joints) and XR_EXT_hand_interaction (pinch/grasp values, readiness states, and grip/pinch/poke/aim action poses). MediaPipe's 21 landmarks are mapped to the OpenXR layout; several base joints are estimated. Hand-derived positions/orientations are marked POSITION_VALID / ORIENTATION_VALID but never TRACKED. External-game input and physical-device compatibility have not yet been verified."),
+            "The native runtime advertises XR_EXT_hand_tracking (26 camera-estimated joints) and XR_EXT_hand_interaction (separate pinch/grasp/aim-activate values, readiness states, and grip/pinch/poke/aim action poses). Aim activation is estimated from an extended index finger with the other long fingers curled; controller-only input falls back to trigger. MediaPipe's 21 landmarks are mapped to the OpenXR layout; several base joints are estimated. Hand-derived positions/orientations are marked POSITION_VALID / ORIENTATION_VALID but never TRACKED. External-game input and physical-device compatibility have not yet been verified."),
         RuntimeCapability("runtime-broker", "Runtime discovery from a separate diagnostic client",
             RuntimeCapabilityState.NOT_VERIFIED,
             "The separately signed diagnostic APK verifies service visibility, signature-protected input IPC and official Khronos loader initialization in CI. Active RuntimeBroker selection and successful xrCreateInstance on the Redmi remain unverified.")
@@ -54,13 +54,13 @@ object EndXrRuntimeReadiness {
 
     val librarySummary: String =
         "Внутри Sandbox проверены loader negotiation, Android/GLES session и stereo projection layer. " +
-            "OpenXR Actions API частично реализован; camera foreground service передаёт pinch и аналоговую силу grasp (0..1), приближённые palm poses и 26 суставов каждой руки через защищённый IPC. XR_EXT_hand_tracking и XR_EXT_hand_interaction реализованы частично: pinch/grasp и hand poses доступны через OpenXR Actions, но внешний игровой процесс ещё не проверен. " +
+            "OpenXR Actions API частично реализован; camera foreground service передаёт pinch и аналоговую силу grasp (0..1), приближённые palm poses и 26 суставов каждой руки через защищённый IPC. XR_EXT_hand_tracking и XR_EXT_hand_interaction реализованы частично: pinch, analog grasp и отдельный aim-activate жест доступны через OpenXR Actions, но внешний игровой процесс ещё не проверен. " +
             "Для отдельной игры можно вручную разрешить чтение только URI controller_state одному установленному приложению; разрешение привязано к подписи пакета и отзывается из QuestPhoneXR. " +
             "Это не означает, что любая игра уже поддерживает контракт ввода. Пози ладони доступны через POSE_INPUT/xrLocateSpace без TRACKED-флагов; Android gamepad events, настоящее 6DoF и haptics пока отсутствуют. " +
             "Выбор runtime через RuntimeBroker ещё не подтверждён на физическом телефоне."
 
     const val OPEN_XR_GAME_WARNING =
-        "Перед запуском внешней игры учитывай ограничения: camera foreground service передаёт MediaPipe pinch и аналоговую силу grasp (0..1), приближённую позу ладони и 26 суставов через IPC; XR_EXT_hand_tracking и XR_EXT_hand_interaction доступны частично, но внешний игровой процесс ещё не проверен. " +
+        "Перед запуском внешней игры учитывай ограничения: camera foreground service передаёт MediaPipe pinch и аналоговую силу grasp (0..1), приближённую позу ладони и 26 суставов через IPC; XR_EXT_hand_tracking и XR_EXT_hand_interaction доступны частично (pinch, grasp, aim-activate и hand poses), но внешний игровой процесс ещё не проверен. " +
             "В QuestPhoneXR можно вручную выбрать одно установленное приложение и выдать ему read-only доступ только к URI controller_state; разрешение привязано к подписи пакета и может быть отозвано. " +
             "Игра всё равно должна поддерживать этот IPC-контракт. Это не настоящие tracked controller poses и не 6DoF; Android gamepad capture и haptics пока отсутствуют, поэтому полноценная игра ещё не подтверждена."
 
