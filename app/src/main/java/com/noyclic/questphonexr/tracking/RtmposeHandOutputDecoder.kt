@@ -73,24 +73,20 @@ object RtmposeHandOutputDecoder {
         if (!outputs.simccX.hasExpectedShape() || !outputs.simccY.hasExpectedShape()) {
             return reject(RtmposeHandDecodeRejection.INVALID_TENSOR_SHAPE)
         }
-        if (!outputs.simccX.values.all(Float::isFinite) ||
-            !outputs.simccY.values.all(Float::isFinite)
-        ) {
-            return reject(RtmposeHandDecodeRejection.NON_FINITE_OUTPUT)
-        }
-
         val points = ArrayList<HandPoint>(LANDMARK_COUNT)
         for (landmarkIndex in 0 until LANDMARK_COUNT) {
-            val xBin = argMax(
+            val xBin = argMaxFinite(
                 outputs.simccX.values,
                 landmarkIndex * SIMCC_BIN_COUNT,
                 SIMCC_BIN_COUNT
             )
-            val yBin = argMax(
+            if (xBin < 0) return reject(RtmposeHandDecodeRejection.NON_FINITE_OUTPUT)
+            val yBin = argMaxFinite(
                 outputs.simccY.values,
                 landmarkIndex * SIMCC_BIN_COUNT,
                 SIMCC_BIN_COUNT
             )
+            if (yBin < 0) return reject(RtmposeHandDecodeRejection.NON_FINITE_OUTPUT)
             val modelX = xBin / SIMCC_SPLIT_RATIO
             val modelY = yBin / SIMCC_SPLIT_RATIO
             val source = crop.toSourceNormalized(
@@ -129,11 +125,21 @@ object RtmposeHandOutputDecoder {
         shape.contentEquals(intArrayOf(1, LANDMARK_COUNT, SIMCC_BIN_COUNT)) &&
             values.size == LANDMARK_COUNT * SIMCC_BIN_COUNT
 
-    private fun argMax(values: FloatArray, startIndex: Int, count: Int): Int {
+    /**
+     * Finds the best SimCC bin while validating it in the same pass.
+     *
+     * LiteRT readFloat() already materializes each output tensor on the CPU. A
+     * separate full-array finite scan would read both 21x512 tensors a second
+     * time before argmax. Returning -1 for a non-finite bin preserves rejection
+     * semantics without that extra memory pass.
+     */
+    private fun argMaxFinite(values: FloatArray, startIndex: Int, count: Int): Int {
         var bestIndex = 0
         var bestValue = values[startIndex]
+        if (!bestValue.isFinite()) return -1
         for (index in 1 until count) {
             val candidate = values[startIndex + index]
+            if (!candidate.isFinite()) return -1
             if (candidate > bestValue) {
                 bestValue = candidate
                 bestIndex = index
