@@ -30,7 +30,7 @@ This keeps app-facing input stable when the tracking implementation changes.
 | Provider | Current state | Notes |
 |---|---|---|
 | MediaPipe | READY | Existing CameraX + Hand Landmarker path; remains the default |
-| LiteRT custom hand-landmark model | PLANNED | Adapter slot only; no independent model is integrated yet |
+| MediaPipe + RTMPose refinement | EXPERIMENTAL after explicit opt-in and successful GPU initialization; otherwise PLANNED | MediaPipe detects and tracks hands; RTMPose refines each crop sequentially and preserves MediaPipe world pose/handedness |
 | GVXRS Dock Station | PLANNED | Data packet contract exists; pairing, live transport, camera and fusion are not connected |
 
 An auxiliary OpenCV motion detector may be useful later for camera/motion assistance, but it is not
@@ -67,9 +67,9 @@ The shared `HandRoiRgbPreprocessor` samples CameraX's raw ARGB pixel buffer at 0
 - includes output readback in inference latency because GPU execution is asynchronous;
 - closes input/output buffers before the model and environment.
 
-The `RtmposeHandRefinementCoordinator` now provides the tested sequential-crop stage for a MediaPipe-detected frame: it snapshots the raw camera pixels, prepares one ROI at a time, and replaces only the 2D image landmarks for successful RTMPose results. MediaPipe handedness, world landmarks and pinch/controller state are preserved; failed or incomplete crop inference keeps the original MediaPipe points. The coordinator is not yet invoked from the persistent camera service, so this path remains an isolated adapter rather than a live provider.
+The `RtmposeHandRefinementCoordinator` is now invoked from the persistent camera service when the user explicitly enables RTMPose. The MediaPipe controller snapshots the same raw camera frame into a reusable ARGB buffer; the coordinator copies it before the analyzer releases its frame gate, then prepares one ROI at a time. Successful RTMPose results replace only the 2D image landmarks. MediaPipe handedness, world landmarks and pinch/controller state are preserved; failed, busy or incomplete crop inference keeps the original MediaPipe points. The hybrid provider becomes EXPERIMENTAL only after the runner has successfully compiled and warmed the GPU graph.
 
-The runner is not registered as READY and does not modify AUTO selection. The model predicts one crop only and has no presence or handedness outputs; a separate detector/track source must supply the ROI and confidence. If GPU compilation fails, MediaPipe remains active. We intentionally do not fall back to CPU for this FP16 graph because its published CPU/XNNPACK path declines the model.
+The model predicts one crop only and has no presence or handedness outputs; MediaPipe supplies the ROI and its neutral detector baseline. AUTO can compare the hybrid only while it is fresh and EXPERIMENTAL, but its quality baseline is not a calibrated accuracy score; manual selection is available for controlled testing. If GPU compilation fails or refinement is busy, MediaPipe remains active. We intentionally do not fall back to CPU for this FP16 graph because its published CPU/XNNPACK path declines the model.
 
 ## Selection rules
 
@@ -99,11 +99,10 @@ The runner is not registered as READY and does not modify AUTO selection. The mo
 
 ## Next integration work
 
-1. Add an explicit Sandbox action for downloading/verifying the pinned model and display progress/space requirements.
-2. Connect the runner to an upstream hand ROI source with one-frame-in-flight back-pressure; keep MediaPipe as the detector and default input source.
-3. Add model warmup and device benchmark reporting (GPU compile success, p50/p95 end-to-end latency, frame drops, thermal drift, memory and battery).
-4. Only register the RTMPose provider as EXPERIMENTAL after the runner is exercised on a physical Redmi Note 13.
-5. Connect GVXRS Dock pairing, authenticated transport, time synchronization and calibrated landmark conversion.
+1. Test the explicitly enabled hybrid on a physical Redmi Note 13: two-hand quality, camera-to-input latency, dropped crops, thermal drift, memory and battery.
+2. Add a stable hand-specific ROI confidence from the MediaPipe detector rather than the current neutral 0.5 baseline.
+3. Compare AUTO quality and latency scores against the original MediaPipe-only frame before changing provider preference.
+4. Connect GVXRS Dock pairing, authenticated transport, time synchronization and calibrated landmark conversion.
 
 
 Model acceptance must be based on the target device, not a benchmark from another SoC. For each

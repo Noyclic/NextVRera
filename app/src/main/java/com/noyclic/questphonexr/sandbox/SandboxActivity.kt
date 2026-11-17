@@ -975,6 +975,42 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             )
+            val rtmposeRefinementSwitch = Switch(this@SandboxActivity).apply {
+                text = "RTMPose: уточнять руки в фоне (экспериментально)"
+                isChecked = EndXrHandTrackingService.isRtmposeRefinementEnabled(this@SandboxActivity)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                setOnCheckedChangeListener { _, enabled ->
+                    val saved = EndXrHandTrackingService.setRtmposeRefinementEnabled(
+                        this@SandboxActivity,
+                        enabled
+                    )
+                    if (!saved) {
+                        isChecked = false
+                        Toast.makeText(
+                            this@SandboxActivity,
+                            "Сначала скачай и проверь модель RTMPose-Hand.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            this@SandboxActivity,
+                            if (enabled) {
+                                "RTMPose включён для фонового трекинга. MediaPipe останется детектором и резервом."
+                            } else {
+                                "RTMPose выключен. Используется обычный MediaPipe."
+                            },
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+            addView(
+                rtmposeRefinementSwitch,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
             addView(
                 controlButton("Профиль MediaPipe") { showHandTrackingPresetDialog() },
                 LinearLayout.LayoutParams(
@@ -1629,10 +1665,17 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             append("AUTO оценивает качество, задержку и FPS свежих кадров. ")
             append("Ручной режим не переключается на другой трекер без команды.")
         }
+        val liteRtAvailable =
+            snapshot.statusByProvider[TrackingProviderId.LITERT_CUSTOM]
+                ?.canPublishFrames == true
         val choices = arrayOf(
             "AUTO — выбирать по качеству и задержке",
             "MediaPipe — подключён",
-            "LiteRT model — пока не подключён",
+            if (liteRtAvailable) {
+                "MediaPipe + LiteRT — экспериментально"
+            } else {
+                "MediaPipe + LiteRT — выключен"
+            },
             "GVXRS Dock Station — пока не подключён"
         )
 
@@ -1654,11 +1697,24 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                         }
                         updateStatus()
                     }
-                    2 -> Toast.makeText(
-                        this,
-                        "Адаптер LiteRT ещё не подключён. MediaPipe остаётся доступным.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    2 -> {
+                        if (liteRtAvailable &&
+                            EndXrTrackingInputBridge.selectProvider(TrackingProviderId.LITERT_CUSTOM)
+                        ) {
+                            Toast.makeText(
+                                this,
+                                "Выбран экспериментальный режим MediaPipe + RTMPose.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "Включи RTMPose в фоне и дождись успешной инициализации GPU.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        updateStatus()
+                    }
                     3 -> Toast.makeText(
                         this,
                         "GVXRS Dock: пока есть протокол пакетов, но нет живого подключения.",

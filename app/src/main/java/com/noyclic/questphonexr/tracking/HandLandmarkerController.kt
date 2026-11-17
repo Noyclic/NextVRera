@@ -38,6 +38,17 @@ class HandLandmarkerController(
     private val outputWidthPx: Int = DEFAULT_OUTPUT_WIDTH_PX,
     private val outputHeightPx: Int = DEFAULT_OUTPUT_HEIGHT_PX,
     private val onMetrics: ((HandTrackingMetricsSnapshot) -> Unit)? = null,
+    /**
+     * Optional raw-frame callback for top-down refinement. The reusable IntArray is borrowed
+     * and must be copied synchronously before this callback returns.
+     */
+    private val onFrameWithSource: ((
+        HandTrackingFrame,
+        IntArray,
+        rawWidthPx: Int,
+        rawHeightPx: Int,
+        rotationDegrees: Int
+    ) -> Unit)? = null,
     private val preferredDelegate: Delegate = Delegate.CPU,
     /** The same single-thread executor used by CameraX analyzer; GPU delegates are thread-affine. */
     private val ownerExecutor: ExecutorService
@@ -58,6 +69,7 @@ class HandLandmarkerController(
     private val inFlightStartedAtNanos = AtomicLong(0L)
     private val inFlightSourceWidth = AtomicLong(0L)
     private val inFlightSourceHeight = AtomicLong(0L)
+    private val inFlightRotationDegrees = AtomicLong(0L)
     private val inFlightPreprocessingMs = AtomicLong(0L)
 
     private val receivedFrames = AtomicLong(0L)
@@ -93,6 +105,7 @@ class HandLandmarkerController(
 
     // Analyzer-thread confined. The processing gate permits only one frame to use these at once.
     private var sourceBitmap: Bitmap? = null
+    private var sourceArgbSnapshot = IntArray(0)
     private var sourceWidth = 0
     private var sourceHeight = 0
     private var packedPixels: ByteBuffer? = null
@@ -250,6 +263,7 @@ class HandLandmarkerController(
         inFlightStartedAtNanos.set(startedAtNanos)
         inFlightSourceWidth.set(imageProxy.width.toLong())
         inFlightSourceHeight.set(imageProxy.height.toLong())
+        inFlightRotationDegrees.set(imageProxy.imageInfo.rotationDegrees.toLong())
 
         var requestTicket: InFlightFrameGate.Ticket<MPImage>? = null
         try {
@@ -566,18 +580,46 @@ class HandLandmarkerController(
             if (closed.get() || taskFailed.get() || !requestGate.isCurrent(ticket)) return
             completedFrames.incrementAndGet()
             publishMetrics()
-            onFrame(
-                HandTrackingFrame(
-                    timestampMs = callbackTimestampMs,
-                    hands = hands,
-                    pipelineLatencyMs = latencyMs,
-                    sourceWidthPx = sourceWidth,
-                    sourceHeightPx = sourceHeight,
-                    inputWidthPx = outputWidthPx,
-                    inputHeightPx = outputHeightPx,
-                    preprocessingLatencyMs = preprocessingMs
-                )
+            val completedFrame = HandTrackingFrame(
+                timestampMs = callbackTimestampMs,
+                hands = hands,
+                pipelineLatencyMs = latencyMs,
+                sourceWidthPx = sourceWidth,
+                sourceHeightPx = sourceHeight,
+                inputWidthPx = outputWidthPx,
+                inputHeightPx = outputHeightPx,
+                preprocessingLatencyMs = preprocessingMs
             )
+            val sourceCallback = onFrameWithSource
+            if (sourceCallback == null) {
+                onFrame(completedFrame)
+            } else {
+                // The analyzer is still gated while this callback runs. Snapshot into one
+                // reusable ARGB array, then let the consumer copy it before returning.
+                try {
+                    val requiredPixels = sourceWidth.toLong() * sourceHeight.toLong()
+                    check(requiredPixels in 1..Int.MAX_VALUE.toLong()) {
+                        "Camera frame dimensions exceed the refinement buffer limit."
+                    }
+                    val pixelCount = requiredPixels.toInt()
+                    if (sourceArgbSnapshot.size != pixelCount) {
+                        sourceArgbSnapshot = IntArray(pixelCount)
+                    }
+                    checkNotNull(sourceBitmap).getPixels(
+                        sourceArgbSnapshot, 0, sourceWidth, 0, 0, sourceWidth, sourceHeight
+                    )
+                    sourceCallback(
+                        completedFrame,
+                        sourceArgbSnapshot,
+                        sourceWidth,
+                        sourceHeight,
+                        inFlightRotationDegrees.get().toInt()
+                    )
+                } catch (error: Exception) {
+                    Log.w(TAG, "Could not expose source pixels for RTMPose; keeping MediaPipe frame", error)
+                    onFrame(completedFrame)
+                }
+            }
         } catch (error: Exception) {
             Log.e(TAG, "Could not convert MediaPipe landmarks", error)
             onError(error.message ?: "Could not read hand landmarks.")
@@ -612,6 +654,7 @@ class HandLandmarkerController(
         inFlightStartedAtNanos.set(0L)
         inFlightSourceWidth.set(0L)
         inFlightSourceHeight.set(0L)
+        inFlightRotationDegrees.set(0L)
         inFlightPreprocessingMs.set(0L)
         processing.set(false)
     }
@@ -630,6 +673,7 @@ class HandLandmarkerController(
             // Drop our references only after the graph has been closed on its owner thread.
             // Do not call MPImage.close(): its BitmapImageContainer recycles the shared bitmap.
             sourceBitmap = null
+            sourceArgbSnapshot = IntArray(0)
             modelBitmap = null
             modelCanvas = null
             packedPixels = null

@@ -422,12 +422,13 @@ class TrackingProviderManager(
             ),
             TrackingProviderDescriptor(
                 id = TrackingProviderId.LITERT_CUSTOM,
-                displayName = "LiteRT 2.x custom hand-landmark model",
-                description = "Reserved adapter for device-specific hand models; not connected yet.",
+                displayName = "MediaPipe + RTMPose top-down refinement",
+                description = "Experimental hybrid: MediaPipe detects and tracks hands; RTMPose refines image landmarks.",
                 availability = TrackingProviderAvailability.PLANNED,
                 autoPriority = 75,
                 capabilities = TrackingProviderCapabilities(
-                    providesHandLocal3d = false,
+                    // The hybrid frame keeps MediaPipe's calibrated world pose and handedness.
+                    providesHandLocal3d = true,
                     providesHandedness = true,
                     maxHands = 2
                 )

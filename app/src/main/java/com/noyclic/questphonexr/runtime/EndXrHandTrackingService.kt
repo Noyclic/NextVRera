@@ -331,6 +331,9 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
     }
 
     @Volatile private var handTracker: HandLandmarkerController? = null
+    @Volatile private var rtmposeLiteRtRunner: RtmposeLiteRtRunner? = null
+    @Volatile private var rtmposeRefinementCoordinator: RtmposeHandRefinementCoordinator? = null
+    @Volatile private var rtmposeRefinementEnabled = false
     private var cameraProvider: ProcessCameraProvider? = null
     private var analysisUseCase: ImageAnalysis? = null
     @Volatile private var cameraGeneration = 0L
@@ -369,6 +372,18 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
             Log.i(TAG, "Updated live inference interval to ${updatedInterval}ms")
             return START_STICKY
         }
+        if (intent?.action == ACTION_UPDATE_RTMPOSE_REFINEMENT) {
+            rtmposeRefinementEnabled = intent.getBooleanExtra(
+                EXTRA_RTMPOSE_REFINEMENT_ENABLED,
+                servicePreferences.getBoolean(KEY_RTMPOSE_REFINEMENT_ENABLED, false)
+            )
+            servicePreferences.edit()
+                .putBoolean(KEY_RTMPOSE_REFINEMENT_ENABLED, rtmposeRefinementEnabled)
+                .apply()
+            if (rtmposeRefinementEnabled) startRtmposeRefinement()
+            else stopRtmposeRefinement()
+            return START_STICKY
+        }
 
         cancelPendingRecovery()
         recoveryPolicy.reset()
@@ -394,6 +409,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                 )
             }
             activeOrPending = true
+            if (rtmposeRefinementEnabled) startRtmposeRefinement()
         } catch (error: Exception) {
             activeOrPending = false
             EndXrHandTrackingDiagnostics.markError(error.message ?: "Could not enter foreground service state.")
@@ -426,6 +442,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
             DEFAULT_INFERENCE_INTERVAL_MS
         )
         val savedPreferGpuDelegate = servicePreferences.getBoolean(EXTRA_PREFER_GPU, true)
+        rtmposeRefinementEnabled = servicePreferences.getBoolean(KEY_RTMPOSE_REFINEMENT_ENABLED, false)
         val savedModelInputWidth = servicePreferences.getInt(
             EXTRA_MODEL_INPUT_WIDTH,
             minOf(savedWidth, MAX_MODEL_INPUT_WIDTH_PX)
@@ -461,6 +478,95 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
             .putInt(EXTRA_MODEL_INPUT_WIDTH, modelInputWidthPx)
             .putInt(EXTRA_MODEL_INPUT_HEIGHT, modelInputHeightPx)
             .apply()
+    }
+
+    /**
+     * Loads optional RTMPose asynchronously. MediaPipe remains the detector and fallback;
+     * LITERT_CUSTOM becomes selectable only after a successful GPU graph warm-up.
+     */
+    private fun startRtmposeRefinement() {
+        if (!rtmposeRefinementEnabled || !activeOrPending) return
+        if (!RtmposeModelStore.isInstalled(applicationContext)) {
+            Log.w(TAG, "RTMPose refinement enabled, but no verified model is installed.")
+            EndXrTrackingInputBridge.updateProviderAvailability(
+                TrackingProviderId.LITERT_CUSTOM,
+                TrackingProviderAvailability.PLANNED
+            )
+            return
+        }
+        if (rtmposeRefinementCoordinator != null || rtmposeLiteRtRunner != null) return
+
+        val runner = RtmposeLiteRtRunner(applicationContext)
+        rtmposeLiteRtRunner = runner
+        runner.initialize { result ->
+            mainHandler.post {
+                if (!activeOrPending || !rtmposeRefinementEnabled || rtmposeLiteRtRunner !== runner) {
+                    runner.close()
+                    return@post
+                }
+                result.fold(
+                    onSuccess = { info ->
+                        rtmposeRefinementCoordinator = RtmposeHandRefinementCoordinator(runner)
+                        EndXrTrackingInputBridge.updateProviderAvailability(
+                            TrackingProviderId.LITERT_CUSTOM,
+                            TrackingProviderAvailability.EXPERIMENTAL
+                        )
+                        Log.i(
+                            TAG,
+                            "RTMPose GPU ready; isolated p50=${info.benchmark.p50Milliseconds}ms, " +
+                                "p95=${info.benchmark.p95Milliseconds}ms"
+                        )
+                        updateNotification("MediaPipe + RTMPose · экспериментальное уточнение рук")
+                    },
+                    onFailure = { error ->
+                        rtmposeRefinementCoordinator = null
+                        rtmposeLiteRtRunner = null
+                        runner.close()
+                        EndXrTrackingInputBridge.updateProviderAvailability(
+                            TrackingProviderId.LITERT_CUSTOM,
+                            TrackingProviderAvailability.PLANNED
+                        )
+                        Log.w(TAG, "RTMPose GPU unavailable; MediaPipe remains active", error)
+                        updateNotification("MediaPipe работает · LiteRT GPU недоступен")
+                    }
+                )
+            }
+        }
+    }
+
+    private fun stopRtmposeRefinement() {
+        rtmposeRefinementCoordinator?.close()
+        rtmposeRefinementCoordinator = null
+        rtmposeLiteRtRunner?.close()
+        rtmposeLiteRtRunner = null
+        EndXrTrackingInputBridge.updateProviderAvailability(
+            TrackingProviderId.LITERT_CUSTOM,
+            TrackingProviderAvailability.PLANNED
+        )
+        if (activeOrPending) updateNotification("MediaPipe работает · RTMPose выключен")
+    }
+
+    private fun publishMediaPipeFrame(frame: HandTrackingFrame) {
+        EndXrTrackingInputBridge.publish(TrackingProviderId.MEDIAPIPE, frame)
+    }
+
+    private fun publishRefinementResult(result: Result<RtmposeRefinementOutcome>) {
+        result.fold(
+            onSuccess = { outcome ->
+                if (outcome.refinedHands > 0) {
+                    EndXrTrackingInputBridge.publish(
+                        providerId = TrackingProviderId.LITERT_CUSTOM,
+                        frame = outcome.frame,
+                        qualityScore = outcome.roiQualityScore ?: 0.5f
+                    )
+                } else {
+                    publishMediaPipeFrame(outcome.frame)
+                }
+            },
+            onFailure = { error ->
+                Log.w(TAG, "RTMPose frame failed; retaining MediaPipe output", error)
+            }
+        )
     }
 
     private fun startCamera() {
@@ -506,10 +612,28 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                         mirrorFrontCamera = useFrontCamera,
                         onFrame = { frame ->
                             if (activeOrPending && generation == cameraGeneration) {
-                                EndXrTrackingInputBridge.publish(
-                                    providerId = TrackingProviderId.MEDIAPIPE,
-                                    frame = frame
-                                )
+                                publishMediaPipeFrame(frame)
+                            }
+                        },
+                        onFrameWithSource = { frame, sourceArgb, rawWidth, rawHeight, rotationDegrees ->
+                            if (activeOrPending && generation == cameraGeneration) {
+                                val coordinator = rtmposeRefinementCoordinator
+                                if (coordinator == null) {
+                                    publishMediaPipeFrame(frame)
+                                } else {
+                                    val accepted = coordinator.refine(
+                                        frame = frame,
+                                        sourceArgb = sourceArgb,
+                                        rawWidthPx = rawWidth,
+                                        rawHeightPx = rawHeight,
+                                        sourceRotationDegrees = rotationDegrees
+                                    ) { outcome ->
+                                        if (activeOrPending && generation == cameraGeneration) {
+                                            publishRefinementResult(outcome)
+                                        }
+                                    }
+                                    if (!accepted) publishMediaPipeFrame(frame)
+                                }
                             }
                         },
                         onError = { message ->
@@ -764,6 +888,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
         analysisUseCase = null
         handTracker?.close()
         handTracker = null
+        stopRtmposeRefinement()
         cameraExecutor.shutdown()
         EndXrInputSnapshotStore.clear()
 
@@ -783,6 +908,10 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
 
         private const val ACTION_STOP = "com.noyclic.questphonexr.action.STOP_ENDXR_HANDS"
         private const val ACTION_UPDATE_INTERVAL = "com.noyclic.questphonexr.action.UPDATE_ENDXR_INTERVAL"
+        private const val ACTION_UPDATE_RTMPOSE_REFINEMENT =
+            "com.noyclic.questphonexr.action.UPDATE_RTMPOSE_REFINEMENT"
+        private const val EXTRA_RTMPOSE_REFINEMENT_ENABLED = "endxr.rtmpose.refinement.enabled"
+        private const val KEY_RTMPOSE_REFINEMENT_ENABLED = "rtmpose_refinement_enabled"
         private const val EXTRA_WIDTH = "endxr.camera.width"
         private const val EXTRA_HEIGHT = "endxr.camera.height"
         private const val EXTRA_MAX_HANDS = "endxr.camera.max_hands"
@@ -808,6 +937,30 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
         @Volatile private var activeOrPending = false
 
         fun isRunning(): Boolean = activeOrPending
+
+        fun isRtmposeRefinementEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_RTMPOSE_REFINEMENT_ENABLED, false)
+
+        /**
+         * Saves the opt-in mode. Enabling is rejected until the pinned model has been verified.
+         * If the background camera service is already active, its optional runner is started or
+         * stopped without restarting the MediaPipe camera graph.
+         */
+        fun setRtmposeRefinementEnabled(context: Context, enabled: Boolean): Boolean {
+            if (enabled && !RtmposeModelStore.isInstalled(context)) return false
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_RTMPOSE_REFINEMENT_ENABLED, enabled)
+                .apply()
+            if (isRunning()) {
+                val updateIntent = Intent(context, EndXrHandTrackingService::class.java)
+                    .setAction(ACTION_UPDATE_RTMPOSE_REFINEMENT)
+                    .putExtra(EXTRA_RTMPOSE_REFINEMENT_ENABLED, enabled)
+                ContextCompat.startForegroundService(context, updateIntent)
+            }
+            return true
+        }
 
         /** Restarts the user-configured camera pipeline with its last saved settings. */
         fun createResumeIntent(context: Context): Intent {
