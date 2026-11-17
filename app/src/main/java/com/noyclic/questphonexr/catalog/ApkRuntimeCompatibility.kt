@@ -201,9 +201,13 @@ object ApkRuntimeCompatibility {
             .distinct()
             .sorted()
             .take(MAX_EXTENSION_REFERENCES)
-        val graphicsApiMarkers = GRAPHICS_API_MARKERS.filter { marker ->
-            nativeStringReferences.any { it.equals(marker, ignoreCase = true) }
-        }
+        val graphicsApiMarkers = (
+            GRAPHICS_API_MARKERS.filter { marker ->
+                nativeStringReferences.any { it.equals(marker, ignoreCase = true) }
+            } + info.requiredFeatures.filter {
+                it.startsWith("android.hardware.vulkan.", ignoreCase = true)
+            }
+        ).distinct().sorted()
         val unsupportedOpenXrExtensions = openXrExtensionReferences
             .filterNot { it in ENDXR_ADVERTISED_EXTENSIONS }
         val packagedLibraries = nativeLibraries
@@ -277,9 +281,16 @@ object ApkRuntimeCompatibility {
             }
             if (engine != "Не определён") add("Обнаруженный движок: $engine.")
             if (xrTechnologies.isNotEmpty()) add("XR-признаки: ${xrTechnologies.joinToString()}.")
-            if (graphicsApiMarkers.any { it.startsWith("vk", ignoreCase = true) || it.equals("libvulkan.so", true) }) {
+            if (graphicsApiMarkers.any {
+                it.startsWith("vk", ignoreCase = true) ||
+                    it.equals("libvulkan.so", true) ||
+                    it.startsWith("android.hardware.vulkan.", ignoreCase = true)
+            }) {
                 add(
-                    "В нативных библиотеках найдены Vulkan-маркеры: ${graphicsApiMarkers.filter { it.startsWith("vk", true) || it.equals("libvulkan.so", true) }.joinToString()}. " +
+                    "В нативных библиотеках найдены Vulkan-маркеры: ${graphicsApiMarkers.filter {
+                        it.startsWith("vk", true) || it.equals("libvulkan.so", true) ||
+                            it.startsWith("android.hardware.vulkan.", true)
+                    }.joinToString()}. " +
                         "Текущий EndXR предоставляет OpenGL ES binding, но не Vulkan binding. Это риск для APK, если игра выберет Vulkan как единственный графический backend; статические строки не доказывают, какой backend реально выберется."
                 )
             }
