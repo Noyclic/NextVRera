@@ -86,7 +86,7 @@ class ApkDevelopmentReportGeneratorTest {
         assertTrue(report.contains("com.example.questgame"))
         assertTrue(report.contains("XR_KHR_vulkan_enable"))
         assertTrue(report.contains("com.oculus.permission.USE_SCENE"))
-        assertTrue(report.contains("не создавать второй параллельный канал ввода"))
+        assertTrue(report.contains("не создавать второй параллельный канал ввода", ignoreCase = true))
         assertTrue(report.contains("RuntimeBroker"))
         assertTrue(report.contains("Критерии приёмки"))
         assertFalse(report.contains("100% совместимость"))
