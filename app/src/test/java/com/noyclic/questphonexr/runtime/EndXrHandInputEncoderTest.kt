@@ -202,10 +202,47 @@ class EndXrHandInputEncoderTest {
         assertEquals(0f, encoded.leftRow[2], 0f)
         assertEquals(1f, encoded.rightRow[0], 0f)
         assertEquals(0f, encoded.rightRow[1], 0f)
-        assertEquals(1f, encoded.rightRow[2], 0f)
+        assertTrue("power grip must produce a strong but analog grasp value",
+            encoded.rightRow[2] in 0.75f..0.90f)
         assertEquals(0f, encoded.leftRow[3], 0f)
         assertEquals(0f, encoded.leftRow[4], 0f)
         assertEquals(0f, encoded.leftRow[5], 0f)
+    }
+
+    @Test
+    fun encodesContinuousGraspStrengthForOpenPartialAndClosedHands() {
+        val openWorld = straightWorldPoints()
+        val partialWorld = curledWorldPoints(2)
+        val closedWorld = curledWorldPoints(4)
+
+        val open = trackedHand(HandSide.LEFT, 0.5f).copy(
+            worldPoints = openWorld,
+            rawWorldPoints = openWorld
+        )
+        val partial = trackedHand(HandSide.LEFT, 0.5f).copy(
+            worldPoints = partialWorld,
+            rawWorldPoints = partialWorld
+        )
+        val closed = trackedHand(HandSide.LEFT, 0.5f).copy(
+            worldPoints = closedWorld,
+            rawWorldPoints = closedWorld
+        )
+
+        val openValue = EndXrHandInputEncoder.encode(
+            HandTrackingFrame(10L, listOf(open))
+        ).leftRow[2]
+        val partialValue = EndXrHandInputEncoder.encode(
+            HandTrackingFrame(20L, listOf(partial))
+        ).leftRow[2]
+        val closedValue = EndXrHandInputEncoder.encode(
+            HandTrackingFrame(30L, listOf(closed))
+        ).leftRow[2]
+
+        assertTrue("an extended hand should have little grasp closure", openValue < 0.10f)
+        assertTrue("a partially curled hand should have an intermediate grasp value",
+            partialValue > openValue + 0.20f && partialValue < 0.95f)
+        assertTrue("a closed fist should approach full grasp closure", closedValue > partialValue)
+        assertTrue(closedValue <= 1.0f)
     }
 
     private fun trackedHand(side: HandSide, centerX: Float): TrackedHand {
@@ -228,6 +265,26 @@ class EndXrHandInputEncoderTest {
             side = side,
             worldPoints = world
         )
+    }
+
+    private fun straightWorldPoints(): List<HandPoint> {
+        val points = MutableList(21) { HandPoint(0f, 0f, 0f) }
+        points[0] = HandPoint(0f, 0f, 0f)
+        val bases = listOf(
+            HandPoint(0.035f, 0.030f, 0f),
+            HandPoint(0f, 0.055f, 0f),
+            HandPoint(-0.025f, 0.045f, 0f),
+            HandPoint(-0.040f, 0.025f, 0f)
+        )
+        val mcps = intArrayOf(5, 9, 13, 17)
+        for (finger in mcps.indices) {
+            val mcp = bases[finger]
+            points[mcps[finger]] = mcp
+            points[mcps[finger] + 1] = HandPoint(mcp.x, mcp.y + 0.025f, 0f)
+            points[mcps[finger] + 2] = HandPoint(mcp.x, mcp.y + 0.055f, 0f)
+            points[mcps[finger] + 3] = HandPoint(mcp.x, mcp.y + 0.090f, 0f)
+        }
+        return points
     }
 
     private fun curledWorldPoints(curledCount: Int): List<HandPoint> {
