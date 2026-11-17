@@ -79,6 +79,8 @@ struct XrControllerInputSample {
     std::uint32_t buttons = 0;
     bool poseActive = false;
     XrPosef gripPose{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}};
+    bool handJointsActive = false;
+    std::array<float, XR_HAND_JOINT_COUNT_EXT * 8> handJoints{};
 };
 
 struct XrActionStateKey {
@@ -138,6 +140,7 @@ struct XrInstance_T {
     bool androidExtensionEnabled = false;
     bool glesExtensionEnabled = false;
     bool handTrackingExtensionEnabled = false;
+    bool handInteractionExtensionEnabled = false;
     bool glesRequirementsQueried = false;
     std::mutex eventMutex;
     std::deque<XrEventDataSessionStateChanged> pendingSessionEvents;
@@ -702,13 +705,15 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateInstanceExtensionProperties(
     if (layerName != nullptr && layerName[0] != '\0') {
         return XR_ERROR_API_LAYER_NOT_PRESENT;
     }
-    constexpr std::array<const char*, 3> names{{
-        kAndroidExtension, kGlesExtension, XR_EXT_HAND_TRACKING_EXTENSION_NAME
+    constexpr std::array<const char*, 4> names{{
+        kAndroidExtension, kGlesExtension, XR_EXT_HAND_TRACKING_EXTENSION_NAME,
+        XR_EXT_HAND_INTERACTION_EXTENSION_NAME
     }};
-    constexpr std::array<std::uint32_t, 3> versions{{
+    constexpr std::array<std::uint32_t, 4> versions{{
         ENDXR_KHR_ANDROID_CREATE_INSTANCE_SPEC_VERSION,
         ENDXR_KHR_OPENGL_ES_ENABLE_SPEC_VERSION,
-        XR_EXT_hand_tracking_SPEC_VERSION
+        XR_EXT_hand_tracking_SPEC_VERSION,
+        XR_EXT_hand_interaction_SPEC_VERSION
     }};
     *count = static_cast<std::uint32_t>(names.size());
     if (capacity == 0) return XR_SUCCESS;
@@ -733,7 +738,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
     if (createInfo == nullptr) return XR_ERROR_VALIDATION_FAILURE;
     if (createInfo->type != XR_TYPE_INSTANCE_CREATE_INFO) return XR_ERROR_VALIDATION_FAILURE;
     if (createInfo->enabledApiLayerCount != 0) return XR_ERROR_API_LAYER_NOT_PRESENT;
-    if (createInfo->enabledExtensionCount > 3) return XR_ERROR_EXTENSION_NOT_PRESENT;
+    if (createInfo->enabledExtensionCount > 4) return XR_ERROR_EXTENSION_NOT_PRESENT;
     if (createInfo->enabledExtensionCount > 0 && createInfo->enabledExtensionNames == nullptr) {
         return XR_ERROR_VALIDATION_FAILURE;
     }
@@ -741,6 +746,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
     bool androidEnabled = false;
     bool glesEnabled = false;
     bool handTrackingEnabled = false;
+    bool handInteractionEnabled = false;
     for (std::uint32_t i = 0; i < createInfo->enabledExtensionCount; ++i) {
         const char* name = createInfo->enabledExtensionNames[i];
         if (name == nullptr) return XR_ERROR_VALIDATION_FAILURE;
@@ -753,6 +759,9 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
         } else if (std::strcmp(name, XR_EXT_HAND_TRACKING_EXTENSION_NAME) == 0) {
             if (handTrackingEnabled) return XR_ERROR_NAME_DUPLICATED;
             handTrackingEnabled = true;
+        } else if (std::strcmp(name, XR_EXT_HAND_INTERACTION_EXTENSION_NAME) == 0) {
+            if (handInteractionEnabled) return XR_ERROR_NAME_DUPLICATED;
+            handInteractionEnabled = true;
         } else {
             return XR_ERROR_EXTENSION_NOT_PRESENT;
         }
@@ -782,6 +791,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
     created->androidExtensionEnabled = androidEnabled;
     created->glesExtensionEnabled = glesEnabled;
     created->handTrackingExtensionEnabled = handTrackingEnabled;
+    created->handInteractionExtensionEnabled = handInteractionEnabled;
     if (androidInfo != nullptr) {
 #if defined(__ANDROID__)
         created->applicationVm = reinterpret_cast<JavaVM*>(androidInfo->applicationVM);
@@ -2060,20 +2070,21 @@ bool refreshExternalControllerInputImpl(XrInstance_T* instance) {
 #endif
 
 int interactionProfilePriority(const std::string& profile) {
-    // EndXR emulates Quest Touch-style controls. Prefer that explicit binding
-    // set over generic/simple profiles when an app suggests several options.
-    if (profile == "/interaction_profiles/oculus/touch_controller") return 0;
-    if (profile == "/interaction_profiles/meta/touch_controller_plus") return 1;
-    if (profile == "/interaction_profiles/htc/vive_controller") return 2;
-    if (profile == "/interaction_profiles/khr/simple_controller") return 3;
+    // When camera joints are fresh, prefer the standard hand-interaction profile.
+    // Otherwise use the most Quest-like controller profile the app suggested.
+    if (profile == "/interaction_profiles/ext/hand_interaction_ext") return -1;
+    if (profile == "/interaction_profiles/meta/touch_pro_controller") return 0;
+    if (profile == "/interaction_profiles/oculus/touch_controller") return 1;
+    if (profile == "/interaction_profiles/meta/touch_controller_plus") return 2;
+    if (profile == "/interaction_profiles/htc/vive_controller") return 3;
+    if (profile == "/interaction_profiles/khr/simple_controller") return 4;
     return 10;
 }
 
 XrPath currentProfileForHand(XrSession_T* session, int hand) {
-    if (session == nullptr || hand < 0 || hand > 1 ||
-        !session->synchronizedControllerInputs[static_cast<std::size_t>(hand)].active) {
-        return XR_NULL_PATH;
-    }
+    if (session == nullptr || hand < 0 || hand > 1) return XR_NULL_PATH;
+    const auto& handInput = session->synchronizedControllerInputs[static_cast<std::size_t>(hand)];
+    if (!handInput.active) return XR_NULL_PATH;
     XrInstance_T* instance = getInstance(session->owner);
     if (instance == nullptr) return XR_NULL_PATH;
     const std::string prefix = hand == 0 ? "/user/hand/left/" : "/user/hand/right/";
@@ -2084,6 +2095,10 @@ XrPath currentProfileForHand(XrSession_T* session, int hand) {
             if (pathBelongsToInstance(session->owner, binding.binding, &bindingPath) &&
                 bindingPath.compare(0, prefix.size(), prefix) == 0 &&
                 pathBelongsToInstance(session->owner, entry.first, &profilePath)) {
+                if (profilePath == "/interaction_profiles/ext/hand_interaction_ext" &&
+                    !handInput.handJointsActive) {
+                    continue;
+                }
                 profiles.emplace_back(profilePath, entry.first);
                 break;
             }
@@ -2146,11 +2161,19 @@ ResolvedActionInput resolveActionInput(XrSession_T* session, XrAction_T* action,
             bool pressed = false, recognized = true;
             XrVector2f vector{input.stickX, input.stickY};
             if (component == "select/click" || component == "trigger/click" ||
-                component == "select/value" || component == "trigger/value") {
+                component == "select/value" || component == "trigger/value" ||
+                component == "pinch_ext/value" || component == "aim_activate_ext/value") {
                 scalar = input.trigger; pressed = scalar >= 0.5f;
             } else if (component == "squeeze/click" || component == "grip/click" ||
-                       component == "squeeze/value" || component == "grip/value") {
+                       component == "squeeze/value" || component == "grip/value" ||
+                       component == "grasp_ext/value") {
                 scalar = input.grip; pressed = scalar >= 0.5f;
+            } else if (component == "pinch_ext/ready_ext" ||
+                       component == "aim_activate_ext/ready_ext" ||
+                       component == "grasp_ext/ready_ext") {
+                if (!input.handJointsActive) continue;
+                scalar = 1.0f;
+                pressed = true;
             } else if (component == "thumbstick" || component == "thumbstick/x" ||
                        component == "thumbstick/y") {
                 scalar = component == "thumbstick/x" ? input.stickX :
@@ -2979,6 +3002,10 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrSuggestInteractionProfileBindings(
         suggestedBindings->suggestedBindings == nullptr) {
         return XR_ERROR_VALIDATION_FAILURE;
     }
+    if (profile == "/interaction_profiles/ext/hand_interaction_ext" &&
+        !owner->handInteractionExtensionEnabled) {
+        return XR_ERROR_PATH_UNSUPPORTED;
+    }
     std::vector<XrActionSuggestedBinding> bindings;
     bindings.reserve(suggestedBindings->countSuggestedBindings);
     for (std::uint32_t index = 0; index < suggestedBindings->countSuggestedBindings; ++index) {
@@ -3098,6 +3125,8 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrSyncActions(
         synchronized.buttons = input.buttons;
         synchronized.poseActive = input.poseActive;
         synchronized.gripPose = input.gripPose;
+        synchronized.handJointsActive = input.handJointsActive;
+        synchronized.handJoints = input.handJoints;
     }
     rebuildActionStateSnapshots(owner);
     owner->actionSyncCompleted = true;
