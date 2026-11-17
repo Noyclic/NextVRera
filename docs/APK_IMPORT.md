@@ -38,9 +38,10 @@ reviewed before proceeding.
 
 The compatibility audit also scans packaged `lib/**/*.so` files for a bounded amount of
 read-only string data (up to 16 MiB per library and 64 MiB total). It looks for OpenXR
-extension-name strings and common Vulkan / OpenGL ES / EGL symbols. The bundled
-`libopenxr_loader.so` is excluded so the loader's own extension catalogue does not make
-every APK appear to use every extension.
+extension-name strings, common OpenXR client entry-point names
+(`xrCreateInstance`, `xrCreateSession`, `xrEndFrame` and related calls), and common
+Vulkan / OpenGL ES / EGL symbols. The bundled `libopenxr_loader.so` is excluded so the
+loader's own extension catalogue and entry points do not make every APK appear to use them.
 
 These are **static hints only**. A string can be present in an engine or unused plugin even
 when the game never calls that API. It does not prove that an extension is required, that
