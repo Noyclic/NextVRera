@@ -1412,16 +1412,16 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     joints[10u * 8u + 2u] = 0.01f;
     // Point with the index finger while curling the middle, ring and little
     // fingers. This is an aim_activate gesture, distinct from pinch strength.
-    joints[6u * 8u] = 0.02f;
-    joints[6u * 8u + 1u] = 0.01f;
-    joints[7u * 8u] = 0.04f;
-    joints[7u * 8u + 1u] = 0.015f;
-    joints[8u * 8u] = 0.06f;
-    joints[8u * 8u + 1u] = 0.02f;
-    joints[9u * 8u] = 0.08f;
-    joints[9u * 8u + 1u] = 0.025f;
-    joints[10u * 8u] = 0.10f;
-    joints[10u * 8u + 1u] = 0.03f;
+    // Extend the index chain from a compact metacarpal base without moving
+    // the original fingertip. Pinch/poke assertions below depend on that tip.
+    joints[6u * 8u] = 0.008f;
+    joints[6u * 8u + 1u] = 0.005f;
+    joints[7u * 8u] = 0.016f;
+    joints[7u * 8u + 1u] = 0.011f;
+    joints[8u * 8u] = 0.024f;
+    joints[8u * 8u + 1u] = 0.017f;
+    joints[9u * 8u] = 0.032f;
+    joints[9u * 8u + 1u] = 0.023f;
     joints[11u * 8u] = 0.015f;
     joints[11u * 8u + 1u] = -0.015f;
     joints[15u * 8u] = 0.02f;
