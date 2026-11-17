@@ -1414,8 +1414,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     // fingers. This is an aim_activate gesture, distinct from pinch strength.
     // Extend the index chain from a compact metacarpal base without moving
     // the original fingertip. Pinch/poke assertions below depend on that tip.
-    joints[6u * 8u] = 0.008f;
-    joints[6u * 8u + 1u] = 0.005f;
+    joints[6u * 8u] = 0.014f;
+    joints[6u * 8u + 1u] = 0.008f;
     joints[7u * 8u] = 0.016f;
     joints[7u * 8u + 1u] = 0.011f;
     joints[8u * 8u] = 0.024f;
