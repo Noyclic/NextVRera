@@ -27,32 +27,6 @@ internal object HandGestureEstimator {
         }.average().toFloat().coerceIn(0f, 1f)
     }
 
-    /**
-     * Runtime-defined aim activation gesture: index finger extended while the
-     * middle/ring/little fingers remain curled. This is deliberately separate
-     * from pinch so pointing at a distant target does not reuse trigger pressure.
-     */
-    fun aimActivationStrength(hand: TrackedHand): Float {
-        val source = hand.rawWorldPoints.takeIf { it.size >= LANDMARK_COUNT }
-            ?: hand.worldPoints.takeIf { it.size >= LANDMARK_COUNT }
-            ?: hand.rawPoints.takeIf { it.size >= LANDMARK_COUNT }
-            ?: hand.points
-        val indexExtension = fingerFoldRatio(source, 5) ?: return 0f
-        val otherCurled = intArrayOf(9, 13, 17).mapNotNull { mcpIndex ->
-            fingerFoldRatio(source, mcpIndex)
-        }
-        if (otherCurled.size < MIN_AIM_SUPPORT_FINGERS) return 0f
-        val indexExtended = (
-            (indexExtension - AIM_INDEX_FOLD_MIN_RATIO) /
-                (AIM_INDEX_FOLD_MAX_RATIO - AIM_INDEX_FOLD_MIN_RATIO)
-            ).coerceIn(0f, 1f)
-        val remainingFingersCurled = otherCurled.map { ratio ->
-            ((OPEN_FINGER_FOLD_RATIO - ratio) /
-                (OPEN_FINGER_FOLD_RATIO - CLOSED_FINGER_FOLD_RATIO)).coerceIn(0f, 1f)
-        }.average().toFloat()
-        return (indexExtended * remainingFingersCurled).coerceIn(0f, 1f)
-    }
-
     internal fun curledFingerCount(points: List<HandPoint>): Int? =
         fingerFoldRatios(points)?.count { it < POWER_GRIP_FOLD_RATIO }
 
@@ -112,7 +86,4 @@ internal object HandGestureEstimator {
     private const val OPEN_FINGER_FOLD_RATIO = 1.60f
     private const val CLOSED_FINGER_FOLD_RATIO = 0.65f
     private const val MIN_POWER_GRIP_FINGERS = 3
-    private const val MIN_AIM_SUPPORT_FINGERS = 2
-    private const val AIM_INDEX_FOLD_MIN_RATIO = 1.00f
-    private const val AIM_INDEX_FOLD_MAX_RATIO = 1.65f
 }
