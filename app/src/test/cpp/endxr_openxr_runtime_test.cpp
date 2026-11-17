@@ -1223,6 +1223,10 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
         resolve(request.getInstanceProcAddr, instance, "xrAttachSessionActionSets"));
     auto beginSession = reinterpret_cast<PFN_xrBeginSession>(
         resolve(request.getInstanceProcAddr, instance, "xrBeginSession"));
+    auto requestExitSession = reinterpret_cast<PFN_xrRequestExitSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrRequestExitSession"));
+    auto endSession = reinterpret_cast<PFN_xrEndSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrEndSession"));
     auto syncActions = reinterpret_cast<PFN_xrSyncActions>(
         resolve(request.getInstanceProcAddr, instance, "xrSyncActions"));
     auto getFloat = reinterpret_cast<PFN_xrGetActionStateFloat>(
@@ -1516,6 +1520,10 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     endxrClearControllerInput();
     endxrClearHandPoses();
     endxrClearHeadOrientation();
+    expect(requestExitSession(session) == XR_SUCCESS,
+           "request hand-interaction session exit");
+    expect(endSession(session) == XR_SUCCESS,
+           "end hand-interaction session before teardown");
     expect(destroySpace(pinchSpace) == XR_SUCCESS &&
                destroySpace(pokeSpace) == XR_SUCCESS &&
                destroySpace(localSpace) == XR_SUCCESS,
