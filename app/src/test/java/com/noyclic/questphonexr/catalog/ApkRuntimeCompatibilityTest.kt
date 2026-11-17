@@ -311,7 +311,7 @@ class ApkRuntimeCompatibilityTest {
 
                 zip.putNextEntry(ZipEntry("lib/arm64-v8a/libgame.so"))
                 zip.write(
-                    "XR_KHR_vulkan_enable XR_EXT_hand_tracking xrCreateInstance xrCreateSession xrEndFrame vkCreateInstance libvulkan.so eglCreateContext"
+                    "XR_KHR_vulkan_enable XR_EXT_hand_tracking XR_EXT_hand_interaction xrCreateInstance xrCreateSession xrEndFrame vkCreateInstance libvulkan.so eglCreateContext"
                         .toByteArray()
                 )
                 zip.closeEntry()
@@ -327,6 +327,10 @@ class ApkRuntimeCompatibilityTest {
 
             assertTrue(result.audit.openXrExtensionReferences.contains("XR_KHR_vulkan_enable"))
             assertTrue(result.audit.openXrExtensionReferences.contains("XR_EXT_hand_tracking"))
+            assertTrue(result.audit.openXrExtensionReferences.contains("XR_EXT_hand_interaction"))
+            assertTrue(result.details.none {
+                it.contains("не рекламирует") && it.contains("XR_EXT_hand_interaction")
+            })
             assertTrue("XR_LOADER_ONLY_EXTENSION" !in result.audit.openXrExtensionReferences)
             assertTrue(result.audit.openXrEntryPointReferences.contains("xrCreateInstance"))
             assertTrue(result.audit.openXrEntryPointReferences.contains("xrCreateSession"))
