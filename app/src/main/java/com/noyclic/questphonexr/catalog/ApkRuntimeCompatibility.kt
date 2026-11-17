@@ -55,8 +55,9 @@ data class ApkRuntimeAssessment(
 /**
  * Conservative APK triage for a phone-hosted XR runtime.
  *
- * This class inspects archive filenames and already parsed manifest metadata only.
- * It never executes APK code and never labels an APK as VR-compatible based on heuristics.
+ * This class inspects archive filenames, manifest metadata and bounded string references
+ * in packaged native libraries. It never executes APK code and never labels an APK as
+ * VR-compatible based on heuristics. Native strings are hints, not proof of required APIs.
  */
 object ApkRuntimeCompatibility {
     private data class ArchiveInspection(
@@ -64,8 +65,28 @@ object ApkRuntimeCompatibility {
         val nativeStringReferences: List<String>
     )
 
-    private companion object {
-        const val MAX_NATIVE_SCAN_BYTES_PER_LIBRARY = 16L * 1024L * 1024L
+    private const val MAX_NATIVE_SCAN_BYTES_PER_LIBRARY = 16L * 1024L * 1024L
+    private const val MAX_TOTAL_NATIVE_SCAN_BYTES = 64L * 1024L * 1024L
+    private const val MAX_STRING_CARRY = 192
+    private const val MAX_EXTENSION_REFERENCES = 48
+    private val XR_EXTENSION_PATTERN = Regex("""XR_[A-Z0-9]+_[A-Za-z0-9_]+""")
+    private val GRAPHICS_API_MARKERS = listOf(
+        "libvulkan.so",
+        "vkCreateInstance",
+        "vkGetInstanceProcAddr",
+        "vkQueueSubmit",
+        "vkCreateSwapchainKHR",
+        "eglCreateContext",
+        "eglSwapBuffers",
+        "glCreateShader"
+    )
+    private val ENDXR_ADVERTISED_EXTENSIONS = setOf(
+        "XR_KHR_android_create_instance",
+        "XR_KHR_opengl_es_enable",
+        "XR_EXT_hand_tracking"
+    )
+
+    /*        const val MAX_NATIVE_SCAN_BYTES_PER_LIBRARY = 16L * 1024L * 1024L
         const val MAX_TOTAL_NATIVE_SCAN_BYTES = 64L * 1024L * 1024L
         const val MAX_STRING_CARRY = 192
         const val MAX_EXTENSION_REFERENCES = 48
