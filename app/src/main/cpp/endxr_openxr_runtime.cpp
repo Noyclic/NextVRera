@@ -2095,10 +2095,6 @@ XrPath currentProfileForHand(XrSession_T* session, int hand) {
             if (pathBelongsToInstance(session->owner, binding.binding, &bindingPath) &&
                 bindingPath.compare(0, prefix.size(), prefix) == 0 &&
                 pathBelongsToInstance(session->owner, entry.first, &profilePath)) {
-                if (profilePath == "/interaction_profiles/ext/hand_interaction_ext" &&
-                    !handInput.handJointsActive) {
-                    continue;
-                }
                 profiles.emplace_back(profilePath, entry.first);
                 break;
             }
@@ -2171,9 +2167,11 @@ ResolvedActionInput resolveActionInput(XrSession_T* session, XrAction_T* action,
             } else if (component == "pinch_ext/ready_ext" ||
                        component == "aim_activate_ext/ready_ext" ||
                        component == "grasp_ext/ready_ext") {
-                if (!input.handJointsActive) continue;
+                // Camera-joint readiness or an active controller input can make
+                // the interaction ready. This also lets controller-only runtimes
+                // expose the standard hand-interaction profile without joint data.
                 scalar = 1.0f;
-                pressed = true;
+                pressed = input.active;
             } else if (component == "thumbstick" || component == "thumbstick/x" ||
                        component == "thumbstick/y") {
                 scalar = component == "thumbstick/x" ? input.stickX :
