@@ -156,9 +156,8 @@ object ExternalRuntimeClientProbe {
                 val expected = listOf(
                     "sequence", "updated_at_elapsed_realtime_nanos", "stale",
                     "left_active", "left_trigger", "left_grip", "left_stick_x",
-                    "left_stick_y", "left_buttons", "left_aim_activate", "right_active", "right_trigger",
+                    "left_stick_y", "left_buttons", "right_active", "right_trigger",
                     "right_grip", "right_stick_x", "right_stick_y", "right_buttons",
-                    "right_aim_activate",
                     "head_orientation_active", "head_orientation_stale",
                     "head_orientation_updated_at_elapsed_realtime_nanos",
                     "head_orientation_x", "head_orientation_y",
