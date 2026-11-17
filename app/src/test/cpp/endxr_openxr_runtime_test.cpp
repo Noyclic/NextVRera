@@ -30,7 +30,8 @@ void setup(XrNegotiateLoaderInfo& loader, XrNegotiateRuntimeRequest& runtime) {
     runtime.structSize = sizeof(runtime);
 }
 XrInstance createInstance(PFN_xrGetInstanceProcAddr gipa, bool enableAndroid, bool enableGles,
-                          bool enableHandTracking = false) {
+                          bool enableHandTracking = false,
+                          bool enableHandInteraction = false) {
     XrInstanceCreateInfoAndroidKHR androidInfo{};
     androidInfo.type = XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR;
     androidInfo.applicationVM = reinterpret_cast<void*>(0x1000);
@@ -39,11 +40,12 @@ XrInstance createInstance(PFN_xrGetInstanceProcAddr gipa, bool enableAndroid, bo
     info.type = XR_TYPE_INSTANCE_CREATE_INFO;
     info.next = enableAndroid ? &androidInfo : nullptr;
     info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
-    const char* enabled[3]{};
+    const char* enabled[4]{};
     std::uint32_t count = 0;
     if (enableAndroid) enabled[count++] = ENDXR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME;
     if (enableGles) enabled[count++] = ENDXR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME;
     if (enableHandTracking) enabled[count++] = XR_EXT_HAND_TRACKING_EXTENSION_NAME;
+    if (enableHandInteraction) enabled[count++] = XR_EXT_HAND_INTERACTION_EXTENSION_NAME;
     info.enabledExtensionCount = count;
     info.enabledExtensionNames = enabled;
     PFN_xrVoidFunction raw = nullptr;
@@ -131,13 +133,14 @@ void testExtensionEnumerationAndInstance() {
                                      "xrEnumerateInstanceExtensionProperties");
     auto enumerate = reinterpret_cast<PFN_xrEnumerateInstanceExtensionProperties>(raw);
     std::uint32_t count = 0;
-    expect(enumerate(nullptr, 0, &count, nullptr) == XR_SUCCESS && count == 3,
-           "report Android-create, GLES and hand-tracking extensions");
-    XrExtensionProperties extensions[3]{};
+    expect(enumerate(nullptr, 0, &count, nullptr) == XR_SUCCESS && count == 4,
+           "report Android-create, GLES, hand-tracking and hand-interaction extensions");
+    XrExtensionProperties extensions[4]{};
     extensions[0].type = XR_TYPE_EXTENSION_PROPERTIES;
     extensions[1].type = XR_TYPE_EXTENSION_PROPERTIES;
     extensions[2].type = XR_TYPE_EXTENSION_PROPERTIES;
-    expect(enumerate(nullptr, 3, &count, extensions) == XR_SUCCESS,
+    extensions[3].type = XR_TYPE_EXTENSION_PROPERTIES;
+    expect(enumerate(nullptr, 4, &count, extensions) == XR_SUCCESS,
            "fill all extension properties");
     expect(std::strcmp(extensions[0].extensionName,
                        ENDXR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME) == 0,
@@ -150,6 +153,10 @@ void testExtensionEnumerationAndInstance() {
                        XR_EXT_HAND_TRACKING_EXTENSION_NAME) == 0 &&
                extensions[2].extensionVersion == XR_EXT_hand_tracking_SPEC_VERSION,
            "publish XR_EXT_hand_tracking extension version 4");
+    expect(std::strcmp(extensions[3].extensionName,
+                       XR_EXT_HAND_INTERACTION_EXTENSION_NAME) == 0 &&
+               extensions[3].extensionVersion == XR_EXT_hand_interaction_SPEC_VERSION,
+           "publish XR_EXT_hand_interaction extension version 2");
     expect(enumerate(nullptr, 2, &count, extensions) == XR_ERROR_SIZE_INSUFFICIENT,
            "report insufficient extension enumeration capacity");
 
@@ -1181,6 +1188,291 @@ void testActionInputApiLifecycleAndNeutralState() {
     expect(destroyInstance(instance) == XR_SUCCESS, "destroy action test instance");
 }
 
+void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
+    XrNegotiateLoaderInfo loader{};
+    XrNegotiateRuntimeRequest request{};
+    setup(loader, request);
+    expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
+           "negotiate before hand-interaction profile test");
+    const XrInstance instance = createInstance(
+        request.getInstanceProcAddr, true, true, true, true);
+
+    auto stringToPath = reinterpret_cast<PFN_xrStringToPath>(
+        resolve(request.getInstanceProcAddr, instance, "xrStringToPath"));
+    auto destroyInstance = reinterpret_cast<PFN_xrDestroyInstance>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroyInstance"));
+    auto createActionSet = reinterpret_cast<PFN_xrCreateActionSet>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateActionSet"));
+    auto destroyActionSet = reinterpret_cast<PFN_xrDestroyActionSet>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroyActionSet"));
+    auto createAction = reinterpret_cast<PFN_xrCreateAction>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateAction"));
+    auto destroyAction = reinterpret_cast<PFN_xrDestroyAction>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroyAction"));
+    auto suggestBindings = reinterpret_cast<PFN_xrSuggestInteractionProfileBindings>(
+        resolve(request.getInstanceProcAddr, instance, "xrSuggestInteractionProfileBindings"));
+    auto getSystem = reinterpret_cast<PFN_xrGetSystem>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetSystem"));
+    auto getRequirements = reinterpret_cast<PFN_xrGetOpenGLESGraphicsRequirementsKHR>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetOpenGLESGraphicsRequirementsKHR"));
+    auto createSession = reinterpret_cast<PFN_xrCreateSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateSession"));
+    auto destroySession = reinterpret_cast<PFN_xrDestroySession>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroySession"));
+    auto attachActionSets = reinterpret_cast<PFN_xrAttachSessionActionSets>(
+        resolve(request.getInstanceProcAddr, instance, "xrAttachSessionActionSets"));
+    auto beginSession = reinterpret_cast<PFN_xrBeginSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrBeginSession"));
+    auto syncActions = reinterpret_cast<PFN_xrSyncActions>(
+        resolve(request.getInstanceProcAddr, instance, "xrSyncActions"));
+    auto getFloat = reinterpret_cast<PFN_xrGetActionStateFloat>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetActionStateFloat"));
+    auto getBoolean = reinterpret_cast<PFN_xrGetActionStateBoolean>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetActionStateBoolean"));
+    auto getPose = reinterpret_cast<PFN_xrGetActionStatePose>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetActionStatePose"));
+    auto currentProfile = reinterpret_cast<PFN_xrGetCurrentInteractionProfile>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetCurrentInteractionProfile"));
+    auto createReferenceSpace = reinterpret_cast<PFN_xrCreateReferenceSpace>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateReferenceSpace"));
+    auto createActionSpace = reinterpret_cast<PFN_xrCreateActionSpace>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateActionSpace"));
+    auto locateSpace = reinterpret_cast<PFN_xrLocateSpace>(
+        resolve(request.getInstanceProcAddr, instance, "xrLocateSpace"));
+    auto destroySpace = reinterpret_cast<PFN_xrDestroySpace>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroySpace"));
+
+    XrPath leftHand = XR_NULL_PATH;
+    XrPath rightHand = XR_NULL_PATH;
+    XrPath handProfile = XR_NULL_PATH;
+    XrPath pinchValuePath = XR_NULL_PATH;
+    XrPath pinchReadyPath = XR_NULL_PATH;
+    XrPath graspValuePath = XR_NULL_PATH;
+    XrPath graspReadyPath = XR_NULL_PATH;
+    XrPath pinchPosePath = XR_NULL_PATH;
+    XrPath pokePosePath = XR_NULL_PATH;
+    expect(stringToPath(instance, "/user/hand/left", &leftHand) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/right", &rightHand) == XR_SUCCESS,
+           "intern hand-interaction subaction paths");
+    expect(stringToPath(instance, "/interaction_profiles/ext/hand_interaction_ext",
+                        &handProfile) == XR_SUCCESS,
+           "intern XR_EXT_hand_interaction profile");
+    expect(stringToPath(instance, "/user/hand/left/input/pinch_ext/value",
+                        &pinchValuePath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/pinch_ext/ready_ext",
+                        &pinchReadyPath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/grasp_ext/value",
+                        &graspValuePath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/grasp_ext/ready_ext",
+                        &graspReadyPath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/pinch_ext/pose",
+                        &pinchPosePath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/poke_ext/pose",
+                        &pokePosePath) == XR_SUCCESS,
+           "intern hand-interaction value, readiness and pose binding paths");
+
+    XrActionSetCreateInfo setInfo{};
+    setInfo.type = XR_TYPE_ACTION_SET_CREATE_INFO;
+    std::strncpy(setInfo.actionSetName, "hand_interaction",
+                 sizeof(setInfo.actionSetName) - 1);
+    std::strncpy(setInfo.localizedActionSetName, "Hand Interaction",
+                 sizeof(setInfo.localizedActionSetName) - 1);
+    XrActionSet actionSet = XR_NULL_HANDLE;
+    expect(createActionSet(instance, &setInfo, &actionSet) == XR_SUCCESS,
+           "create hand-interaction action set");
+
+    const XrPath leftSubaction[] = {leftHand};
+    auto makeAction = [&](const char* name, XrActionType type) {
+        XrActionCreateInfo info{};
+        info.type = XR_TYPE_ACTION_CREATE_INFO;
+        std::strncpy(info.actionName, name, sizeof(info.actionName) - 1);
+        std::strncpy(info.localizedActionName, name, sizeof(info.localizedActionName) - 1);
+        info.actionType = type;
+        info.countSubactionPaths = 1;
+        info.subactionPaths = leftSubaction;
+        XrAction action = XR_NULL_HANDLE;
+        expect(createAction(actionSet, &info, &action) == XR_SUCCESS,
+               "create hand-interaction action");
+        return action;
+    };
+    const XrAction pinchValueAction = makeAction("pinch_value", XR_ACTION_TYPE_FLOAT_INPUT);
+    const XrAction pinchReadyAction = makeAction("pinch_ready", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    const XrAction graspValueAction = makeAction("grasp_value", XR_ACTION_TYPE_FLOAT_INPUT);
+    const XrAction graspReadyAction = makeAction("grasp_ready", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    const XrAction pinchPoseAction = makeAction("pinch_pose", XR_ACTION_TYPE_POSE_INPUT);
+    const XrAction pokePoseAction = makeAction("poke_pose", XR_ACTION_TYPE_POSE_INPUT);
+
+    const XrActionSuggestedBinding bindings[] = {
+        {pinchValueAction, pinchValuePath},
+        {pinchReadyAction, pinchReadyPath},
+        {graspValueAction, graspValuePath},
+        {graspReadyAction, graspReadyPath},
+        {pinchPoseAction, pinchPosePath},
+        {pokePoseAction, pokePosePath}
+    };
+    XrInteractionProfileSuggestedBinding suggested{};
+    suggested.type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;
+    suggested.interactionProfile = handProfile;
+    suggested.countSuggestedBindings = static_cast<std::uint32_t>(
+        sizeof(bindings) / sizeof(bindings[0]));
+    suggested.suggestedBindings = bindings;
+    expect(suggestBindings(instance, &suggested) == XR_SUCCESS,
+           "accept standard hand-interaction bindings");
+
+    XrSystemGetInfo systemInfo{};
+    systemInfo.type = XR_TYPE_SYSTEM_GET_INFO;
+    systemInfo.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+    XrSystemId system = XR_NULL_SYSTEM_ID;
+    expect(getSystem(instance, &systemInfo, &system) == XR_SUCCESS,
+           "get system for hand-interaction session");
+    XrGraphicsRequirementsOpenGLESKHR requirements{};
+    requirements.type = XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR;
+    expect(getRequirements(instance, system, &requirements) == XR_SUCCESS,
+           "query GLES requirements for hand-interaction session");
+
+    XrGraphicsBindingOpenGLESAndroidKHR graphicsBinding{};
+    graphicsBinding.type = XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR;
+    graphicsBinding.display = reinterpret_cast<void*>(0x1000);
+    graphicsBinding.config = reinterpret_cast<void*>(0x2000);
+    graphicsBinding.context = reinterpret_cast<void*>(0x3000);
+    XrSessionCreateInfo sessionInfo{};
+    sessionInfo.type = XR_TYPE_SESSION_CREATE_INFO;
+    sessionInfo.next = &graphicsBinding;
+    sessionInfo.systemId = system;
+    XrSession session = XR_NULL_HANDLE;
+    expect(createSession(instance, &sessionInfo, &session) == XR_SUCCESS,
+           "create session for hand-interaction actions");
+
+    XrSessionActionSetsAttachInfo attachInfo{};
+    attachInfo.type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO;
+    attachInfo.countActionSets = 1;
+    attachInfo.actionSets = &actionSet;
+    expect(attachActionSets(session, &attachInfo) == XR_SUCCESS,
+           "attach hand-interaction action set");
+    XrSessionBeginInfo beginInfo{};
+    beginInfo.type = XR_TYPE_SESSION_BEGIN_INFO;
+    beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    expect(beginSession(session, &beginInfo) == XR_SUCCESS,
+           "begin hand-interaction session");
+
+    // Joint samples are palm-local. Thumb/index tip positions deliberately differ
+    // so pinch and poke action spaces can be checked independently.
+    std::array<float, XR_HAND_JOINT_COUNT_EXT * 8u> joints{};
+    for (std::uint32_t joint = 0; joint < XR_HAND_JOINT_COUNT_EXT; ++joint) {
+        const std::size_t offset = static_cast<std::size_t>(joint) * 8u;
+        joints[offset + 3u] = 0.009f;
+        joints[offset + 7u] = 1.0f;
+    }
+    joints[5u * 8u] = 0.02f;
+    joints[5u * 8u + 1u] = 0.01f;
+    joints[10u * 8u] = 0.04f;
+    joints[10u * 8u + 1u] = 0.03f;
+    joints[10u * 8u + 2u] = 0.01f;
+    endxrSetControllerInput(0, 1, 0.82f, 0.64f, 0.0f, 0.0f, 0);
+    endxrSetHandPose(0, 1, 0.25f, 0.10f, -1.5f, 0.0f, 0.0f, 0.0f, 1.0f);
+    endxrSetHandJointData(0, 1, joints.data(), static_cast<std::uint32_t>(joints.size()));
+    endxrSetHeadOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+
+    XrActiveActionSet activeSet{actionSet, XR_NULL_PATH};
+    XrActionsSyncInfo syncInfo{};
+    syncInfo.type = XR_TYPE_ACTIONS_SYNC_INFO;
+    syncInfo.countActiveActionSets = 1;
+    syncInfo.activeActionSets = &activeSet;
+    expect(syncActions(session, &syncInfo) == XR_SUCCESS,
+           "sync camera-driven hand interaction sample");
+
+    XrInteractionProfileState profileState{};
+    profileState.type = XR_TYPE_INTERACTION_PROFILE_STATE;
+    expect(currentProfile(session, leftHand, &profileState) == XR_SUCCESS &&
+               profileState.interactionProfile == handProfile,
+           "select hand-interaction profile when fresh hand joints are active");
+
+    XrActionStateGetInfo getInfo{};
+    getInfo.type = XR_TYPE_ACTION_STATE_GET_INFO;
+    getInfo.subactionPath = leftHand;
+    XrActionStateFloat floatState{};
+    floatState.type = XR_TYPE_ACTION_STATE_FLOAT;
+    getInfo.action = pinchValueAction;
+    expect(getFloat(session, &getInfo, &floatState) == XR_SUCCESS &&
+               floatState.isActive == XR_TRUE &&
+               std::abs(floatState.currentState - 0.82f) < 0.0001f,
+           "map MediaPipe pinch strength to pinch_ext/value");
+    getInfo.action = graspValueAction;
+    expect(getFloat(session, &getInfo, &floatState) == XR_SUCCESS &&
+               floatState.isActive == XR_TRUE &&
+               std::abs(floatState.currentState - 0.64f) < 0.0001f,
+           "map MediaPipe grip strength to grasp_ext/value");
+
+    XrActionStateBoolean booleanState{};
+    booleanState.type = XR_TYPE_ACTION_STATE_BOOLEAN;
+    getInfo.action = pinchReadyAction;
+    expect(getBoolean(session, &getInfo, &booleanState) == XR_SUCCESS &&
+               booleanState.isActive == XR_TRUE &&
+               booleanState.currentState == XR_TRUE,
+           "report pinch readiness while all camera hand joints are fresh");
+    getInfo.action = graspReadyAction;
+    expect(getBoolean(session, &getInfo, &booleanState) == XR_SUCCESS &&
+               booleanState.isActive == XR_TRUE &&
+               booleanState.currentState == XR_TRUE,
+           "report grasp readiness while all camera hand joints are fresh");
+
+    auto makeActionSpace = [&](XrAction action) {
+        XrActionSpaceCreateInfo info{};
+        info.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
+        info.action = action;
+        info.subactionPath = leftHand;
+        info.poseInActionSpace.orientation.w = 1.0f;
+        XrSpace space = XR_NULL_HANDLE;
+        expect(createActionSpace(session, &info, &space) == XR_SUCCESS,
+               "create camera hand-interaction action space");
+        return space;
+    };
+    const XrSpace pinchSpace = makeActionSpace(pinchPoseAction);
+    const XrSpace pokeSpace = makeActionSpace(pokePoseAction);
+
+    XrReferenceSpaceCreateInfo referenceInfo{};
+    referenceInfo.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
+    referenceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    referenceInfo.poseInReferenceSpace.orientation.w = 1.0f;
+    XrSpace localSpace = XR_NULL_HANDLE;
+    expect(createReferenceSpace(session, &referenceInfo, &localSpace) == XR_SUCCESS,
+           "create LOCAL base space for hand interaction");
+    XrSpaceLocation location{};
+    location.type = XR_TYPE_SPACE_LOCATION;
+    expect(locateSpace(pinchSpace, localSpace, 1, &location) == XR_SUCCESS &&
+               (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+               std::abs(location.pose.position.x - 0.28f) < 0.0001f &&
+               std::abs(location.pose.position.y - 0.12f) < 0.0001f,
+           "locate pinch pose at midpoint of camera thumb and index tips");
+    location = {};
+    location.type = XR_TYPE_SPACE_LOCATION;
+    expect(locateSpace(pokeSpace, localSpace, 1, &location) == XR_SUCCESS &&
+               (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+               std::abs(location.pose.position.x - 0.29f) < 0.0001f &&
+               std::abs(location.pose.position.y - 0.13f) < 0.0001f &&
+               std::abs(location.pose.position.z + 1.49f) < 0.0001f,
+           "locate poke pose at the camera-derived index fingertip");
+
+    endxrClearControllerInput();
+    endxrClearHandPoses();
+    endxrClearHeadOrientation();
+    expect(destroySpace(pinchSpace) == XR_SUCCESS &&
+               destroySpace(pokeSpace) == XR_SUCCESS &&
+               destroySpace(localSpace) == XR_SUCCESS,
+           "destroy hand-interaction spaces");
+    expect(destroySession(session) == XR_SUCCESS,
+           "destroy hand-interaction session");
+    for (XrAction action : {pinchValueAction, pinchReadyAction, graspValueAction,
+                            graspReadyAction, pinchPoseAction, pokePoseAction}) {
+        expect(destroyAction(action) == XR_SUCCESS,
+               "destroy hand-interaction action");
+    }
+    expect(destroyActionSet(actionSet) == XR_SUCCESS,
+           "destroy hand-interaction action set");
+    expect(destroyInstance(instance) == XR_SUCCESS,
+           "destroy hand-interaction instance");
+}
+
 void testGetInstanceProcAddrConformance() {
     XrNegotiateLoaderInfo loader{};
     XrNegotiateRuntimeRequest request{};
@@ -1277,6 +1569,7 @@ int main() {
     testSystemDiscoveryAndGraphicsRequirements();
     testGlesSessionSwapchainAndFrameLifecycle();
     testActionInputApiLifecycleAndNeutralState();
+    testHandInteractionProfileMapsCameraGesturesAndJointPoses();
     testGetInstanceProcAddrConformance();
     std::cout << "EndXR OpenXR GLES session and swapchain tests: all passed.\n";
     return 0;
