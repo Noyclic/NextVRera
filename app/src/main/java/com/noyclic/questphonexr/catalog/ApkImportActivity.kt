@@ -501,7 +501,9 @@ class ApkImportActivity : ComponentActivity() {
             11f, 0xFF8994A5.toInt()
         ).apply { setPadding(0, dp(7), 0, dp(5)) })
         card.addView(button(
-            if (canLaunchImportedVersion) {
+            if (canLaunchImportedVersion && runtimeAssessment?.route == ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE) {
+                "Обычный запуск Android · без EndXR"
+            } else if (canLaunchImportedVersion) {
                 "Открыть установленное приложение"
             } else if (installMatch == ImportedApkInstallMatch.MATCHES_IMPORTED_VERSION && hasLauncherActivity) {
                 "Анализ APK…"
@@ -1285,7 +1287,11 @@ class ApkImportActivity : ComponentActivity() {
         appendLine("These scoped grants do not select the OpenXR runtime and do not prove the game consumes controller data.")
         appendLine()
         appendLine("[OPENXR CAPTURE]")
-        appendLine("Status: awaiting package-scoped EndXR runtime telemetry after the game returns.")
+        if (inputIpcGranted) {
+            appendLine("Status: awaiting package-scoped EndXR runtime telemetry after the game returns.")
+        } else {
+            appendLine("Status: NOT ENABLED — this launch has no package-scoped runtime_event write grant; game-process telemetry cannot be collected.")
+        }
         appendLine("Runtime selection, xrCreateInstance, xrCreateSession and successfully composited projection images are tracked as separate evidence levels.")
         appendLine()
         appendLine("[RUNTIMEBROKER / RUNTIME SERVICE]")
@@ -1295,7 +1301,11 @@ class ApkImportActivity : ComponentActivity() {
         assessment.details.forEach { appendLine("- $it") }
         appendLine()
         appendLine("[NEXT STEP]")
-        appendLine("Close or return from the game to let NextVRera collect the latest runtime telemetry. A separate external OpenXR probe remains useful for independent loader/runtime validation.")
+        if (inputIpcGranted) {
+            appendLine("Close or return from the game to let NextVRera collect the latest runtime telemetry. A separate external OpenXR probe remains useful for independent loader/runtime validation.")
+        } else {
+            appendLine("This was an ordinary Android launch without EndXR IPC consent. To collect per-game runtime telemetry, return to the APK library and use «Запустить через NextVRera + EndXR», then approve the package-scoped grants. A separate external OpenXR probe remains useful for independent loader/runtime validation.")
+        }
     }
 
     private fun pollRuntimeTelemetryAfterReturn(

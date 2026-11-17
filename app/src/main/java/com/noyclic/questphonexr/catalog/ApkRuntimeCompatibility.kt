@@ -303,35 +303,40 @@ object ApkRuntimeCompatibility {
             abiSummary = abiSummary
         )
 
-        val blockers = buildList {
+        // A missing <uses-feature> is a device-capability warning, not proof that an
+        // already-installed APK cannot be started. Keep true installation blockers
+        // (minimum API and incompatible native ABI) separate from runtime features.
+        val hardBlockers = buildList {
             if (info.minSdk > deviceApiLevel) {
                 add("Требуется Android API ${info.minSdk}, на телефоне API $deviceApiLevel.")
             }
             if (info.nativeAbis.isNotEmpty() && info.nativeAbis.none { it in supportedAbis }) {
                 add("ABI APK (${info.nativeAbis.joinToString()}) не совпадает с ABI телефона (${supportedAbis.joinToString()}).")
             }
-            if (missingRequiredFeatures.isNotEmpty()) {
-                add("Отсутствуют обязательные функции: ${missingRequiredFeatures.sorted().joinToString()}.")
-            }
+        }
+        val missingFeatureWarning = missingRequiredFeatures.takeIf { it.isNotEmpty() }?.let {
+            "Отсутствуют обязательные Android-функции: ${it.sorted().joinToString()}."
         }
 
         val route = when {
-            blockers.isNotEmpty() -> ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED
+            hardBlockers.isNotEmpty() -> ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED
             endGvrAssessment.classification == EndGvrClassification.GEAR_VR_MARKED ->
                 ApkLaunchRoute.GEAR_VR_LEGACY_CANDIDATE
             endGvrAssessment.classification == EndGvrClassification.LEGACY_OCULUS_MOBILE_SDK ->
                 ApkLaunchRoute.LEGACY_OCULUS_MOBILE_CANDIDATE
-            // Quest APKs can bundle Meta/Oculus plugins and still use the Khronos
-            // OpenXR loader. Give those packages the EndXR preflight route, while
-            // keeping the Meta dependency warning visible below.
+            // OpenXR apps with missing VR sensor declarations still deserve the
+            // managed EndXR preflight. The missing feature remains a visible warning;
+            // it must not hide the only route that can test the external runtime.
             "OpenXR" in xrTechnologies -> ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE
+            missingRequiredFeatures.isNotEmpty() -> ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED
             questSignals.isNotEmpty() -> ApkLaunchRoute.QUEST_RUNTIME_REQUIRED
             xrTechnologies.isNotEmpty() -> ApkLaunchRoute.XR_SOURCE_ADAPTATION_REQUIRED
             else -> ApkLaunchRoute.ANDROID_APP_CANDIDATE
         }
 
         val details = buildList {
-            addAll(blockers)
+            addAll(hardBlockers)
+            missingFeatureWarning?.let(::add)
             when (route) {
                 ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED ->
                     add("Сначала нужно устранить ограничения устройства; установка или запуск могут завершиться ошибкой.")
@@ -342,7 +347,14 @@ object ApkRuntimeCompatibility {
                 ApkLaunchRoute.LEGACY_OCULUS_MOBILE_CANDIDATE ->
                     add("Найдена libvrapi.so — признак legacy Oculus Mobile SDK. Это само по себе не доказывает, что приложение предназначено именно для Gear VR; нужно проверить манифест, сервисы и требования устройства.")
                 ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE -> {
-                    add("Обнаружены OpenXR-маркеры. Нужен активный Android OpenXR Runtime с поддержкой расширений и графического API. Один OpenXR Loader в QuestPhoneXR не является Runtime.")
+                    add("Обнаружены OpenXR-маркеры. Нужен активный Android OpenXR Runtime с поддержкой расширений и графического API. Один OpenXR Loader в NextVRera не является Runtime.")
+                    if (missingRequiredFeatures.isNotEmpty()) {
+                        add(
+                            "Android не сообщает об обязательных функциях ${missingRequiredFeatures.sorted().joinToString()}. " +
+                                "Это может помешать установке или работе функций устройства, но для уже установленного OpenXR APK NextVRera всё равно предлагает отдельный EndXR preflight. " +
+                                "Успешный запуск и доступность VR-трекинга этим не гарантируются."
+                        )
+                    }
                     if (questSignals.isNotEmpty()) {
                         add("В этом APK также найдены Meta/Oculus компоненты. Попытка через EndXR имеет смысл только если игра действительно идёт через Khronos OpenXR Loader; отдельные Meta Runtime API и сервисы EndXR пока не заменяет.")
                     }

@@ -232,6 +232,38 @@ class ApkRuntimeCompatibilityTest {
     }
 
     @Test
+    fun missingVrHeadtrackingDoesNotHideOpenXrEndXrPreflight() {
+        val result = ApkRuntimeCompatibility.assess(
+            info = sample(requiredFeatures = listOf("android.hardware.vr.headtracking")),
+            archiveEntries = listOf(
+                "lib/arm64-v8a/libopenxr_loader.so",
+                "lib/arm64-v8a/libgodot_android.so"
+            ),
+            deviceApiLevel = 35,
+            supportedAbis = listOf("arm64-v8a"),
+            missingRequiredFeatures = setOf("android.hardware.vr.headtracking")
+        )
+
+        assertEquals(ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE, result.route)
+        assertTrue(result.details.any { it.contains("android.hardware.vr.headtracking") })
+        assertTrue(result.details.any { it.contains("EndXR preflight") })
+    }
+
+    @Test
+    fun missingRequiredFeatureStillBlocksNonOpenXrApk() {
+        val result = ApkRuntimeCompatibility.assess(
+            info = sample(requiredFeatures = listOf("android.hardware.vr.headtracking")),
+            archiveEntries = listOf("lib/arm64-v8a/libexample.so"),
+            deviceApiLevel = 35,
+            supportedAbis = listOf("arm64-v8a"),
+            missingRequiredFeatures = setOf("android.hardware.vr.headtracking")
+        )
+
+        assertEquals(ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED, result.route)
+        assertTrue(result.details.any { it.contains("android.hardware.vr.headtracking") })
+    }
+
+    @Test
     fun keepsPlainAndroidApkAsLaunchCandidateWithoutClaimingVrSupport() {
         val result = ApkRuntimeCompatibility.assess(
             info = sample(),
