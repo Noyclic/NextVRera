@@ -1487,8 +1487,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                std::abs(location.pose.position.z + 1.49f) < 0.0001f,
            "locate poke pose at the camera-derived index fingertip");
 
-    // Without a fresh joint buffer, the Touch profile must still expose the
-    // standard pinch/poke pose paths using conservative grip-relative offsets.
+    // When the joint stream is temporarily unavailable, the hand-interaction
+    // profile must remain usable from the active controller-style input sample.
     endxrSetHandJointData(0, 0, nullptr, 0);
     expect(syncActions(session, &syncInfo) == XR_SUCCESS,
            "sync controller-style sample without camera joints");
