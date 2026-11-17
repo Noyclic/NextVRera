@@ -1252,6 +1252,7 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     XrPath touchProfile = XR_NULL_PATH;
     XrPath touchPinchPosePath = XR_NULL_PATH;
     XrPath touchPokePosePath = XR_NULL_PATH;
+    XrPath aimPosePath = XR_NULL_PATH;
     XrPath pinchValuePath = XR_NULL_PATH;
     XrPath pinchReadyPath = XR_NULL_PATH;
     XrPath graspValuePath = XR_NULL_PATH;
@@ -1269,8 +1270,10 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     expect(stringToPath(instance, "/user/hand/left/input/pinch_ext/pose",
                         &touchPinchPosePath) == XR_SUCCESS &&
                stringToPath(instance, "/user/hand/left/input/poke_ext/pose",
-                        &touchPokePosePath) == XR_SUCCESS,
-           "intern Touch-profile pinch and poke pose paths");
+                        &touchPokePosePath) == XR_SUCCESS &&
+               stringToPath(instance, "/user/hand/left/input/aim/pose",
+                        &aimPosePath) == XR_SUCCESS,
+           "intern Touch-profile pinch, poke and aim pose paths");
     expect(stringToPath(instance, "/user/hand/left/input/pinch_ext/value",
                         &pinchValuePath) == XR_SUCCESS &&
                stringToPath(instance, "/user/hand/left/input/pinch_ext/ready_ext",
@@ -1315,6 +1318,7 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     const XrAction graspReadyAction = makeAction("grasp_ready", XR_ACTION_TYPE_BOOLEAN_INPUT);
     const XrAction pinchPoseAction = makeAction("pinch_pose", XR_ACTION_TYPE_POSE_INPUT);
     const XrAction pokePoseAction = makeAction("poke_pose", XR_ACTION_TYPE_POSE_INPUT);
+    const XrAction aimPoseAction = makeAction("aim_pose", XR_ACTION_TYPE_POSE_INPUT);
 
     const XrActionSuggestedBinding bindings[] = {
         {pinchValueAction, pinchValuePath},
@@ -1322,7 +1326,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
         {graspValueAction, graspValuePath},
         {graspReadyAction, graspReadyPath},
         {pinchPoseAction, pinchPosePath},
-        {pokePoseAction, pokePosePath}
+        {pokePoseAction, pokePosePath},
+        {aimPoseAction, aimPosePath}
     };
     XrInteractionProfileSuggestedBinding suggested{};
     suggested.type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;
@@ -1334,7 +1339,8 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
            "accept standard hand-interaction bindings");
     const XrActionSuggestedBinding touchPoseBindings[] = {
         {pinchPoseAction, touchPinchPosePath},
-        {pokePoseAction, touchPokePosePath}
+        {pokePoseAction, touchPokePosePath},
+        {aimPoseAction, aimPosePath}
     };
     suggested.interactionProfile = touchProfile;
     suggested.countSuggestedBindings = static_cast<std::uint32_t>(
@@ -1463,6 +1469,7 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
     };
     const XrSpace pinchSpace = makeActionSpace(pinchPoseAction);
     const XrSpace pokeSpace = makeActionSpace(pokePoseAction);
+    const XrSpace aimSpace = makeActionSpace(aimPoseAction);
 
     XrReferenceSpaceCreateInfo referenceInfo{};
     referenceInfo.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
@@ -1486,6 +1493,14 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                std::abs(location.pose.position.y - 0.13f) < 0.0001f &&
                std::abs(location.pose.position.z + 1.49f) < 0.0001f,
            "locate poke pose at the camera-derived index fingertip");
+    location = {};
+    location.type = XR_TYPE_SPACE_LOCATION;
+    expect(locateSpace(aimSpace, localSpace, 1, &location) == XR_SUCCESS &&
+               (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+               std::abs(location.pose.position.x - 0.25f) < 0.0001f &&
+               std::abs(location.pose.position.y - 0.10f) < 0.0001f &&
+               std::abs(location.pose.position.z + 1.62f) < 0.0001f,
+           "locate aim pose ahead of the palm for a stable pointing ray");
 
     // When the joint stream is temporarily unavailable, the hand-interaction
     // profile must remain usable from the active controller-style input sample.
@@ -1516,6 +1531,14 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
                std::abs(location.pose.position.y - 0.10f) < 0.0001f &&
                std::abs(location.pose.position.z + 1.60f) < 0.0001f,
            "provide a grip-relative poke pose for controller profiles");
+    location = {};
+    location.type = XR_TYPE_SPACE_LOCATION;
+    expect(locateSpace(aimSpace, localSpace, 1, &location) == XR_SUCCESS &&
+               (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+               std::abs(location.pose.position.x - 0.25f) < 0.0001f &&
+               std::abs(location.pose.position.y - 0.10f) < 0.0001f &&
+               std::abs(location.pose.position.z + 1.62f) < 0.0001f,
+           "keep the controller-backed aim pose ahead of the grip pose");
 
     endxrClearControllerInput();
     endxrClearHandPoses();
@@ -1526,12 +1549,13 @@ void testHandInteractionProfileMapsCameraGesturesAndJointPoses() {
            "end hand-interaction session before teardown");
     expect(destroySpace(pinchSpace) == XR_SUCCESS &&
                destroySpace(pokeSpace) == XR_SUCCESS &&
+               destroySpace(aimSpace) == XR_SUCCESS &&
                destroySpace(localSpace) == XR_SUCCESS,
            "destroy hand-interaction spaces");
     expect(destroySession(session) == XR_SUCCESS,
            "destroy hand-interaction session");
     for (XrAction action : {pinchValueAction, pinchReadyAction, graspValueAction,
-                            graspReadyAction, pinchPoseAction, pokePoseAction}) {
+                            graspReadyAction, pinchPoseAction, pokePoseAction, aimPoseAction}) {
         expect(destroyAction(action) == XR_SUCCESS,
                "destroy hand-interaction action");
     }
