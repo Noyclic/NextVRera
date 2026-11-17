@@ -51,3 +51,8 @@ advertises `XR_KHR_android_create_instance`, `XR_KHR_opengl_es_enable` and
 runtime extensions. A game that requires an unadvertised extension or selects Vulkan as its
 only graphics backend may fail before rendering. The audit calls this out before launch
 without automatically blocking a game based on uncertain string matches.
+
+
+## Copy reports for development
+
+Once static analysis completes, each APK card can copy a ready-to-paste coding task for an AI assistant, a structured technical report, or the complete analysis plus EndXR capability inventory. These reports distinguish manifest declarations from installed permission grants and static hints from runtime verification. See [APK_DEVELOPMENT_REPORTS.md](APK_DEVELOPMENT_REPORTS.md).

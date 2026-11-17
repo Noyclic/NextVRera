@@ -42,7 +42,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
-/** Imports APK archives into app-private storage and displays a manifest-only report. */
+/** Imports APK archives into app-private storage and displays static compatibility reports. */
 class ApkImportActivity : ComponentActivity() {
     private lateinit var entriesContainer: LinearLayout
     private lateinit var statusView: TextView
@@ -530,8 +530,43 @@ class ApkImportActivity : ComponentActivity() {
             }
         }
         if (runtimeAssessment != null) {
+            card.addView(text(
+                "Отчёты для разработки",
+                12f, 0xFF9BC7F5.toInt(), Typeface.BOLD
+            ).apply { setPadding(0, dp(10), 0, dp(2)) })
+            card.addView(text(
+                "Подготовь готовое задание для ИИ, сухой технический отчёт или полный пакет диагностики. Все три варианта строятся из результатов именно этого APK.",
+                10f, 0xFFAAB4C2.toInt()
+            ).apply { setPadding(0, 0, 0, dp(4)) })
+            card.addView(button("Скопировать задание для ChatGPT / Claude").apply {
+                setOnClickListener {
+                    val context = developmentReportContext(info, runtimeAssessment)
+                    copyDevelopmentReport(
+                        "NextVRera · задание для ИИ",
+                        ApkDevelopmentReportGenerator.aiTaskPrompt(context),
+                        "Готовое задание для разработки скопировано."
+                    )
+                }
+            })
+            card.addView(button("Скопировать технический отчёт").apply {
+                setOnClickListener {
+                    val context = developmentReportContext(info, runtimeAssessment)
+                    copyDevelopmentReport(
+                        "NextVRera · технический APK-отчёт",
+                        ApkDevelopmentReportGenerator.technicalReport(context),
+                        "Технический APK-отчёт скопирован."
+                    )
+                }
+            })
             card.addView(button("Скопировать полный отчёт").apply {
-                setOnClickListener { copyAuditReport(info, runtimeAssessment) }
+                setOnClickListener {
+                    val context = developmentReportContext(info, runtimeAssessment)
+                    copyDevelopmentReport(
+                        "NextVRera · полный APK-отчёт",
+                        ApkDevelopmentReportGenerator.fullReport(context),
+                        "Полный APK-отчёт скопирован."
+                    )
+                }
             })
         }
         card.addView(text(
@@ -1629,53 +1664,40 @@ class ApkImportActivity : ComponentActivity() {
         }
     }
 
-    private fun copyAuditReport(info: ImportedApkInfo, assessment: ApkRuntimeAssessment) {
-        val audit = assessment.audit
-        val report = buildString {
-            appendLine("QuestPhoneXR — статический APK-аудит")
-            appendLine("Название: ${info.displayName}")
-            appendLine("Пакет: ${info.packageName}")
-            appendLine("Файл: ${info.originalName}")
-            appendLine("Версия: ${info.versionName} (${info.versionCode})")
-            appendLine("Размер: ${formatSize(info.sizeBytes)}")
-            appendLine("SHA-256: ${info.sha256.ifBlank { "не вычислен" }}")
-            appendLine("Android: min API ${info.minSdk}, target API ${info.targetSdk}")
-            appendLine("Устройство: ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · API ${android.os.Build.VERSION.SDK_INT}")
-            appendLine("Маршрут: ${assessment.route.label}")
-            appendLine("Движок: ${assessment.engine}")
-            appendLine("XR: ${assessment.xrTechnologies.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("ABI: ${audit.abiSummary}")
-            appendLine("Нативные библиотеки: ${audit.nativeLibraries.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("SDK/Runtime-маркеры: ${audit.sdkRuntimeMarkers.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("VR-маркеры манифеста: ${audit.manifestReferences.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("VR-значения метаданных: ${audit.metadataValues.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("VR-компоненты: ${audit.componentReferences.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("OpenXR extension-строки в native-коде: ${audit.openXrExtensionReferences.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("OpenXR-вызовы в native-коде: ${audit.openXrEntryPointReferences.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("Графические API-маркеры: ${audit.graphicsApiMarkers.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine("Meta/Oculus runtime-зависимости: ${audit.vendorRuntimeReferences.joinToString().ifBlank { "не обнаружены" }}")
-            appendLine()
-            appendLine("Карта совместимости с EndXR:")
-            assessment.findings.forEach { finding ->
-                appendLine("[${finding.severity.label}] ${finding.title}")
-                appendLine("  Доказательства: ${finding.evidence}")
-                appendLine("  Что это значит: ${finding.impact}")
-                appendLine("  Следующий шаг: ${finding.nextStep}")
+    private fun developmentReportContext(
+        info: ImportedApkInfo,
+        assessment: ApkRuntimeAssessment
+    ): ApkDevelopmentReportContext {
+        val installedVersionCode = installedPackageVersionCode(info.packageName)
+        val runtimePermissionStates = ApkPermissionDiagnostics.runtimePermissions(info.requestedPermissions)
+            .associateWith { permission ->
+                if (installedVersionCode != info.versionCode) {
+                    null
+                } else {
+                    packageManager.checkPermission(permission, info.packageName) ==
+                        PackageManager.PERMISSION_GRANTED
+                }
             }
-            appendLine()
-            appendLine("Разрешения: ${info.requestedPermissions.joinToString().ifBlank { "не перечислены" }}")
-            appendLine("Activities: ${info.activityNames.joinToString().ifBlank { "не перечислены" }}")
-            appendLine("Services: ${info.serviceNames.joinToString().ifBlank { "не перечислены" }}")
-            appendLine("Providers: ${info.providerNames.joinToString().ifBlank { "не перечислены" }}")
-            appendLine()
-            appendLine("Детали и ограничения:")
-            assessment.details.forEach { appendLine("- $it") }
-            appendLine()
-            appendLine("Отчёт статический: он не доказывает успешную установку, создание VR-сессии или игровую совместимость.")
-        }
+        return ApkDevelopmentReportContext(
+            info = info,
+            assessment = assessment,
+            deviceModel = android.os.Build.MODEL.orEmpty().ifBlank { "неизвестно" },
+            androidRelease = android.os.Build.VERSION.RELEASE.orEmpty().ifBlank { "неизвестно" },
+            deviceApiLevel = android.os.Build.VERSION.SDK_INT,
+            supportedAbis = android.os.Build.SUPPORTED_ABIS.toList(),
+            installedVersionCode = installedVersionCode,
+            runtimePermissionStates = runtimePermissionStates
+        )
+    }
+
+    private fun copyDevelopmentReport(
+        label: String,
+        report: String,
+        successMessage: String
+    ) {
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("QuestPhoneXR APK audit", report))
-        Toast.makeText(this, "Полный APK-отчёт скопирован.", Toast.LENGTH_SHORT).show()
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, report))
+        Toast.makeText(this, successMessage, Toast.LENGTH_SHORT).show()
     }
 
     private fun addPermissionDiagnostics(

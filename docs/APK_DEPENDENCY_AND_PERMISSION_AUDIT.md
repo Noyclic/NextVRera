@@ -60,3 +60,8 @@ The settings shortcut is diagnostic/remediation only. It never grants access aut
 - A single base APK may omit declarations or libraries supplied by split APKs.
 - A successful Android launch does not establish RuntimeBroker selection, OpenXR session creation, input compatibility or rendered game frames.
 - EndXR Sandbox passing its own probe does not yet prove that an unrelated Quest APK can use EndXR in a separate process.
+
+
+## Copy-ready development reports
+
+After analysis, the APK card provides three clipboard actions: an AI implementation prompt, a technical report, and a full report. They are produced from the current APK's metadata/audit findings and the centralized EndXR capability inventory. See [APK development reports](APK_DEVELOPMENT_REPORTS.md) for the fields and interpretation rules.
