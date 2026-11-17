@@ -189,6 +189,12 @@ class RtmposeHandRefinementCoordinator(
         return true
     }
 
+    /**
+     * Cheap, thread-safe gate used before copying a full CameraX pixel frame.
+     * A false result means the caller should publish MediaPipe directly for this frame.
+     */
+    fun canAcceptFrame(): Boolean = !closed.get() && !inFlight.get()
+
     override fun close() {
         closed.set(true)
     }

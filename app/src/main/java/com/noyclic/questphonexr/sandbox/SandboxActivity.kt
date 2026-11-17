@@ -982,6 +982,8 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 var updatingProgrammatically = false
                 setOnCheckedChangeListener { _, enabled ->
                     if (updatingProgrammatically) return@setOnCheckedChangeListener
+                    rtmposeLiteRtRunner?.close()
+                    rtmposeLiteRtRunner = null
                     val saved = EndXrHandTrackingService.setRtmposeRefinementEnabled(
                         this@SandboxActivity,
                         enabled

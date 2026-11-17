@@ -625,7 +625,8 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                             }
                         },
                         shouldCaptureSourceFrame = {
-                            rtmposeRefinementEnabled && rtmposeRefinementCoordinator != null
+                            rtmposeRefinementEnabled &&
+                                rtmposeRefinementCoordinator?.canAcceptFrame() == true
                         },
                         onFrameWithSource = { frame, sourceArgb, rawWidth, rawHeight, rotationDegrees ->
                             if (activeOrPending && generation == cameraGeneration) {

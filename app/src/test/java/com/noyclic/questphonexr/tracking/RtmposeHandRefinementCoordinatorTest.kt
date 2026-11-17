@@ -96,13 +96,19 @@ class RtmposeHandRefinementCoordinatorTest {
         )
         val source = IntArray(640 * 480) { 0xff010203.toInt() }
 
+        assertTrue(coordinator.canAcceptFrame())
         assertFalse(
             coordinator.refine(frame, source, 640, 480, 45) { }
         )
+        assertTrue(coordinator.canAcceptFrame())
         assertTrue(coordinator.refine(frame, source, 640, 480, 0) { })
+        assertFalse(coordinator.canAcceptFrame())
         assertFalse(coordinator.refine(frame.copy(timestampMs = 11L), source, 640, 480, 0) { })
         pendingEngine.completePendingSuccess()
+        assertTrue(coordinator.canAcceptFrame())
         assertTrue(coordinator.refine(frame.copy(timestampMs = 12L), source, 640, 480, 0) { })
+        coordinator.close()
+        assertFalse(coordinator.canAcceptFrame())
     }
 
     @Test
