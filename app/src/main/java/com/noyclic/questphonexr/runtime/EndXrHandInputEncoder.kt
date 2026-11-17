@@ -145,7 +145,7 @@ internal object EndXrHandInputEncoder {
     }
 
     /**
-     * Camera hands supply pinch trigger and a digital natural power grip only.
+     * Camera hands supply pinch trigger and continuous 0..1 finger-closure grasp.
      * Stick axes and physical face buttons remain neutral, not fabricated.
      */
     private fun encodeControllerRow(hand: TrackedHand?): FloatArray {
