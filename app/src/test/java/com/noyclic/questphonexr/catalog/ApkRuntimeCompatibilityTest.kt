@@ -1,6 +1,8 @@
 package com.noyclic.questphonexr.catalog
 
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -293,6 +295,45 @@ class ApkRuntimeCompatibilityTest {
         assertTrue(result.xrTechnologies.contains("OpenXR"))
         assertTrue(result.xrTechnologies.contains("Meta/Oculus XR"))
         assertTrue(result.details.any { it.contains("отдельные Meta Runtime API") })
+    }
+
+    
+    @Test
+    fun scansAppNativeLibrariesForVulkanAndOpenXrExtensionMarkers() {
+        val apk = File.createTempFile("endxr-native-audit-", ".apk")
+        try {
+            ZipOutputStream(apk.outputStream().buffered()).use { zip ->
+                zip.putNextEntry(ZipEntry("lib/arm64-v8a/libopenxr_loader.so"))
+                zip.write("XR_LOADER_ONLY_EXTENSION".toByteArray())
+                zip.closeEntry()
+
+                zip.putNextEntry(ZipEntry("lib/arm64-v8a/libgame.so"))
+                zip.write(
+                    "XR_KHR_vulkan_enable XR_EXT_hand_tracking vkCreateInstance libvulkan.so eglCreateContext"
+                        .toByteArray()
+                )
+                zip.closeEntry()
+            }
+
+            val result = ApkRuntimeCompatibility.inspect(
+                info = sample(),
+                archive = apk,
+                deviceApiLevel = 35,
+                supportedAbis = listOf("arm64-v8a"),
+                missingRequiredFeatures = emptySet()
+            )
+
+            assertTrue(result.audit.openXrExtensionReferences.contains("XR_KHR_vulkan_enable"))
+            assertTrue(result.audit.openXrExtensionReferences.contains("XR_EXT_hand_tracking"))
+            assertTrue("XR_LOADER_ONLY_EXTENSION" !in result.audit.openXrExtensionReferences)
+            assertTrue(result.audit.graphicsApiMarkers.contains("vkCreateInstance"))
+            assertTrue(result.audit.graphicsApiMarkers.contains("libvulkan.so"))
+            assertTrue(result.audit.graphicsApiMarkers.contains("eglCreateContext"))
+            assertTrue(result.details.any { it.contains("Vulkan-маркеры") })
+            assertTrue(result.details.any { it.contains("не рекламирует") })
+        } finally {
+            apk.delete()
+        }
     }
 
 }
