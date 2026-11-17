@@ -625,11 +625,22 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
                         mirrorFrontCamera = useFrontCamera,
                         onFrame = { frame ->
                             if (activeOrPending && generation == cameraGeneration) {
-                                publishMediaPipeFrame(frame)
+                                val refinementActive =
+                                    rtmposeRefinementEnabled && rtmposeRefinementCoordinator != null
+                                if (refinementActive && frame.hands.isEmpty()) {
+                                    EndXrTrackingInputBridge.publish(
+                                        providerId = TrackingProviderId.LITERT_CUSTOM,
+                                        frame = frame,
+                                        qualityScore = RtmposeHandRefinementCoordinator.DEFAULT_DETECTOR_CONFIDENCE
+                                    )
+                                } else {
+                                    publishMediaPipeFrame(frame)
+                                }
                             }
                         },
-                        shouldCaptureSourceFrame = {
-                            rtmposeRefinementEnabled &&
+                        shouldCaptureSourceFrame = { frame ->
+                            frame.hands.isNotEmpty() &&
+                                rtmposeRefinementEnabled &&
                                 rtmposeRefinementCoordinator?.canAcceptFrame() == true
                         },
                         onFrameWithSource = { frame, sourceArgb, rawWidth, rawHeight, rotationDegrees ->
