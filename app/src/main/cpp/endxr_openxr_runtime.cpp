@@ -2353,38 +2353,46 @@ ResolvedActionPose resolveActionPose(
                 return result;
             }
 
-            if (!handInteractionProfile || !input.handJointsActive) {
-                if (component == "aim/pose") {
-                    // Controller-style aim is currently estimated from the palm
-                    // orientation; a real tracked aim axis needs a distinct sensor.
-                    result.active = true;
-                    result.pose = input.gripPose;
-                    return result;
-                }
-                continue;
-            }
-
-            if (component == "aim/pose" || component == "poke_ext/pose") {
-                // Camera-derived index fingertip location and distal orientation.
+            if (component == "aim/pose") {
+                // Aim is a pointing ray ahead of the palm. The camera currently
+                // provides orientation but no stable shoulder/forearm ray model.
+                XrPosef aimOffset{};
+                aimOffset.orientation.w = 1.0f;
+                aimOffset.position = {0.0f, 0.0f, -0.12f};
                 result.active = true;
-                result.pose = composePose(
-                    input.gripPose, localJointPose(XR_HAND_JOINT_INDEX_TIP_EXT));
+                result.pose = composePose(input.gripPose, aimOffset);
                 return result;
             }
-            if (component == "pinch_ext/pose") {
-                // Place the pinch interaction at the midpoint between the thumb
-                // and index fingertips, with the index-tip orientation as a
-                // stable hand-relative orientation estimate.
-                const XrPosef thumbTip = localJointPose(XR_HAND_JOINT_THUMB_TIP_EXT);
-                const XrPosef indexTip = localJointPose(XR_HAND_JOINT_INDEX_TIP_EXT);
-                XrPosef pinchPose = indexTip;
-                pinchPose.position = {
-                    (thumbTip.position.x + indexTip.position.x) * 0.5f,
-                    (thumbTip.position.y + indexTip.position.y) * 0.5f,
-                    (thumbTip.position.z + indexTip.position.z) * 0.5f
-                };
+
+            if (component == "pinch_ext/pose" || component == "poke_ext/pose") {
+                XrPosef interactionOffset{};
+                interactionOffset.orientation.w = 1.0f;
+                if (handInteractionProfile && input.handJointsActive) {
+                    if (component == "poke_ext/pose") {
+                        // The poke point is located at the camera-derived index fingertip.
+                        interactionOffset = localJointPose(XR_HAND_JOINT_INDEX_TIP_EXT);
+                    } else {
+                        // Pinch uses the midpoint between thumb and index fingertips.
+                        // Palm-relative orientation is a conservative, stable estimate.
+                        const XrPosef thumbTip = localJointPose(XR_HAND_JOINT_THUMB_TIP_EXT);
+                        const XrPosef indexTip = localJointPose(XR_HAND_JOINT_INDEX_TIP_EXT);
+                        interactionOffset.position = {
+                            (thumbTip.position.x + indexTip.position.x) * 0.5f,
+                            (thumbTip.position.y + indexTip.position.y) * 0.5f,
+                            (thumbTip.position.z + indexTip.position.z) * 0.5f
+                        };
+                    }
+                } else {
+                    // OpenXR requires the four hand-interaction pose paths on
+                    // controller profiles too. Use conservative offsets in front
+                    // of the grip pose until camera joints or a physical controller
+                    // provides a more accurate interaction point.
+                    interactionOffset.position = component == "poke_ext/pose"
+                        ? XrVector3f{0.0f, 0.0f, -0.10f}
+                        : XrVector3f{0.0f, 0.0f, -0.06f};
+                }
                 result.active = true;
-                result.pose = composePose(input.gripPose, pinchPose);
+                result.pose = composePose(input.gripPose, interactionOffset);
                 return result;
             }
         }
