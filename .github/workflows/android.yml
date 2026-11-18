@@ -85,6 +85,9 @@ jobs:
       - name: Build external runtime client probe APK
         run: gradle --no-daemon :runtime-client-probe:assembleDebug
 
+      - name: Build standalone hardware probe APK
+        run: gradle --no-daemon :hardware-probe:assembleDebug
+
       - name: Validate APK package and required payload
         run: |
           set -euo pipefail
@@ -99,6 +102,19 @@ jobs:
           grep -qx "lib/arm64-v8a/libquestphonexr_native.so" <<< "$APK_FILES"
           grep -qx "lib/arm64-v8a/libendxr_openxr.so" <<< "$APK_FILES"
           echo "APK package, MediaPipe model, JNI library and OpenXR runtime library are present." | tee ci-results/apk-validation.txt
+
+      - name: Validate standalone hardware probe APK
+        run: |
+          set -euo pipefail
+          APK="hardware-probe/build/outputs/apk/debug/hardware-probe-debug.apk"
+          test -s "$APK"
+          mkdir -p ci-results
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee ci-results/hardware-probe-metadata.txt
+          grep -q "package: name='com.noyclic.nextvrera.hardwareprobe'" ci-results/hardware-probe-metadata.txt
+          APK_FILES="$(unzip -Z1 "$APK")"
+          grep -qx "lib/arm64-v8a/libhardwareprobe.so" <<< "$APK_FILES"
+          grep -qx "assets/mobilenet_v1_1.0_224_quant.tflite" <<< "$APK_FILES"
+          echo "Hardware probe package, JNI library and MobileNet model are present." | tee ci-results/hardware-probe-validation.txt
 
       - name: Enable KVM for Android emulator
         run: |
@@ -159,6 +175,15 @@ jobs:
           name: QuestPhoneXR-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload standalone hardware probe APK
+        if: always() && !cancelled() && hashFiles('hardware-probe/build/outputs/apk/debug/hardware-probe-debug.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextVRera-hardware-probe-apk
+          path: hardware-probe/build/outputs/apk/debug/hardware-probe-debug.apk
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload source archive
