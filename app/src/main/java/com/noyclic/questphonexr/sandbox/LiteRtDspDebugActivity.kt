@@ -379,7 +379,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         lastError = value
         appendDiagnostic("ERROR: " + value)
         runOnUiThread {
-            status.text = value + "\\nNo alternate delegate is configured; unsupported operators may still use default CPU kernels."
+            status.text = value + "\nNo alternate delegate is configured; unsupported operators may still use default CPU kernels."
             cameraProvider?.unbindAll()
             details.text = "Камера остаётся скрытой. Ошибка не маскируется переключением на GPU или CPU."
             overlay.submit(emptyList())
