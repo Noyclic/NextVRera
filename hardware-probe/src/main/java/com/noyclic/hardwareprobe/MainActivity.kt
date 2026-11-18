@@ -179,21 +179,37 @@ class MainActivity : Activity() {
                     return@execute
                 }
             publish("Model: MobileNet V1 224 INT8 (${modelBytes.size / 1024} KB)")
-            benchmark("CPU / XNNPACK", modelBytes) { options ->
+            benchmark("CPU / XNNPACK — 1 thread", modelBytes) { options ->
+                options.setNumThreads(1)
+            }
+            benchmark("CPU / XNNPACK — 4 threads", modelBytes) { options ->
                 options.setNumThreads(4)
             }
-            benchmark("GPU / OpenGL delegate", modelBytes) { options ->
-                val delegate = GpuDelegate()
-                options.addDelegate(delegate)
+            benchmark("CPU / XNNPACK — 8 threads", modelBytes) { options ->
+                options.setNumThreads(8)
+            }
+            benchmark("GPU / OpenGL delegate — default precision", modelBytes) { options ->
+                options.addDelegate(GpuDelegate())
+            }
+            benchmark("GPU / OpenGL delegate — FP16 allowed", modelBytes) { options ->
+                val gpuOptions = GpuDelegate.Options()
+                gpuOptions.setPrecisionLossAllowed(true)
+                options.addDelegate(GpuDelegate(gpuOptions))
+            }
+            benchmark("Qualcomm QNN / DSP (Hexagon)", modelBytes) { options ->
+                val qnnOptions = QnnDelegate.Options()
+                qnnOptions.setBackendType(QnnDelegate.Options.BackendType.DSP_BACKEND)
+                qnnOptions.setSkelLibraryDir(applicationInfo.nativeLibraryDir)
+                options.addDelegate(QnnDelegate(qnnOptions))
             }
             benchmark("Qualcomm QNN / HTP", modelBytes) { options ->
                 val qnnOptions = QnnDelegate.Options()
                 qnnOptions.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
                 qnnOptions.setSkelLibraryDir(applicationInfo.nativeLibraryDir)
-                val delegate = QnnDelegate(qnnOptions)
-                options.addDelegate(delegate)
+                options.addDelegate(QnnDelegate(qnnOptions))
             }
             publish("")
+            publish("Thermal status after run: ${thermalStatus()}")
             publish("Tests finished. Export the report and send it back here.")
             finishTests()
         }
