@@ -20,6 +20,8 @@ import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.io.File
+import java.io.FileInputStream
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.ceil
@@ -136,6 +138,7 @@ class MainActivity : Activity() {
         append(runCatching { probeNativeLibraries() }.getOrElse {
             "Native probe failed: " + it.javaClass.simpleName + ": " + it.message
         })
+        append(inspectDspSkeleton())
         append("")
         append("=== PROBE BUILD ===")
         append("LiteRT runtime: 2.16.1")
@@ -228,6 +231,46 @@ class MainActivity : Activity() {
                     EGL14.eglTerminate(display)
                 }
             }
+        }
+    }
+
+    private fun inspectDspSkeleton(): String {
+        val name = "libQnnDspV66Skel.so"
+        val file = File(applicationInfo.nativeLibraryDir, name)
+        if (!file.isFile) return "$name=NOT_FOUND in nativeLibraryDir"
+
+        return try {
+            val header = ByteArray(20)
+            FileInputStream(file).use { input ->
+                var offset = 0
+                while (offset < header.size) {
+                    val count = input.read(header, offset, header.size - offset)
+                    if (count <= 0) break
+                    offset += count
+                }
+                check(offset == header.size) { "ELF header is truncated" }
+            }
+            check(header[0] == 0x7f.toByte() && header[1] == 'E'.code.toByte() &&
+                header[2] == 'L'.code.toByte() && header[3] == 'F'.code.toByte()) {
+                "file is not ELF"
+            }
+            val elfClass = header[4].toInt() and 0xff
+            val machine = (header[18].toInt() and 0xff) or
+                ((header[19].toInt() and 0xff) shl 8)
+            val className = when (elfClass) {
+                1 -> "ELF32"
+                2 -> "ELF64"
+                else -> "ELFCLASS_$elfClass"
+            }
+            val machineName = when (machine) {
+                164 -> "QUALCOMM_DSP6 / Hexagon DSP"
+                183 -> "AArch64"
+                40 -> "ARM32"
+                else -> "e_machine=$machine"
+            }
+            "$name=PRESENT ($className, $machineName, ${file.length()} bytes); DSP-side image, not an ARM dlopen target"
+        } catch (error: Throwable) {
+            "$name=PRESENT but ELF inspection failed: ${error.javaClass.simpleName}: ${error.message}"
         }
     }
 
