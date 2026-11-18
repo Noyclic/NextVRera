@@ -127,7 +127,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
                     if (isFinishing || isDestroyed) {
                         worker.execute { readyRunner.close() }
                     } else {
-                        setStatus("QNN DSP: WARM-UP INFERENCE PASS\nGPU / NNAPI / XNNPACK delegates: DISABLED · CPU op fallback: UNKNOWN")
+                        setStatus("QNN DSP delegate configured · warm-up inference PASS\nOperator placement: NOT VERIFIED · CPU op fallback: UNKNOWN")
                         bindCamera()
                     }
                 }
@@ -272,7 +272,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         runOnUiThread {
             status.text = String.format(
                 Locale.US,
-                "QNN DSP delegate inference PASS · operator coverage NOT VERIFIED\nFPS %.1f | inference %.1f ms | pipeline %.1f ms\nGPU / NNAPI / XNNPACK delegates disabled · unsupported ops may run on CPU",
+                "QNN DSP delegate configured · model inference PASS · placement NOT VERIFIED\nFPS %.1f | inference %.1f ms | pipeline %.1f ms\nGPU / NNAPI / XNNPACK delegates disabled · unsupported ops may run on CPU",
                 fps, inferenceMs, pipelineMs
             )
             details.text =
