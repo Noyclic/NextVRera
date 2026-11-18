@@ -9,6 +9,9 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_noyclic_hardwareprobe_MainActivity_probeNativeLibraries(JNIEnv* env, jobject) {
     const std::vector<std::string> libraries = {
         "libQnnSystem.so",
+        "libQnnDsp.so",
+        "libQnnDspV66Skel.so",
+        "libQnnDspV66Stub.so",
         "libQnnHtp.so",
         "libQnnHtpPrepare.so",
         "libQnnHtpV68Stub.so",
