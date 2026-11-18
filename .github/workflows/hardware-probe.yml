@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nextvrera-hardware-probe-\${{ github.ref }}
+  group: nextvrera-hardware-probe-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
           grep -qx "assets/mobilenet_v1_1.0_224_quant.tflite" <<< "$APK_FILES"
 
           # Catch the exact missing-class regression from the previous phone test.
-          DEX_FILES="$(grep -E '^classes([0-9]+)?\\.dex$' <<< "$APK_FILES")"
+          DEX_FILES="$(grep -E '^classes([0-9]+)?\.dex$' <<< "$APK_FILES")"
           test -n "$DEX_FILES"
           for dex in $DEX_FILES; do unzip -p "$APK" "$dex"; done | strings | grep -Fq 'GpuDelegateFactory$Options'
 
