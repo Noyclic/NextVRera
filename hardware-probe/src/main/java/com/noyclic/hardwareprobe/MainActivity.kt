@@ -35,6 +35,16 @@ class MainActivity : Activity() {
     private var lastGraphicsError: String? = null
 
     private external fun probeNativeLibraries(): String
+    private external fun probeNativeRuntimeEnvironment(nativeLibraryDir: String, skelLibraryDir: String): String
+    private external fun snapshotLoadedQnnModules(skelLibraryDir: String): String
+
+    private val qnnDiagnostics by lazy {
+        QnnDeepDiagnostics(
+            this,
+            { nativeDir, skelDir -> probeNativeRuntimeEnvironment(nativeDir, skelDir) },
+            { skelDir -> snapshotLoadedQnnModules(skelDir) }
+        )
+    }
 
     private data class GraphicsInfo(
         val renderer: String,
@@ -139,6 +149,9 @@ class MainActivity : Activity() {
             "Native probe failed: " + it.javaClass.simpleName + ": " + it.message
         })
         append(inspectDspSkeleton())
+        append("")
+        append("=== QNN LOW-LEVEL ENVIRONMENT (PRE-RUN) ===")
+        append(qnnDiagnostics.nativeEnvironmentReport())
         append("")
         append("=== PROBE BUILD ===")
         append("LiteRT runtime: 2.16.1")
@@ -303,6 +316,10 @@ class MainActivity : Activity() {
                 }
 
             publish("Model: MobileNet V1 224 INT8 (" + modelBytes.size / 1024 + " KB)")
+            publish(qnnDiagnostics.prepareSkeletons())
+            publish("")
+            publish("=== QNN LOW-LEVEL ENVIRONMENT (BEFORE DELEGATE) ===")
+            publish(qnnDiagnostics.nativeEnvironmentReport())
             val thermalBefore = thermalStatus()
             publish("Thermal status before benchmarks: " + thermalBefore)
             if (thermalBefore in setOf("SEVERE", "CRITICAL", "EMERGENCY", "SHUTDOWN")) {
@@ -335,17 +352,21 @@ class MainActivity : Activity() {
                 gpuDelegate
             }
             benchmark("Qualcomm QNN / DSP backend", modelBytes) { options ->
+                options.setUseNNAPI(false)
+                options.setUseXNNPACK(false)
                 val qnnOptions = QnnDelegate.Options()
                 qnnOptions.setBackendType(QnnDelegate.Options.BackendType.DSP_BACKEND)
-                qnnOptions.setSkelLibraryDir(applicationInfo.nativeLibraryDir)
+                publish(qnnDiagnostics.configureDelegate(qnnOptions))
                 val qnnDelegate = QnnDelegate(qnnOptions)
                 options.addDelegate(qnnDelegate)
                 qnnDelegate
             }
             benchmark("Qualcomm QNN / HTP backend", modelBytes) { options ->
+                options.setUseNNAPI(false)
+                options.setUseXNNPACK(false)
                 val qnnOptions = QnnDelegate.Options()
                 qnnOptions.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
-                qnnOptions.setSkelLibraryDir(applicationInfo.nativeLibraryDir)
+                publish(qnnDiagnostics.configureDelegate(qnnOptions))
                 val qnnDelegate = QnnDelegate(qnnOptions)
                 options.addDelegate(qnnDelegate)
                 qnnDelegate
@@ -367,6 +388,11 @@ class MainActivity : Activity() {
         publish("[" + name + "]")
         var interpreter: Interpreter? = null
         var delegateToClose: Any? = null
+        var qnnLogCapture: QnnDeepDiagnostics.LogCapture? = null
+        if (name.startsWith("Qualcomm QNN")) {
+            qnnLogCapture = qnnDiagnostics.startLogCapture()
+            publish("QNN native log capture: " + qnnLogCapture.start())
+        }
         var stage = "preparing model"
         try {
             val model = ByteBuffer.allocateDirect(modelBytes.size).order(ByteOrder.nativeOrder())
@@ -441,6 +467,12 @@ class MainActivity : Activity() {
         } finally {
             runCatching { interpreter?.close() }
             closeDelegate(delegateToClose)
+            if (qnnLogCapture != null) {
+                publish("--- QNN / FastRPC native logcat (this app PID) ---")
+                qnnLogCapture.stop().forEach { publish(it) }
+                publish("--- Loaded QNN / DSP / FastRPC modules after attempt ---")
+                publish(qnnDiagnostics.loadedModulesReport())
+            }
         }
     }
 
