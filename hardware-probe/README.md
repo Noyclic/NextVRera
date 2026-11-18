@@ -16,13 +16,13 @@ A standalone diagnostic APK for measuring real Android inference backends on phy
 
 From the repository root:
 
-\`\`\`bash
+```bash
 gradle --no-daemon :hardware-probe:assembleDebug
-\`\`\`
+```
 
-APK: \`hardware-probe/build/outputs/apk/debug/hardware-probe-debug.apk\`
+APK: `hardware-probe/build/outputs/apk/debug/hardware-probe-debug.apk`
 
-The model is downloaded by Gradle from the public TensorFlow Lite model mirror on GitHub during \`preBuild\`: [MobileNet V1 INT8 model](https://github.com/tflite-soc/tensorflow-models/blob/master/mobilenet-v1/mobilenet_v1_1.0_224_quant.tflite).
+The model is downloaded by Gradle from the public TensorFlow Lite model mirror on GitHub during `preBuild`: [MobileNet V1 INT8 model](https://github.com/tflite-soc/tensorflow-models/blob/master/mobilenet-v1/mobilenet_v1_1.0_224_quant.tflite).
 
 ## Physical-device test
 
