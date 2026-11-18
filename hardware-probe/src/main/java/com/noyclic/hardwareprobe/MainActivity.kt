@@ -62,6 +62,7 @@ class MainActivity : Activity() {
     private data class BackendOutput(
         val bytes: ByteArray,
         val dataType: DataType,
+        val shape: IntArray,
         val quantizationScale: Float,
         val quantizationZeroPoint: Int
     )
@@ -571,11 +572,18 @@ class MainActivity : Activity() {
                     outputSnapshot.size
                 )
             )
-            successfulOutput = BackendOutput(outputSnapshot, outputType, quantization.scale, quantization.zeroPoint)
+            successfulOutput = BackendOutput(
+                bytes = outputSnapshot,
+                dataType = outputType,
+                shape = outputTensor.shape().copyOf(),
+                quantizationScale = quantization.scale,
+                quantizationZeroPoint = quantization.zeroPoint
+            )
 
             val outputQuantizationValid = quantization.scale.isFinite() && quantization.scale > 0f
             val referenceOutputCompatible = referenceOutput != null &&
                 referenceOutput.dataType == outputType &&
+                referenceOutput.shape.contentEquals(outputTensor.shape()) &&
                 referenceOutput.bytes.size == outputSnapshot.size &&
                 referenceOutput.quantizationScale.isFinite() &&
                 referenceOutput.quantizationScale > 0f &&
@@ -595,8 +603,8 @@ class MainActivity : Activity() {
                 publish("CPU reference comparison: SKIPPED — output type $outputType is not INT8/UINT8.")
             } else if (!referenceOutputCompatible) {
                 publish("CPU reference comparison: SKIPPED — output tensor type/size/quantization metadata differs or is invalid.")
-                publish("Reference: ${referenceOutput.dataType}, scale=${referenceOutput.quantizationScale}, zeroPoint=${referenceOutput.quantizationZeroPoint}, bytes=${referenceOutput.bytes.size}")
-                publish("Backend: ${outputType}, scale=${quantization.scale}, zeroPoint=${quantization.zeroPoint}, bytes=${outputSnapshot.size}")
+                publish("Reference: ${referenceOutput.dataType}, shape=${referenceOutput.shape.contentToString()}, scale=${referenceOutput.quantizationScale}, zeroPoint=${referenceOutput.quantizationZeroPoint}, bytes=${referenceOutput.bytes.size}")
+                publish("Backend: ${outputType}, shape=${outputTensor.shape().contentToString()}, scale=${quantization.scale}, zeroPoint=${quantization.zeroPoint}, bytes=${outputSnapshot.size}")
             } else {
                 val comparison = QuantizedTensorComparator.compare(
                     referenceOutput.bytes,
