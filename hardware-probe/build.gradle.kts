@@ -15,8 +15,8 @@ android {
         applicationId = "com.noyclic.nextvrera.hardwareprobe"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
@@ -54,9 +54,11 @@ kotlin {
 }
 
 dependencies {
-    // Keep the TFLite runtime and Qualcomm delegate on a matching, documented release.
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
+    // GPU delegate Java API classes are published in this split artifact.
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
+
     implementation("com.qualcomm.qti:qnn-runtime:2.34.0")
     implementation("com.qualcomm.qti:qnn-litert-delegate:2.34.0")
 
@@ -70,7 +72,7 @@ val downloadProbeModel by tasks.registering {
         val destination = probeModel.asFile
         if (!destination.exists() || destination.length() < 1_000_000L) {
             destination.parentFile.mkdirs()
-            val temporary = destination.resolveSibling("${destination.name}.part")
+            val temporary = destination.resolveSibling(destination.name + ".part")
             try {
                 URL("https://raw.githubusercontent.com/tflite-soc/tensorflow-models/master/mobilenet-v1/mobilenet_v1_1.0_224_quant.tflite")
                     .openConnection()
