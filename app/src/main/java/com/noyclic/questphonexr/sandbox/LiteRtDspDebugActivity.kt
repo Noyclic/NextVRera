@@ -43,9 +43,17 @@ import java.util.zip.ZipFile
 
 /**
  * Isolated QNN DSP diagnostic. CameraX ImageAnalysis runs with no Preview surface.
- * RTMPose is a top-down landmark model, not a palm detector; the first ROI is centered
- * and subsequent ROIs follow the previous 21-point output. No MediaPipe/GPU/NNAPI/XNNPACK delegate fallback.
+ * RTMPose is a top-down landmark model, not a palm detector; two seeded ROIs independently
+ * follow their own 21-point outputs. No MediaPipe/GPU/NNAPI/XNNPACK delegate fallback.
  */
+private data class DspHandTrack(
+    val slot: Int,
+    val seedCrop: HandRoiCrop,
+    var crop: HandRoiCrop = seedCrop,
+    var points: List<HandPoint> = emptyList(),
+    var missedFrames: Int = 0
+)
+
 class LiteRtDspDebugActivity : ComponentActivity() {
     private val worker = Executors.newSingleThreadExecutor { r ->
         Thread(r, "EndXR-LiteRT-QNN-DSP").apply { isDaemon = true }
@@ -58,13 +66,15 @@ class LiteRtDspDebugActivity : ComponentActivity() {
     private lateinit var details: TextView
     private var argb = IntArray(0)
     private val input = FloatArray(3 * 256 * 256)
-    private var crop: HandRoiCrop? = null
+    private var tracks: List<DspHandTrack> = emptyList()
     private var fpsStart = 0L
     private var fpsFrames = 0
     private var fps = 0f
     private var lastUiUpdate = 0L
     private var inferenceMs = 0.0
     private var pipelineMs = 0.0
+    private var visibleHandCount = 0
+    private companion object { const val TRACK_REACQUIRE_MISSES = 10 }
 
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -96,7 +106,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         }
         root.addView(status, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         details = TextView(this).apply {
-            text = "Камера скрыта. Держи одну руку в центре кадра."
+            text = "Камера скрыта. Две руки: левая и правая зоны."
             textSize = 13f
             setTextColor(0xffd0d7de.toInt())
             setPadding(16, 12, 16, 12)
@@ -161,7 +171,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
                 provider.unbindAll()
                 // Analysis-only: no Preview use-case, so no camera pixels are rendered.
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
-                setStatus("QNN DSP: CAMERA RUNNING · waiting for first inference")
+                setStatus("QNN DSP: CAMERA RUNNING · dual-ROI tracker · waiting for two-hand results")
             } catch (t: Throwable) {
                 fail("FRONT CAMERA FAILED\n" + t.javaClass.simpleName + ": " + t.message)
             }
@@ -169,17 +179,21 @@ class LiteRtDspDebugActivity : ComponentActivity() {
     }
 
     private fun process(frame: ImageProxy) {
+        val pipelineStart = SystemClock.elapsedRealtimeNanos()
         val plane = frame.planes.firstOrNull() ?: error("RGBA plane missing.")
         val width = frame.width
         val height = frame.height
         val count = width.toLong() * height.toLong()
         require(count in 1..4_000_000) { "Invalid camera frame dimensions." }
         if (argb.size != count.toInt()) argb = IntArray(count.toInt())
+
         val buffer = plane.buffer
         val base = buffer.position()
+        val limit = buffer.limit()
         for (y in 0 until height) {
             for (x in 0 until width) {
                 val p = base + y * plane.rowStride + x * plane.pixelStride
+                require(p >= base && p + 3 < limit) { "RGBA plane stride exceeds its buffer." }
                 val r = buffer.get(p).toInt() and 255
                 val g = buffer.get(p + 1).toInt() and 255
                 val b = buffer.get(p + 2).toInt() and 255
@@ -191,52 +205,101 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         val rotation = frame.imageInfo.rotationDegrees
         val uprightWidth = if (rotation == 90 || rotation == 270) height else width
         val uprightHeight = if (rotation == 90 || rotation == 270) width else height
-        val activeCrop = crop?.takeIf {
-            it.sourceWidthPx == uprightWidth && it.sourceHeightPx == uprightHeight
-        } ?: centerCrop(uprightWidth, uprightHeight)
-
-        val pipelineStart = SystemClock.elapsedRealtimeNanos()
-        check(
-            HandRoiRgbPreprocessor.writeRtmposeImageNetNchwFloat(
-                sourceArgb = argb,
-                crop = activeCrop,
-                outputSizePx = 256,
-                destinationNchw = input,
-                sourceRotationDegrees = rotation
-            )
-        ) { "RTMPose preprocessing rejected the camera frame." }
-
-        val inferenceStart = SystemClock.elapsedRealtimeNanos()
-        val outputs = checkNotNull(runner).infer(input)
-        inferenceMs = (SystemClock.elapsedRealtimeNanos() - inferenceStart) / 1_000_000.0
-        pipelineMs = (SystemClock.elapsedRealtimeNanos() - pipelineStart) / 1_000_000.0
-
-        val decoded = RtmposeHandOutputDecoder.decode(
-            outputs = RtmposeHandSimccTensors(
-                LiteRtFloatTensor(intArrayOf(1, 21, 512), outputs.first),
-                LiteRtFloatTensor(intArrayOf(1, 21, 512), outputs.second)
-            ),
-            crop = activeCrop,
-            frameTimestampMs = SystemClock.elapsedRealtime(),
-            pipelineLatencyMs = pipelineMs.toLong().coerceAtLeast(0L),
-            // RTMPose has no presence score; this is only a seeded ROI, not detector confidence.
-            roiConfidence = 0.5f
-        )
-        val points = (decoded as? RtmposeHandDecodeResult.Success)
-            ?.frame?.hands?.singleOrNull()?.points.orEmpty()
-        if (points.size == 21) {
-            overlay.submit(points, true)
-            crop = nextCrop(points, uprightWidth, uprightHeight, activeCrop)
-        } else {
-            overlay.submit(emptyList(), true)
-            crop = null
+        if (tracks.isEmpty() || tracks.any {
+                it.crop.sourceWidthPx != uprightWidth || it.crop.sourceHeightPx != uprightHeight
+            }
+        ) {
+            val seeds = LiteRtDspTwoHandRoiPolicy.createSeedCrops(uprightWidth, uprightHeight)
+            check(seeds.size == 2) { "Camera frame is too small to seed two independent hand ROIs." }
+            tracks = seeds.mapIndexed { index, seed -> DspHandTrack(index, seed) }
         }
+
+        val activeTracks = tracks
+        var totalInferenceNanos = 0L
+        val candidates = activeTracks.map { track ->
+            check(
+                HandRoiRgbPreprocessor.writeRtmposeImageNetNchwFloat(
+                    sourceArgb = argb,
+                    crop = track.crop,
+                    outputSizePx = 256,
+                    destinationNchw = input,
+                    sourceRotationDegrees = rotation
+                )
+            ) { "RTMPose preprocessing rejected ROI " + (track.slot + 1) + "." }
+
+            val inferenceStart = SystemClock.elapsedRealtimeNanos()
+            val outputs = checkNotNull(runner).infer(input)
+            totalInferenceNanos += SystemClock.elapsedRealtimeNanos() - inferenceStart
+
+            val decoded = RtmposeHandOutputDecoder.decode(
+                outputs = RtmposeHandSimccTensors(
+                    LiteRtFloatTensor(intArrayOf(1, 21, 512), outputs.first),
+                    LiteRtFloatTensor(intArrayOf(1, 21, 512), outputs.second)
+                ),
+                crop = track.crop,
+                frameTimestampMs = SystemClock.elapsedRealtime(),
+                // This is a manually seeded ROI association, not a model confidence score.
+                // Geometry validation below is the actual publication gate.
+                roiConfidence = 1f
+            )
+            val points = (decoded as? RtmposeHandDecodeResult.Success)
+                ?.frame?.hands?.singleOrNull()?.points.orEmpty()
+            if (LiteRtDspTwoHandRoiPolicy.hasPlausibleHand(points, track.crop)) {
+                points
+            } else {
+                emptyList()
+            }
+        }.toMutableList()
+
+        // Two independent top-down crops can occasionally converge on the same physical
+        // hand. Suppress the duplicate rather than drawing two skeletons over one hand.
+        if (candidates[0].size == 21 && candidates[1].size == 21 &&
+            !LiteRtDspTwoHandRoiPolicy.areDistinctHands(candidates[0], candidates[1])
+        ) {
+            val firstCost = associationCost(activeTracks[0], candidates[0])
+            val secondCost = associationCost(activeTracks[1], candidates[1])
+            if (firstCost <= secondCost) candidates[1] = emptyList()
+            else candidates[0] = emptyList()
+        }
+
+        activeTracks.forEachIndexed { index, track ->
+            val points = candidates[index]
+            if (points.size == 21) {
+                track.points = points
+                track.crop = nextCrop(points, uprightWidth, uprightHeight, track.crop)
+                track.missedFrames = 0
+            } else {
+                track.points = emptyList()
+                track.missedFrames++
+                if (track.missedFrames >= TRACK_REACQUIRE_MISSES) {
+                    track.crop = track.seedCrop
+                    track.missedFrames = 0
+                }
+            }
+        }
+
+        inferenceMs = totalInferenceNanos / 1_000_000.0
+        pipelineMs = (SystemClock.elapsedRealtimeNanos() - pipelineStart) / 1_000_000.0
+        visibleHandCount = activeTracks.count { it.points.size == 21 }
+        overlay.submit(
+            activeTracks.filter { it.points.size == 21 }
+                .map { DspHandOverlayHand(it.slot, it.points) }
+        )
         updateStats()
     }
 
-    private fun centerCrop(width: Int, height: Int): HandRoiCrop {
-        val size = (minOf(width, height) * 0.72f).toInt().coerceIn(64, minOf(width, height))
-        return HandRoiCrop((width - size) / 2, (height - size) / 2, size, width, height)
+    private fun associationCost(track: DspHandTrack, points: List<HandPoint>): Float {
+        val expected = track.points.firstOrNull() ?: HandPoint(
+            x = (track.seedCrop.leftPx + track.seedCrop.sizePx * 0.5f) /
+                track.seedCrop.sourceWidthPx.toFloat(),
+            y = (track.seedCrop.topPx + track.seedCrop.sizePx * 0.5f) /
+                track.seedCrop.sourceHeightPx.toFloat(),
+            z = 0f
+        )
+        val wrist = points.first()
+        val dx = wrist.x - expected.x
+        val dy = wrist.y - expected.y
+        return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
     private fun nextCrop(
@@ -272,12 +335,13 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         runOnUiThread {
             status.text = String.format(
                 Locale.US,
-                "QNN DSP delegate configured · model inference PASS · placement NOT VERIFIED\nFPS %.1f | inference %.1f ms | pipeline %.1f ms\nGPU / NNAPI / XNNPACK delegates disabled · unsupported ops may run on CPU",
-                fps, inferenceMs, pipelineMs
+                "QNN DSP delegate configured · 2 independent inference calls/frame · placement NOT VERIFIED\nFPS %.1f | hands %d/2 | inference total %.1f ms (%.1f ms/ROI) | pipeline %.1f ms\nGPU / NNAPI / XNNPACK delegates disabled · unsupported ops may run on CPU",
+                fps, visibleHandCount, inferenceMs, inferenceMs / 2.0, pipelineMs
             )
             details.text =
-                "21 точек · одна рука · центр-ROI следует за предыдущими точками\n" +
-                "RTMPose не ищет ладонь во всём кадре и не выдаёт presence score"
+                "Две независимые ROI · два DSP inference на кадр · голубая/оранжевая рука\n" +
+                "Начни с рук в левой и правой половинах. RTMPose не ищет ладони по всему кадру;\n" +
+                "presence score отсутствует, пустые ROI отсекаются геометрическим фильтром."
         }
     }
 
@@ -288,8 +352,9 @@ class LiteRtDspDebugActivity : ComponentActivity() {
     private fun fail(value: String) {
         runOnUiThread {
             status.text = value + "\nNo alternate delegate is configured; unsupported operators may still use default CPU kernels."
+            cameraProvider?.unbindAll()
             details.text = "Камера остаётся скрытой. Ошибка не маскируется переключением на GPU или CPU."
-            overlay.submit(emptyList(), true)
+            overlay.submit(emptyList())
         }
     }
 
@@ -301,17 +366,19 @@ class LiteRtDspDebugActivity : ComponentActivity() {
     }
 }
 
+private data class DspHandOverlayHand(
+    val slot: Int,
+    val points: List<HandPoint>
+)
+
 private class HandSkeletonOverlay(context: Context) : View(context) {
-    @Volatile private var points: List<HandPoint> = emptyList()
-    @Volatile private var mirror = true
+    @Volatile private var hands: List<DspHandOverlayHand> = emptyList()
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xff38d9ff.toInt()
         strokeWidth = 5f
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
     private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
         style = Paint.Style.FILL
     }
     private val guide = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -328,25 +395,32 @@ private class HandSkeletonOverlay(context: Context) : View(context) {
         5 to 9, 9 to 13, 13 to 17
     )
 
-    fun submit(value: List<HandPoint>, mirrorHorizontally: Boolean) {
-        points = value.toList()
-        mirror = mirrorHorizontally
+    fun submit(value: List<DspHandOverlayHand>) {
+        hands = value.toList()
         postInvalidateOnAnimation()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val size = minOf(width, height) * 0.62f
-        val left = (width - size) * 0.5f
-        val top = (height - size) * 0.5f
-        canvas.drawRoundRect(left, top, left + size, top + size, 18f, 18f, guide)
-        val current = points
-        if (current.size != 21) return
-        fun x(i: Int): Float =
-            (if (mirror) 1f - current[i].x else current[i].x).coerceIn(0f, 1f) * width
-        fun y(i: Int): Float = current[i].y.coerceIn(0f, 1f) * height
-        edges.forEach { (a, b) -> canvas.drawLine(x(a), y(a), x(b), y(b), line) }
-        current.indices.forEach { i -> canvas.drawCircle(x(i), y(i), if (i == 0) 8f else 5.5f, dot) }
+        val guideTop = height * 0.18f
+        val guideBottom = height * 0.82f
+        canvas.drawRoundRect(width * 0.03f, guideTop, width * 0.47f, guideBottom, 18f, 18f, guide)
+        canvas.drawRoundRect(width * 0.53f, guideTop, width * 0.97f, guideBottom, 18f, 18f, guide)
+        canvas.drawLine(width * 0.5f, guideTop, width * 0.5f, guideBottom, guide)
+
+        hands.forEach { hand ->
+            val current = hand.points
+            if (current.size != 21) return@forEach
+            val tint = if (hand.slot == 0) 0xff38d9ff.toInt() else 0xffffb45b.toInt()
+            line.color = tint
+            dot.color = tint
+            fun x(i: Int): Float = (1f - current[i].x.coerceIn(0f, 1f)) * width
+            fun y(i: Int): Float = current[i].y.coerceIn(0f, 1f) * height
+            edges.forEach { (a, b) -> canvas.drawLine(x(a), y(a), x(b), y(b), line) }
+            current.indices.forEach { i ->
+                canvas.drawCircle(x(i), y(i), if (i == 0) 8f else 5.5f, dot)
+            }
+        }
     }
 }
 
@@ -356,7 +430,8 @@ private object QnnDspSkeletonStore {
         val app = context.applicationContext
         val dir = File(app.noBackupFilesDir, "qnn-dsp-skeletons")
         check(dir.exists() || dir.mkdirs()) { "Cannot create QNN DSP skeleton directory." }
-        if (dir.listFiles()?.any { it.name.endsWith("Skel.so") } == true) return dir.absolutePath
+        dir.listFiles()?.filter { it.name.endsWith("Skel.so") || it.name.endsWith(".part") }
+            ?.forEach { check(it.delete()) { "Cannot clear stale QNN skeleton: " + it.name } }
         val apkFiles = linkedSetOf(app.applicationInfo.sourceDir)
         app.applicationInfo.splitSourceDirs?.forEach(apkFiles::add)
         apkFiles.forEach { apkPath ->
@@ -428,9 +503,11 @@ private class QnnDspRtmposeRunner(context: Context, modelFile: File) : Closeable
             setSkelLibraryDir(QnnDspSkeletonStore.prepare(context))
         }
         val createdDelegate = QnnDelegate(qnnOptions)
-        options.addDelegate(createdDelegate)
+        var partialInterpreter: Interpreter? = null
         try {
+            options.addDelegate(createdDelegate)
             val created = Interpreter(model, options)
+            partialInterpreter = created
             val inputTensor = created.getInputTensor(0)
             val xTensor = created.getOutputTensor(0)
             val yTensor = created.getOutputTensor(1)
@@ -453,7 +530,9 @@ private class QnnDspRtmposeRunner(context: Context, modelFile: File) : Closeable
             outputYSize = yTensor.numElements()
             // Warm-up executes a real inference through the configured QNN DSP delegate.
             infer(FloatArray(inputTensor.numElements()))
+            partialInterpreter = null
         } catch (t: Throwable) {
+            runCatching { partialInterpreter?.close() }
             runCatching { createdDelegate.javaClass.getMethod("close").invoke(createdDelegate) }
             throw t
         }
