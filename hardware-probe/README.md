@@ -11,6 +11,10 @@ A standalone diagnostic APK for measuring real Android inference backends on phy
 - Actual MobileNet V1 INT8 LiteRT inference using CPU/XNNPACK (1, 4 and 8 threads), GPU delegate, QNN DSP and QNN HTP.
 - Warm-up and repeated inference timings (median, P95 and approximate inferences/second).
 - Backend setup, interpreter creation and inference failures reported as separate stages, including nested exception causes.
+- QNN DSP/HTP native logcat capture scoped to the probe process (no global log buffer clearing).
+- QNN native API export checks, loaded-module snapshots, SoC properties, FastRPC device-node permissions and DSP firmware search paths.
+- Automatic extraction and ELF validation of Qualcomm Hexagon DSP skeletons embedded in the APK, followed by an explicit QNN skeleton-directory override.
+- Reflection-based discovery of QNN Java logging controls; requests DEBUG/VERBOSE only when that API is actually exposed.
 
 ## Build
 
@@ -35,8 +39,9 @@ For comparable numbers, let the phone cool to a NONE/LIGHT thermal state, unplug
 - **PASS** means interpreter creation and repeated actual model inference completed.
 - **FAIL at delegate setup/interpreter creation** is not proof that the silicon lacks the accelerator; inspect the full cause chain and native-library scan.
 - **GPU CompatibilityList NOT SUPPORTED** means the TensorFlow Lite GPU runtime rejects the device/configuration before inference.
-- **QNN HTP/DSP FAIL** can be due to inaccessible FastRPC, backend/SoC support, model quantization or unsupported operators. It does not alone prove that no DSP hardware exists.
-- A loadable library is only a linker result, not proof that a backend can execute a neural network. QNN DSP skeletons are Hexagon DSP images (for example ELF32 / QUALCOMM DSP6), so `dlopen` from the ARM app process is not a valid test; the probe reports their presence and ELF machine instead.
+- **QNN HTP/DSP FAIL** must be read together with the native QNN/FastRPC logcat block, QNN exported-symbol checks, FastRPC node access and the loaded-module snapshot. A Java-level delegate exception alone is not a diagnosis.
+- Some Qualcomm DSP skeleton files are ELF32 Hexagon images packaged inside the APK under `lib/arm64-v8a`. Android may not materialize these non-ARM ELF images in `nativeLibraryDir`; the probe extracts and validates them into app-private storage, then passes that directory to `setSkelLibraryDir`.
+- A loadable library is only a linker result, not proof that a backend can execute a neural network. QNN DSP skeletons are Hexagon DSP images (ELF32 / QUALCOMM DSP6), so `dlopen` from the ARM app process is not a valid test. The probe extracts them from the APK ZIP and passes the extracted directory to QNN instead.
 - The benchmark uses one common INT8 CNN model across providers. It is a backend capability check, not a final hand-tracking performance score.
 
 The APK is arm64-v8a only and does not change the main NextVRera app or GVXRS Mobile runtime.
