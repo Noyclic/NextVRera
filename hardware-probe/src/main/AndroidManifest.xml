@@ -6,6 +6,12 @@
         android:label="NextVRera Hardware Probe"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <!-- Android 12+ restricts access to some vendor native libraries unless declared. -->
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize"
