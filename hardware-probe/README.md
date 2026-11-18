@@ -30,7 +30,7 @@ The model is downloaded by Gradle from the public TensorFlow Lite model mirror o
 
 ## Physical-device test
 
-Install the APK on an ARM64 Android device, open **NextVRera Hardware Probe**, and tap **RUN ALL HARDWARE TESTS**. Wait for all backends, then tap **EXPORT FULL REPORT (.TXT)**. Save the file using Android's document picker (for example, to Downloads), then attach that `.txt` file directly to your ChatGPT message. Clipboard export remains available only for short reports; full QNN logs should be sent as a file.
+Install the APK on an ARM64 Android device, open **NextVRera Hardware Probe**, and tap **RUN ALL HARDWARE TESTS**. Wait for all backends, then tap **EXPORT FULL REPORT (.ZIP)**. Save the archive using Android's document picker (for example, to Downloads), then attach that `.zip` file directly to your ChatGPT message. The archive contains the complete report plus separate DSP, HTP and filtered native QNN/FastRPC log files. Clipboard export remains available only for short reports; full QNN logs should be sent as a file.
 
 For comparable numbers, let the phone cool to a NONE/LIGHT thermal state, unplug it, close other heavy apps, and run the probe once after a reboot. The app reports thermal state before and after each backend; SEVERE or CRITICAL results are throttled and should not be compared with cool-device runs.
 
