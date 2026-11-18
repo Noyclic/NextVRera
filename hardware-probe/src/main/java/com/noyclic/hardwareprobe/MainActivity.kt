@@ -149,11 +149,16 @@ class MainActivity : Activity() {
         val surface = EGL14.eglCreatePbufferSurface(display, configs[0], intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
         check(EGL14.eglMakeCurrent(display, surface, surface, context))
         val renderer = GLES20.glGetString(GLES20.GL_RENDERER) ?: "unknown"
+        val halfFloatExtensions = GLES20.glGetString(GLES20.GL_EXTENSIONS)
+            .orEmpty()
+            .split(' ')
+            .filter { it.contains("half_float", ignoreCase = true) || it.contains("fp16", ignoreCase = true) }
+            .distinct()
         EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
         EGL14.eglDestroySurface(display, surface)
         EGL14.eglDestroyContext(display, context)
         EGL14.eglTerminate(display)
-        renderer
+        "$renderer | FP16-related GL extensions: ${halfFloatExtensions.joinToString().ifBlank { "none reported" }}"
     }.getOrElse { "unavailable: ${it.message}" }
 
     private fun queryGlVersion(): String = runCatching {
@@ -190,11 +195,6 @@ class MainActivity : Activity() {
             }
             benchmark("GPU / OpenGL delegate — default precision", modelBytes) { options ->
                 options.addDelegate(GpuDelegate())
-            }
-            benchmark("GPU / OpenGL delegate — FP16 allowed", modelBytes) { options ->
-                val gpuOptions = GpuDelegate.Options()
-                gpuOptions.setPrecisionLossAllowed(true)
-                options.addDelegate(GpuDelegate(gpuOptions))
             }
             benchmark("Qualcomm QNN / DSP (Hexagon)", modelBytes) { options ->
                 val qnnOptions = QnnDelegate.Options()
