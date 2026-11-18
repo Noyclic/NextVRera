@@ -1,6 +1,7 @@
 package com.noyclic.questphonexr.sandbox
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Canvas
@@ -13,6 +14,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.ScrollView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -65,6 +67,8 @@ class LiteRtDspDebugActivity : ComponentActivity() {
     private lateinit var overlay: HandSkeletonOverlay
     private lateinit var status: TextView
     private lateinit var details: TextView
+    private val diagnosticLog = StringBuilder()
+    @Volatile private var lastError: String? = null
     private var argb = IntArray(0)
     private val input = FloatArray(3 * 256 * 256)
     private var tracks: List<DspHandTrack> = emptyList()
@@ -122,6 +126,16 @@ class LiteRtDspDebugActivity : ComponentActivity() {
             FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
                 topMargin = 90
                 marginEnd = 10
+            }
+        )
+        root.addView(
+            Button(this).apply {
+                text = "ПОКАЗАТЬ ОШИБКИ"
+                contentDescription = "Показать ошибки и журнал диагностики LiteRT DSP"
+                setOnClickListener { showDiagnostics() }
+            },
+            FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = 92
             }
         )
         setContentView(root)
@@ -346,17 +360,58 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         }
     }
 
+    private fun appendDiagnostic(value: String) {
+        synchronized(diagnosticLog) {
+            diagnosticLog.append('[').append(System.currentTimeMillis()).append("] ")
+                .append(value).append('\n')
+            if (diagnosticLog.length > 48_000) {
+                diagnosticLog.delete(0, diagnosticLog.length - 36_000)
+            }
+        }
+    }
+
     private fun setStatus(value: String) {
+        appendDiagnostic("STATUS: " + value.replace('\n', ' '))
         runOnUiThread { status.text = value }
     }
 
     private fun fail(value: String) {
+        lastError = value
+        appendDiagnostic("ERROR: " + value)
         runOnUiThread {
             status.text = value + "\nNo alternate delegate is configured; unsupported operators may still use default CPU kernels."
             cameraProvider?.unbindAll()
             details.text = "Камера остаётся скрытой. Ошибка не маскируется переключением на GPU или CPU."
             overlay.submit(emptyList())
         }
+    }
+
+    private fun showDiagnostics() {
+        val log = synchronized(diagnosticLog) { diagnosticLog.toString() }
+        val error = lastError
+        val content = buildString {
+            appendLine(if (error == null) "Ошибок пока не зарегистрировано." else "ПОСЛЕДНЯЯ ОШИБКА:")
+            if (error != null) appendLine(error).appendLine()
+            appendLine("ЖУРНАЛ LITERT / QNN DSP:")
+            append(log.ifBlank { "Журнал пока пуст. Запусти проверку и открой это окно снова." })
+        }
+        val textView = TextView(this).apply {
+            text = content
+            textSize = 12f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(Color.WHITE)
+            setPadding(20, 16, 20, 16)
+            textIsSelectable = true
+        }
+        val scroll = ScrollView(this).apply {
+            addView(textView)
+            setBackgroundColor(0xff101820.toInt())
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (error == null) "LiteRT — диагностика" else "LiteRT — обнаружена ошибка")
+            .setView(scroll)
+            .setPositiveButton("ЗАКРЫТЬ", null)
+            .show()
     }
 
     override fun onDestroy() {
