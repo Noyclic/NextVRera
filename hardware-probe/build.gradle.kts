@@ -1,3 +1,4 @@
+import java.net.URL
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
