@@ -46,6 +46,9 @@ jobs:
         with:
           gradle-version: "8.13"
 
+      - name: Run hardware probe unit tests
+        run: gradle --no-daemon :hardware-probe:testDebugUnitTest
+
       - name: Build hardware probe APK
         run: gradle --no-daemon :hardware-probe:assembleDebug
 

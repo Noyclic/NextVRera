@@ -12,6 +12,7 @@ import java.util.Collections
 import java.util.Enumeration
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipFile
 
 /**
@@ -214,6 +215,7 @@ internal class QnnDeepDiagnostics(
         private var process: Process? = null
         private var readerThread: Thread? = null
         private var startupError: String? = null
+        private val stopping = AtomicBoolean(false)
 
         fun start(): String {
             return try {
@@ -236,9 +238,11 @@ internal class QnnDeepDiagnostics(
                             }
                         }
                     } catch (error: Throwable) {
-                        synchronized(lines) {
-                            if (lines.size < MAX_LOG_LINES) {
-                                lines.add("LOGCAT_READER_ERROR: ${error.javaClass.simpleName}: ${error.message}")
+                        if (!stopping.get()) {
+                            synchronized(lines) {
+                                if (lines.size < MAX_LOG_LINES) {
+                                    lines.add("LOGCAT_READER_ERROR: " + error.javaClass.simpleName + ": " + error.message)
+                                }
                             }
                         }
                     }
@@ -254,6 +258,7 @@ internal class QnnDeepDiagnostics(
         }
 
         fun stop(): List<String> {
+            stopping.set(true)
             val child = process
             if (child != null) {
                 runCatching {
@@ -271,7 +276,7 @@ internal class QnnDeepDiagnostics(
         }
 
         companion object {
-            private const val MAX_LOG_LINES = 350
+            private const val MAX_LOG_LINES = 1200
         }
     }
 }

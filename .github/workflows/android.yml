@@ -56,6 +56,9 @@ jobs:
 
       # Build and publish the standalone phone diagnostic before the main app.
       # This keeps the hardware probe available even if unrelated app tests/builds fail.
+      - name: Run hardware probe unit tests
+        run: gradle --no-daemon :hardware-probe:testDebugUnitTest
+
       - name: Build standalone hardware probe APK
         run: |
           set -o pipefail

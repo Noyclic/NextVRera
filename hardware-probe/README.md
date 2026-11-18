@@ -10,6 +10,9 @@ A standalone diagnostic APK for measuring real Android inference backends on phy
 - Native linker visibility for Qualcomm QNN / HTP, FastRPC, OpenCL and Vulkan libraries. DSP-side skeleton ELF files are inspected by architecture, not passed to the ARM linker.
 - Actual MobileNet V1 INT8 LiteRT inference using CPU/XNNPACK (1, 4 and 8 threads), GPU delegate, QNN DSP and QNN HTP.
 - Warm-up and repeated inference timings (median, P95 and approximate inferences/second).
+- Deterministic CPU/XNNPACK reference output, with quantization-aware INT8/UINT8 cosine similarity, MAE, max absolute error, exact-byte percentage and Top-1 agreement for GPU/QNN.
+- A 100-inference QNN DSP stress run with median/P95/P99 latency, repeat determinism and exact agreement count against the CPU reference.
+- QNN/FastRPC loaded-module snapshots taken both while the interpreter is alive and after delegate teardown, to avoid mistaking unloaded-after-close modules for modules that were never loaded.
 - Backend setup, interpreter creation and inference failures reported as separate stages, including nested exception causes.
 - QNN DSP/HTP native logcat capture scoped to the probe process (no global log buffer clearing).
 - QNN native API export checks, loaded-module snapshots, SoC properties, FastRPC device-node permissions and DSP firmware search paths.
@@ -30,7 +33,7 @@ The model is downloaded by Gradle from the public TensorFlow Lite model mirror o
 
 ## Physical-device test
 
-Install the APK on an ARM64 Android device, open **NextVRera Hardware Probe**, and tap **RUN ALL HARDWARE TESTS**. Wait for all backends, then tap **EXPORT FULL REPORT (.ZIP)**. Save the archive using Android's document picker (for example, to Downloads), then attach that `.zip` file directly to your ChatGPT message. The archive contains the complete report plus separate DSP, HTP and filtered native QNN/FastRPC log files. Clipboard export remains available only for short reports; full QNN logs should be sent as a file.
+Install the APK on an ARM64 Android device, open **NextVRera Hardware Probe**, and tap **RUN ALL HARDWARE TESTS**. Wait for all backends, then tap **EXPORT FULL REPORT (.ZIP)**. Save the archive using Android's document picker (for example, to Downloads), then attach that `.zip` file directly to your ChatGPT message. The archive contains the complete report plus separate DSP, HTP, filtered native QNN/FastRPC logs and a focused tensor accuracy/stability summary. Clipboard export remains available only for short reports; full QNN logs should be sent as a file.
 
 For comparable numbers, let the phone cool to a NONE/LIGHT thermal state, unplug it, close other heavy apps, and run the probe once after a reboot. The app reports thermal state before and after each backend; SEVERE or CRITICAL results are throttled and should not be compared with cool-device runs.
 
@@ -42,6 +45,9 @@ For comparable numbers, let the phone cool to a NONE/LIGHT thermal state, unplug
 - **QNN HTP/DSP FAIL** must be read together with the native QNN/FastRPC logcat block, QNN exported-symbol checks, FastRPC node access and the loaded-module snapshot. A Java-level delegate exception alone is not a diagnosis.
 - Some Qualcomm DSP skeleton files are ELF32 Hexagon images packaged inside the APK under `lib/arm64-v8a`. Android may not materialize these non-ARM ELF images in `nativeLibraryDir`; the probe extracts and validates them into app-private storage, then passes that directory to `setSkelLibraryDir`.
 - A loadable library is only a linker result, not proof that a backend can execute a neural network. QNN DSP skeletons are Hexagon DSP images (ELF32 / QUALCOMM DSP6), so `dlopen` from the ARM app process is not a valid test. The probe extracts them from the APK ZIP and passes the extracted directory to QNN instead.
+- CPU vs delegated output comparison checks numerical agreement on the same deterministic input. For the quantized output it reports cosine similarity, MAE, maximum absolute error, exact byte agreement and Top-1 agreement.
+- A successful result and matching output do not prove that every model operation ran on the DSP. Review the live module snapshot and QNN native logs for placement evidence; operator-level coverage is only reported when the delegate exposes reliable telemetry.
+- The 100-run DSP stress profile is a stability/latency sample, not a thermal endurance certification. Cool-device and sustained in-app testing are still required.
 - The benchmark uses one common INT8 CNN model across providers. It is a backend capability check, not a final hand-tracking performance score.
 
 The APK is arm64-v8a only and does not change the main NextVRera app or GVXRS Mobile runtime.

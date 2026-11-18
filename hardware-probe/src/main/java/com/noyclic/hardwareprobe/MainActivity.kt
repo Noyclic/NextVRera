@@ -16,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.qualcomm.qti.QnnDelegate
+import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
@@ -56,6 +57,13 @@ class MainActivity : Activity() {
         val shadingLanguageVersion: String,
         val eglVersion: String,
         val fp16Extensions: List<String>
+    )
+
+    private data class BackendOutput(
+        val bytes: ByteArray,
+        val dataType: DataType,
+        val quantizationScale: Float,
+        val quantizationZeroPoint: Int
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,7 +108,7 @@ class MainActivity : Activity() {
             }
         }
         exportButton = Button(this).apply {
-            text = "EXPORT FULL REPORT (.TXT)"
+            text = "EXPORT FULL REPORT (.ZIP)"
             setOnClickListener { exportFullReport() }
         }
         output = TextView(this).apply {
@@ -166,6 +174,12 @@ class MainActivity : Activity() {
                             .any { lower.contains(it) }
                     }.joinToString("\n")
                     addEntry("qnn-native-and-fastrpc-lines.txt", nativeLines)
+                    val tensorLines = snapshot.lineSequence().filter { line ->
+                        val lower = line.lowercase(Locale.US)
+                        listOf("cosine similarity", "mae=", "max absolute error", "top-1", "exact byte match", "stress latency", "repeat determinism", "while interpreter is alive")
+                            .any { lower.contains(it) }
+                    }.joinToString("\n")
+                    addEntry("tensor-accuracy-and-stability.txt", tensorLines)
                 }
             } ?: error("Android could not open the selected destination")
             append("FULL DIAGNOSTIC ZIP EXPORTED: $uri")
@@ -380,6 +394,8 @@ class MainActivity : Activity() {
                 }
 
             publish("Model: MobileNet V1 224 INT8 (" + modelBytes.size / 1024 + " KB)")
+            publish("Accuracy reference: deterministic synthetic input, same model/input for every backend.")
+            publish("DSP stress profile: 100 consecutive inferences after warm-up.")
             publish(qnnDiagnostics.prepareSkeletons())
             publish("")
             publish("=== QNN LOW-LEVEL ENVIRONMENT (BEFORE DELEGATE) ===")
@@ -390,19 +406,34 @@ class MainActivity : Activity() {
                 publish("WARNING: device is thermally throttled; benchmark numbers may be lower than cool-device performance.")
             }
 
-            benchmark("CPU / XNNPACK — 1 thread", modelBytes) { options ->
+            val cpuReference = benchmark(
+                "CPU / XNNPACK — 1 thread (reference)",
+                modelBytes
+            ) { options ->
                 options.setNumThreads(1)
                 null
             }
-            benchmark("CPU / XNNPACK — 4 threads", modelBytes) { options ->
+            benchmark(
+                "CPU / XNNPACK — 4 threads",
+                modelBytes,
+                referenceOutput = cpuReference
+            ) { options ->
                 options.setNumThreads(4)
                 null
             }
-            benchmark("CPU / XNNPACK — 8 threads", modelBytes) { options ->
+            benchmark(
+                "CPU / XNNPACK — 8 threads",
+                modelBytes,
+                referenceOutput = cpuReference
+            ) { options ->
                 options.setNumThreads(8)
                 null
             }
-            benchmark("GPU / OpenGL delegate — compatibility-checked", modelBytes) { options ->
+            benchmark(
+                "GPU / OpenGL delegate — compatibility-checked",
+                modelBytes,
+                referenceOutput = cpuReference
+            ) { options ->
                 val compatibility = CompatibilityList()
                 val supported = compatibility.isDelegateSupportedOnThisDevice
                 publish("GPU compatibility list: " + if (supported) "SUPPORTED" else "NOT SUPPORTED")
@@ -415,7 +446,12 @@ class MainActivity : Activity() {
                 options.addDelegate(gpuDelegate)
                 gpuDelegate
             }
-            benchmark("Qualcomm QNN / DSP backend", modelBytes) { options ->
+            benchmark(
+                "Qualcomm QNN / DSP backend",
+                modelBytes,
+                referenceOutput = cpuReference,
+                stabilityRuns = DSP_STABILITY_RUNS
+            ) { options ->
                 options.setUseNNAPI(false)
                 options.setUseXNNPACK(false)
                 val qnnOptions = QnnDelegate.Options()
@@ -425,7 +461,11 @@ class MainActivity : Activity() {
                 options.addDelegate(qnnDelegate)
                 qnnDelegate
             }
-            benchmark("Qualcomm QNN / HTP backend", modelBytes) { options ->
+            benchmark(
+                "Qualcomm QNN / HTP backend",
+                modelBytes,
+                referenceOutput = cpuReference
+            ) { options ->
                 options.setUseNNAPI(false)
                 options.setUseXNNPACK(false)
                 val qnnOptions = QnnDelegate.Options()
@@ -439,6 +479,7 @@ class MainActivity : Activity() {
             publish("")
             publish("Thermal status after run: " + thermalStatus())
             publish("Tests finished. Export the report and send it back here.")
+            publish("IMPORTANT: numerical agreement validates outputs, not full DSP operator coverage. Review QNN delegate logs/module snapshots for placement evidence.")
             finishTests()
         }
     }
@@ -446,13 +487,16 @@ class MainActivity : Activity() {
     private fun benchmark(
         name: String,
         modelBytes: ByteArray,
+        referenceOutput: BackendOutput? = null,
+        stabilityRuns: Int = 0,
         configure: (Interpreter.Options) -> Any?
-    ) {
+    ): BackendOutput? {
         publish("")
         publish("[" + name + "]")
         var interpreter: Interpreter? = null
         var delegateToClose: Any? = null
         var qnnLogCapture: QnnDeepDiagnostics.LogCapture? = null
+        var successfulOutput: BackendOutput? = null
         if (name.startsWith("Qualcomm QNN")) {
             qnnLogCapture = qnnDiagnostics.startLogCapture()
             publish("QNN native log capture: " + qnnLogCapture.start())
@@ -488,12 +532,14 @@ class MainActivity : Activity() {
 
             stage = "measured inference"
             val samples = ArrayList<Double>(MEASURE_RUNS)
+            var outputSnapshot = ByteArray(outputBuffer.capacity())
             repeat(MEASURE_RUNS) {
                 input.rewind()
                 outputBuffer.clear()
                 val start = SystemClock.elapsedRealtimeNanos()
                 interpreter.run(input, outputBuffer)
                 samples += (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
+                outputSnapshot = snapshotBuffer(outputBuffer)
             }
 
             samples.sort()
@@ -511,6 +557,102 @@ class MainActivity : Activity() {
             )
             publish("Input tensor: " + inputTensor.shape().contentToString() + " / " + inputTensor.dataType())
             publish("Output tensor: " + outputTensor.shape().contentToString() + " / " + outputTensor.dataType())
+
+            val outputType = outputTensor.dataType()
+            val quantization = outputTensor.quantizationParams()
+            publish(
+                String.format(
+                    Locale.US,
+                    "Output quantization: scale=%.9f | zeroPoint=%d | bytes=%d",
+                    quantization.scale,
+                    quantization.zeroPoint,
+                    outputSnapshot.size
+                )
+            )
+            successfulOutput = BackendOutput(outputSnapshot, outputType, quantization.scale, quantization.zeroPoint)
+
+            stage = "CPU reference tensor comparison"
+            if (referenceOutput == null) {
+                publish("CPU reference comparison: this is the reference backend.")
+            } else if (outputType != DataType.UINT8 && outputType != DataType.INT8) {
+                publish("CPU reference comparison: SKIPPED — output type $outputType is not INT8/UINT8.")
+            } else if (
+                referenceOutput.dataType != outputType ||
+                referenceOutput.bytes.size != outputSnapshot.size ||
+                referenceOutput.quantizationZeroPoint != quantization.zeroPoint ||
+                kotlin.math.abs(referenceOutput.quantizationScale - quantization.scale) > 0.0000001f
+            ) {
+                publish("CPU reference comparison: SKIPPED — output tensor metadata differs between backends.")
+                publish("Reference: ${referenceOutput.dataType}, scale=${referenceOutput.quantizationScale}, zeroPoint=${referenceOutput.quantizationZeroPoint}, bytes=${referenceOutput.bytes.size}")
+            } else {
+                val comparison = QuantizedTensorComparator.compare(
+                    referenceOutput.bytes,
+                    outputSnapshot,
+                    signed = outputType == DataType.INT8,
+                    scale = quantization.scale,
+                    zeroPoint = quantization.zeroPoint
+                )
+                publish(
+                    String.format(
+                        Locale.US,
+                        "CPU vs backend: cosine similarity=%.8f | MAE=%.8f | max absolute error=%.8f",
+                        comparison.cosineSimilarity,
+                        comparison.meanAbsoluteError,
+                        comparison.maxAbsoluteError
+                    )
+                )
+                publish(
+                    String.format(
+                        Locale.US,
+                        "Exact byte match=%.2f%% | Top-1 agreement=%s | CPU index=%d | backend index=%d",
+                        comparison.exactMatchPercent,
+                        if (comparison.top1Agreement) "YES" else "NO",
+                        comparison.referenceTopIndex,
+                        comparison.candidateTopIndex
+                    )
+                )
+            }
+
+            if (stabilityRuns > 0) {
+                stage = "repeated inference stability test"
+                val stressSamples = ArrayList<Double>(stabilityRuns)
+                var sameAsFirstOutput = 0
+                var exactCpuMatches = 0
+                repeat(stabilityRuns) {
+                    input.rewind()
+                    outputBuffer.clear()
+                    val start = SystemClock.elapsedRealtimeNanos()
+                    interpreter.run(input, outputBuffer)
+                    stressSamples += (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
+                    val currentOutput = snapshotBuffer(outputBuffer)
+                    if (currentOutput.contentEquals(outputSnapshot)) sameAsFirstOutput++
+                    if (referenceOutput != null && currentOutput.contentEquals(referenceOutput.bytes)) {
+                        exactCpuMatches++
+                    }
+                }
+                stressSamples.sort()
+                val stressMedian = stressSamples[stressSamples.size / 2]
+                val stressP95 = stressSamples[
+                    ceil(stressSamples.size * 0.95).toInt().coerceIn(1, stressSamples.size) - 1
+                ]
+                val stressP99 = stressSamples[
+                    ceil(stressSamples.size * 0.99).toInt().coerceIn(1, stressSamples.size) - 1
+                ]
+                publish(
+                    String.format(
+                        Locale.US,
+                        "Stress latency (%d runs): median=%.2f ms | P95=%.2f ms | P99=%.2f ms",
+                        stabilityRuns,
+                        stressMedian,
+                        stressP95,
+                        stressP99
+                    )
+                )
+                publish("Repeat determinism: $sameAsFirstOutput/$stabilityRuns outputs exactly match first DSP output.")
+                if (referenceOutput != null) {
+                    publish("Exact agreement with CPU reference during stress: $exactCpuMatches/$stabilityRuns.")
+                }
+            }
             publish("Thermal status after backend: " + thermalStatus())
         } catch (error: Throwable) {
             publish("Result: FAIL — " + error.javaClass.simpleName + ": " + (error.message ?: "no message"))
@@ -529,15 +671,26 @@ class MainActivity : Activity() {
                 publish(" at " + it)
             }
         } finally {
+            if (qnnLogCapture != null) {
+                publish("--- Loaded QNN / DSP / FastRPC modules WHILE interpreter is alive ---")
+                publish(qnnDiagnostics.loadedModulesReport())
+            }
             runCatching { interpreter?.close() }
             closeDelegate(delegateToClose)
             if (qnnLogCapture != null) {
                 publish("--- QNN / FastRPC native logcat (this app PID) ---")
                 qnnLogCapture.stop().forEach { publish(it) }
-                publish("--- Loaded QNN / DSP / FastRPC modules after attempt ---")
+                publish("--- Loaded QNN / DSP / FastRPC modules AFTER teardown ---")
                 publish(qnnDiagnostics.loadedModulesReport())
             }
         }
+        return successfulOutput
+    }
+
+    private fun snapshotBuffer(buffer: ByteBuffer): ByteArray {
+        val view = buffer.duplicate()
+        view.clear()
+        return ByteArray(view.remaining()).also { view.get(it) }
     }
 
     private fun closeDelegate(delegate: Any?) {
@@ -580,5 +733,6 @@ class MainActivity : Activity() {
         private const val MODEL_NAME = "mobilenet_v1_1.0_224_quant.tflite"
         private const val WARMUP_RUNS = 3
         private const val MEASURE_RUNS = 15
+        private const val DSP_STABILITY_RUNS = 100
     }
 }
