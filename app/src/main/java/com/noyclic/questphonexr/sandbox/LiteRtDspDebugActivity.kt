@@ -44,7 +44,7 @@ import java.util.zip.ZipFile
 /**
  * Isolated QNN DSP diagnostic. CameraX ImageAnalysis runs with no Preview surface.
  * RTMPose is a top-down landmark model, not a palm detector; the first ROI is centered
- * and subsequent ROIs follow the previous 21-point output. No MediaPipe/GPU/CPU fallback.
+ * and subsequent ROIs follow the previous 21-point output. No MediaPipe/GPU/NNAPI/XNNPACK delegate fallback.
  */
 class LiteRtDspDebugActivity : ComponentActivity() {
     private val worker = Executors.newSingleThreadExecutor { r ->
@@ -127,7 +127,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
                     if (isFinishing || isDestroyed) {
                         worker.execute { readyRunner.close() }
                     } else {
-                        setStatus("QNN DSP: WARM-UP INFERENCE PASS\nGPU / CPU FALLBACK: DISABLED")
+                        setStatus("QNN DSP: WARM-UP INFERENCE PASS\nGPU / NNAPI / XNNPACK delegates: DISABLED · CPU op fallback: UNKNOWN")
                         bindCamera()
                     }
                 }
@@ -272,7 +272,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
         runOnUiThread {
             status.text = String.format(
                 Locale.US,
-                "QNN DSP: INFERENCE PASS · coverage NOT VERIFIED\nFPS %.1f | inference %.1f ms | pipeline %.1f ms\nGPU / CPU fallback: DISABLED",
+                "QNN DSP delegate inference PASS · operator coverage NOT VERIFIED\nFPS %.1f | inference %.1f ms | pipeline %.1f ms\nGPU / NNAPI / XNNPACK delegates disabled · unsupported ops may run on CPU",
                 fps, inferenceMs, pipelineMs
             )
             details.text =
@@ -287,7 +287,7 @@ class LiteRtDspDebugActivity : ComponentActivity() {
 
     private fun fail(value: String) {
         runOnUiThread {
-            status.text = value + "\nDSP-only: automatic fallback is disabled."
+            status.text = value + "\nNo alternate delegate is configured; unsupported operators may still use default CPU kernels."
             details.text = "Камера остаётся скрытой. Ошибка не маскируется переключением на GPU или CPU."
             overlay.submit(emptyList(), true)
         }
