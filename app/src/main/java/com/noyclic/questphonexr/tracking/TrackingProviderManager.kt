@@ -8,6 +8,7 @@ package com.noyclic.questphonexr.tracking
  */
 enum class TrackingProviderId(val wireId: String) {
     MEDIAPIPE("mediapipe"),
+    LITERT_STANDALONE("litert_standalone"),
     LITERT_CUSTOM("litert_custom"),
     GVXRS_DOCK("gvxrs_dock")
 }
@@ -416,6 +417,18 @@ class TrackingProviderManager(
                 autoPriority = 80,
                 capabilities = TrackingProviderCapabilities(
                     providesHandLocal3d = true,
+                    providesHandedness = true,
+                    maxHands = 2
+                )
+            ),
+            TrackingProviderDescriptor(
+                id = TrackingProviderId.LITERT_STANDALONE,
+                displayName = "LiteRT standalone",
+                description = "Independent full-frame palm detection and hand-landmark inference; model adapters are not connected yet.",
+                availability = TrackingProviderAvailability.PLANNED,
+                autoPriority = 85,
+                capabilities = TrackingProviderCapabilities(
+                    providesHandLocal3d = false,
                     providesHandedness = true,
                     maxHands = 2
                 )
