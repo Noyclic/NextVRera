@@ -24,10 +24,14 @@ internal object QuantizedTensorComparator {
         require(reference.size == candidate.size) {
             "Tensor sizes differ: reference=${reference.size}, candidate=${candidate.size}."
         }
+        require(scale.isFinite() && scale > 0f) {
+            "Quantization scale must be finite and positive: $scale."
+        }
+        require(if (signed) zeroPoint in -128..127 else zeroPoint in 0..255) {
+            "Quantization zero-point is outside the output type's range: zeroPoint=$zeroPoint, signed=$signed."
+        }
 
-        // TFLite reports scale=0 for non-quantized tensors. Keep this helper defined
-        // in raw integer units in that case; callers restrict it to INT8/UINT8 tensors.
-        val effectiveScale = if (scale.isFinite() && scale > 0f) scale.toDouble() else 1.0
+        val effectiveScale = scale.toDouble()
         var dot = 0.0
         var referenceNorm = 0.0
         var candidateNorm = 0.0

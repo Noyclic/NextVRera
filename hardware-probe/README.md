@@ -11,7 +11,7 @@ A standalone diagnostic APK for measuring real Android inference backends on phy
 - Actual MobileNet V1 INT8 LiteRT inference using CPU/XNNPACK (1, 4 and 8 threads), GPU delegate, QNN DSP and QNN HTP.
 - Warm-up and repeated inference timings (median, P95 and approximate inferences/second).
 - Deterministic CPU/XNNPACK reference output, with quantization-aware INT8/UINT8 cosine similarity, MAE, max absolute error, exact-byte percentage and Top-1 agreement for GPU/QNN.
-- A 100-inference QNN DSP stress run with median/P95/P99 latency, repeat determinism and exact agreement count against the CPU reference.
+- A 100-inference QNN DSP stress run with median/P95/P99 latency, repeat determinism and exact byte-agreement count against a metadata-compatible CPU reference. If the CPU run fails or quantization metadata differs, the comparison is explicitly marked SKIPPED.
 - QNN/FastRPC loaded-module snapshots taken both while the interpreter is alive and after delegate teardown, to avoid mistaking unloaded-after-close modules for modules that were never loaded.
 - Backend setup, interpreter creation and inference failures reported as separate stages, including nested exception causes.
 - QNN DSP/HTP native logcat capture scoped to the probe process (no global log buffer clearing).

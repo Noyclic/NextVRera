@@ -94,4 +94,26 @@ class QuantizedTensorComparatorTest {
             zeroPoint = 0
         )
     }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun nonPositiveQuantizationScaleIsRejected() {
+        QuantizedTensorComparator.compare(
+            byteArrayOf(1),
+            byteArrayOf(1),
+            signed = false,
+            scale = 0f,
+            zeroPoint = 0
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun outOfRangeUnsignedZeroPointIsRejected() {
+        QuantizedTensorComparator.compare(
+            byteArrayOf(1),
+            byteArrayOf(1),
+            signed = false,
+            scale = 0.5f,
+            zeroPoint = 256
+        )
+    }
 }

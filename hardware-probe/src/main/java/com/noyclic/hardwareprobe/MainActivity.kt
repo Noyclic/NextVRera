@@ -408,7 +408,8 @@ class MainActivity : Activity() {
 
             val cpuReference = benchmark(
                 "CPU / XNNPACK — 1 thread (reference)",
-                modelBytes
+                modelBytes,
+                isReferenceBackend = true
             ) { options ->
                 options.setNumThreads(1)
                 null
@@ -488,6 +489,7 @@ class MainActivity : Activity() {
         name: String,
         modelBytes: ByteArray,
         referenceOutput: BackendOutput? = null,
+        isReferenceBackend: Boolean = false,
         stabilityRuns: Int = 0,
         configure: (Interpreter.Options) -> Any?
     ): BackendOutput? {
@@ -571,19 +573,30 @@ class MainActivity : Activity() {
             )
             successfulOutput = BackendOutput(outputSnapshot, outputType, quantization.scale, quantization.zeroPoint)
 
+            val outputQuantizationValid = quantization.scale.isFinite() && quantization.scale > 0f
+            val referenceOutputCompatible = referenceOutput != null &&
+                referenceOutput.dataType == outputType &&
+                referenceOutput.bytes.size == outputSnapshot.size &&
+                referenceOutput.quantizationScale.isFinite() &&
+                referenceOutput.quantizationScale > 0f &&
+                outputQuantizationValid &&
+                referenceOutput.quantizationZeroPoint == quantization.zeroPoint &&
+                kotlin.math.abs(referenceOutput.quantizationScale - quantization.scale) <= 0.0000001f
+
             stage = "CPU reference tensor comparison"
-            if (referenceOutput == null) {
-                publish("CPU reference comparison: this is the reference backend.")
+            if (isReferenceBackend) {
+                publish("CPU reference backend: captured output for subsequent comparisons.")
+                if (!outputQuantizationValid) {
+                    publish("WARNING: reference output quantization scale is invalid; delegated accuracy comparisons will be skipped.")
+                }
+            } else if (referenceOutput == null) {
+                publish("CPU reference comparison: SKIPPED — CPU reference backend did not produce an output.")
             } else if (outputType != DataType.UINT8 && outputType != DataType.INT8) {
                 publish("CPU reference comparison: SKIPPED — output type $outputType is not INT8/UINT8.")
-            } else if (
-                referenceOutput.dataType != outputType ||
-                referenceOutput.bytes.size != outputSnapshot.size ||
-                referenceOutput.quantizationZeroPoint != quantization.zeroPoint ||
-                kotlin.math.abs(referenceOutput.quantizationScale - quantization.scale) > 0.0000001f
-            ) {
-                publish("CPU reference comparison: SKIPPED — output tensor metadata differs between backends.")
+            } else if (!referenceOutputCompatible) {
+                publish("CPU reference comparison: SKIPPED — output tensor type/size/quantization metadata differs or is invalid.")
                 publish("Reference: ${referenceOutput.dataType}, scale=${referenceOutput.quantizationScale}, zeroPoint=${referenceOutput.quantizationZeroPoint}, bytes=${referenceOutput.bytes.size}")
+                publish("Backend: ${outputType}, scale=${quantization.scale}, zeroPoint=${quantization.zeroPoint}, bytes=${outputSnapshot.size}")
             } else {
                 val comparison = QuantizedTensorComparator.compare(
                     referenceOutput.bytes,
@@ -626,7 +639,9 @@ class MainActivity : Activity() {
                     stressSamples += (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
                     val currentOutput = snapshotBuffer(outputBuffer)
                     if (currentOutput.contentEquals(outputSnapshot)) sameAsFirstOutput++
-                    if (referenceOutput != null && currentOutput.contentEquals(referenceOutput.bytes)) {
+                    if (referenceOutputCompatible && referenceOutput != null &&
+                        currentOutput.contentEquals(referenceOutput.bytes)
+                    ) {
                         exactCpuMatches++
                     }
                 }
@@ -649,8 +664,13 @@ class MainActivity : Activity() {
                     )
                 )
                 publish("Repeat determinism: $sameAsFirstOutput/$stabilityRuns outputs exactly match first DSP output.")
-                if (referenceOutput != null) {
-                    publish("Exact agreement with CPU reference during stress: $exactCpuMatches/$stabilityRuns.")
+                when {
+                    referenceOutput == null ->
+                        publish("CPU reference agreement during stress: SKIPPED — CPU reference output unavailable.")
+                    !referenceOutputCompatible ->
+                        publish("CPU reference agreement during stress: SKIPPED — output tensor metadata incompatible.")
+                    else ->
+                        publish("Exact byte agreement with CPU reference during stress: $exactCpuMatches/$stabilityRuns.")
                 }
             }
             publish("Thermal status after backend: " + thermalStatus())
@@ -672,7 +692,12 @@ class MainActivity : Activity() {
             }
         } finally {
             if (qnnLogCapture != null) {
-                publish("--- Loaded QNN / DSP / FastRPC modules WHILE interpreter is alive ---")
+                val snapshotTiming = if (interpreter != null) {
+                    "while interpreter is alive"
+                } else {
+                    "before teardown; interpreter was not created"
+                }
+                publish("--- Loaded QNN / DSP / FastRPC modules $snapshotTiming ---")
                 publish(qnnDiagnostics.loadedModulesReport())
             }
             runCatching { interpreter?.close() }
