@@ -24,7 +24,7 @@ data class LiteRtBackendSelection(
 )
 
 /**
- * QNN HTP -> GPU -> CPU fallback policy. Call once per model because the palm detector and
+ * QNN DSP -> QNN HTP -> GPU -> CPU fallback policy. Call once per model because the palm detector and
  * landmark model may support different operations and therefore different accelerators.
  */
 object LiteRtBackendPolicy {
