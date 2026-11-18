@@ -15,6 +15,7 @@ import com.noyclic.questphonexr.tracking.TrackingProviderManagerSnapshot
  */
 internal object EndXrTrackingInputBridge {
     private val providerManager = TrackingProviderManager()
+    private val sessionWatchdog = TrackingSessionWatchdog()
 
     fun publish(
         providerId: TrackingProviderId,
@@ -31,6 +32,7 @@ internal object EndXrTrackingInputBridge {
             receivedAtUptimeMs = now
         ) ?: return false
 
+        sessionWatchdog.onFreshFrame(now)
         EndXrHandTrackingDiagnostics.onFrame(selected.frame, selected.providerId.wireId)
         val encoded = EndXrHandInputEncoder.encode(selected.frame)
         EndXrHandTrackingDiagnostics.updateNaturalGestures(
@@ -46,6 +48,21 @@ internal object EndXrTrackingInputBridge {
             rightJoints = encoded.rightJoints
         )
         return true
+    }
+
+    fun tick(nowUptimeMs: Long = runCatching { SystemClock.uptimeMillis() }.getOrDefault(0L)): TrackingSessionWatchdog.Decision {
+        val decision = sessionWatchdog.onTick(nowUptimeMs)
+        if (decision.shouldClearInput) {
+            EndXrInputSnapshotStore.clear()
+            providerManager.clearFrames()
+        }
+        return decision
+    }
+
+    fun resetSession() {
+        sessionWatchdog.reset()
+        providerManager.clearFrames()
+        EndXrInputSnapshotStore.clear()
     }
 
     fun selectProvider(providerId: TrackingProviderId): Boolean {
