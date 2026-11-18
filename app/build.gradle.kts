@@ -75,6 +75,10 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:1.1.1")
     // Google Play services LiteRT CompiledModel runtime; GPU is probed at model load time.
     implementation("com.google.android.gms:play-services-litert:17.0.0")
+    // Isolated Interpreter + Qualcomm QNN DSP diagnostic path.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("com.qualcomm.qti:qnn-runtime:2.34.0")
+    implementation("com.qualcomm.qti:qnn-litert-delegate:2.34.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
@@ -83,6 +87,13 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+}
+
+// The Play-services LiteRT 17 API already supplies the compatible org.tensorflow.lite API
+// surface. Keep the legacy Interpreter implementation from tensorflow-lite, but avoid
+// packaging its duplicate tensorflow-lite-api classes alongside litert-api 2.3.2.
+configurations.configureEach {
+    exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
 }
 
 val handLandmarkerModel = layout.projectDirectory.file("src/main/assets/hand_landmarker.task")

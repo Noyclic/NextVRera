@@ -1044,6 +1044,15 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             )
+            addView(
+                controlButton("LiteRT DSP — чёрный экран") {
+                    startActivity(Intent(this@SandboxActivity, LiteRtDspDebugActivity::class.java))
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
             persistentHandTrackingButton = controlButton(
                 "Включить фоновую камеру рук для Quest-игр"
             ) {

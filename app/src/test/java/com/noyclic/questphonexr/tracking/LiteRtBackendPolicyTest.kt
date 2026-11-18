@@ -69,4 +69,39 @@ class LiteRtBackendPolicyTest {
 
         assertNull(selected.backend)
     }
+    @Test
+    fun prefersDspBeforeHtpWhenBothAreVerified() {
+        val selected = LiteRtBackendPolicy.select(
+            listOf(
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_HTP, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.GPU, true)
+            )
+        )
+        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, selected.backend)
+    }
+
+    @Test
+    fun strictDspSelectionDoesNotFallBackToGpuOrCpu() {
+        val selection = LiteRtBackendPolicy.selectStrict(
+            listOf(
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, false, "unsupported op"),
+                LiteRtBackendProbe(LiteRtExecutionBackend.GPU, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.CPU_XNNPACK, true)
+            ),
+            LiteRtExecutionBackend.QUALCOMM_QNN_DSP
+        )
+        assertNull(selection.backend)
+        assertEquals(1, selection.attempts.size)
+        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, selection.attempts.single().backend)
+    }
+
+    @Test
+    fun strictDspSelectionReturnsDspOnlyAfterSuccessfulProbe() {
+        val selection = LiteRtBackendPolicy.selectStrict(
+            listOf(LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, true)),
+            LiteRtExecutionBackend.QUALCOMM_QNN_DSP
+        )
+        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, selection.backend)
+    }
 }

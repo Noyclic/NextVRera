@@ -162,3 +162,28 @@ LiteRtBackendPolicy is a pure, testable priority contract. Each model may select
 backend based on actual probe/inference results. The order is QNN HTP -> GPU -> CPU/XNNPACK.
 The selected backend and every failed attempt must later be exposed in diagnostics, including
 the reason for fallback. No QNN support or NPU execution is claimed by this policy alone.
+
+## QNN DSP hand-landmark diagnostic screen
+
+The Sandbox exposes a separate **LiteRT DSP — чёрный экран** action. It starts a CameraX
+ImageAnalysis-only activity: no Preview surface is bound, and only the 21-point skeleton is
+drawn over a black canvas. The diagnostic constructs the TensorFlow Lite Interpreter with
+Qualcomm QNN `DSP_BACKEND`, disables NNAPI and XNNPACK delegates, and does not configure a GPU delegate. The
+Interpreter's built-in CPU kernels can still execute operators that QNN does not delegate;
+operator coverage must therefore be checked separately. Hexagon DSP skeleton ELF files are extracted from the APK into app-private storage
+and passed to QNN with `setSkelLibraryDir`.
+
+The first diagnostic model is the existing RTMPose-Hand FP16 LiteRT model. It is a top-down
+single-hand landmark model: it does not find palms in a full frame and has no presence or
+handedness output. The screen therefore starts with a center ROI and updates that ROI from
+the previous 21 landmarks. A successful QNN inference is reported separately from complete
+operator placement; operator coverage remains **NOT VERIFIED** until QNN telemetry confirms
+the whole graph was delegated. Unsupported operations may still execute on default CPU kernels. This diagnostic does not use MediaPipe as a detector or fallback.
+
+This diagnostic now runs two independent top-down ROIs and invokes the same QNN DSP-backed
+RTMPose interpreter twice per camera frame. The seed ROIs cover the left and right halves of
+the upright frame; after a plausible 21-point shape is produced, each ROI follows its own
+landmarks and is reset to its seed after repeated misses. A geometry heuristic rejects collapsed
+argmax layouts, and close duplicate wrist observations are suppressed. This is not a full-frame
+palm detector: both hands need to enter their respective initial zones, and hands that overlap
+closely may be represented as one. The UI reports the combined cost of both model invocations.

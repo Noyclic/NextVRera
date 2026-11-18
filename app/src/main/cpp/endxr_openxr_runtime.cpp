@@ -3849,7 +3849,7 @@ void recordOpenXrTrace(
 #endif
 }
 
-XrResult XRAPI_CALL endxrCreateInstance(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
     const XrInstanceCreateInfo* createInfo, XrInstance* instance
 ) {
     const auto startedAt = std::chrono::steady_clock::now();
@@ -3891,7 +3891,7 @@ XrResult XRAPI_CALL endxrCreateInstance(
     return result;
 }
 
-XrResult XRAPI_CALL endxrGetSystem(
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystem(
     XrInstance instance, const XrSystemGetInfo* getInfo, XrSystemId* systemId
 ) {
     XrInstance_T* owner = getInstance(instance);
@@ -3905,7 +3905,7 @@ XrResult XRAPI_CALL endxrGetSystem(
     return result;
 }
 
-XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
     XrInstance instance, XrSystemId systemId,
     XrGraphicsRequirementsOpenGLESKHR* requirements
 ) {
@@ -3927,7 +3927,7 @@ XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
     return result;
 }
 
-XrResult XRAPI_CALL endxrCreateSession(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSession(
     XrInstance instance, const XrSessionCreateInfo* createInfo, XrSession* session
 ) {
     XrInstance_T* owner = getInstance(instance);
@@ -3955,7 +3955,7 @@ XrResult XRAPI_CALL endxrCreateSession(
     return result;
 }
 
-XrResult XRAPI_CALL endxrBeginSession(
+XRAPI_ATTR XrResult XRAPI_CALL endxrBeginSession(
     XrSession session, const XrSessionBeginInfo* beginInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -3969,7 +3969,7 @@ XrResult XRAPI_CALL endxrBeginSession(
     return result;
 }
 
-XrResult XRAPI_CALL endxrEndSession(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrEndSession(XrSession session) {
     XrSession_T* object = getSession(session);
     XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
     const auto startedAt = std::chrono::steady_clock::now();
@@ -3980,7 +3980,7 @@ XrResult XRAPI_CALL endxrEndSession(XrSession session) {
     return result;
 }
 
-XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
     XrSession_T* object = getSession(session);
     XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
     const std::uint64_t sessionId = object == nullptr ? 0 : object->telemetryId;
@@ -3993,7 +3993,7 @@ XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
     return result;
 }
 
-XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
     XrInstance_T* owner = getInstance(instance);
     const auto startedAt = std::chrono::steady_clock::now();
     const XrResult result = endxrDestroyInstanceImpl(instance);
@@ -4007,7 +4007,7 @@ XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
     return result;
 }
 
-XrResult XRAPI_CALL endxrWaitFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrame(
     XrSession session, const XrFrameWaitInfo* waitInfo, XrFrameState* frameState
 ) {
     XrSession_T* object = getSession(session);
@@ -4033,7 +4033,7 @@ XrResult XRAPI_CALL endxrWaitFrame(
     return result;
 }
 
-XrResult XRAPI_CALL endxrBeginFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrBeginFrame(
     XrSession session, const XrFrameBeginInfo* beginInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -4051,7 +4051,7 @@ XrResult XRAPI_CALL endxrBeginFrame(
     return result;
 }
 
-XrResult XRAPI_CALL endxrEndFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrame(
     XrSession session, const XrFrameEndInfo* endInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -4074,7 +4074,7 @@ XrResult XRAPI_CALL endxrEndFrame(
     return result;
 }
 
-XrResult XRAPI_CALL endxrCreateSwapchain(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSwapchain(
     XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain
 ) {
     XrSession_T* object = getSession(session);
@@ -4093,7 +4093,7 @@ XrResult XRAPI_CALL endxrCreateSwapchain(
     return result;
 }
 
-XrResult XRAPI_CALL endxrAcquireSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrAcquireSwapchainImage(
     XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo,
     std::uint32_t* index
 ) {
@@ -4113,7 +4113,7 @@ XrResult XRAPI_CALL endxrAcquireSwapchainImage(
     return result;
 }
 
-XrResult XRAPI_CALL endxrWaitSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrWaitSwapchainImage(
     XrSwapchain swapchain, const XrSwapchainImageWaitInfo* waitInfo
 ) {
     XrSwapchain_T* chain = getSwapchain(swapchain);
@@ -4132,7 +4132,7 @@ XrResult XRAPI_CALL endxrWaitSwapchainImage(
     return result;
 }
 
-XrResult XRAPI_CALL endxrReleaseSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrReleaseSwapchainImage(
     XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo
 ) {
     XrSwapchain_T* chain = getSwapchain(swapchain);
@@ -4151,7 +4151,7 @@ XrResult XRAPI_CALL endxrReleaseSwapchainImage(
     return result;
 }
 
-XrResult XRAPI_CALL endxrLocateViews(
+XRAPI_ATTR XrResult XRAPI_CALL endxrLocateViews(
     XrSession session, const XrViewLocateInfo* locateInfo, XrViewState* viewState,
     std::uint32_t capacity, std::uint32_t* count, XrView* views
 ) {
