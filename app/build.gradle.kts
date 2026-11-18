@@ -80,13 +80,6 @@ dependencies {
     implementation("com.qualcomm.qti:qnn-runtime:2.34.0")
     implementation("com.qualcomm.qti:qnn-litert-delegate:2.34.0")
 
-// The Play-services LiteRT 17 API already supplies the compatible org.tensorflow.lite API
-// surface. Keep the legacy Interpreter implementation from tensorflow-lite, but avoid
-// packaging its duplicate tensorflow-lite-api classes alongside litert-api 2.3.2.
-configurations.configureEach {
-    exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
-}
-
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 
@@ -94,6 +87,13 @@ configurations.configureEach {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+}
+
+// The Play-services LiteRT 17 API already supplies the compatible org.tensorflow.lite API
+// surface. Keep the legacy Interpreter implementation from tensorflow-lite, but avoid
+// packaging its duplicate tensorflow-lite-api classes alongside litert-api 2.3.2.
+configurations.configureEach {
+    exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
 }
 
 val handLandmarkerModel = layout.projectDirectory.file("src/main/assets/hand_landmarker.task")
