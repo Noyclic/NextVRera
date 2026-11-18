@@ -22,6 +22,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import com.noyclic.questphonexr.tracking.HandPoint
 import com.noyclic.questphonexr.tracking.HandRoiCrop
+import com.noyclic.questphonexr.tracking.LiteRtDspTwoHandRoiPolicy
 import com.noyclic.questphonexr.tracking.HandRoiRgbPreprocessor
 import com.noyclic.questphonexr.tracking.RtmposeHandOutputDecoder
 import com.noyclic.questphonexr.tracking.RtmposeHandSimccTensors
