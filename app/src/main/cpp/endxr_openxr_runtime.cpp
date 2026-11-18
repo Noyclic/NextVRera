@@ -2689,7 +2689,9 @@ void enqueueRuntimeTelemetry(
         queue.push_back(PendingRuntimeTelemetry{
             eventName,
             sessionId,
-            frameCount
+            frameCount,
+            {}, {}, {}, {},
+            0, 0, 0, 0, 0
         });
     }
     instance->externalInputWake.notify_one();

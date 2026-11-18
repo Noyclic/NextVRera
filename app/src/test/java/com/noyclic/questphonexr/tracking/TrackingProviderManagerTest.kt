@@ -15,8 +15,26 @@ class TrackingProviderManagerTest {
         val states = manager.snapshot(100L).statusByProvider
 
         assertEquals(TrackingProviderAvailability.READY, states[TrackingProviderId.MEDIAPIPE])
+        assertEquals(TrackingProviderAvailability.PLANNED, states[TrackingProviderId.LITERT_STANDALONE])
         assertEquals(TrackingProviderAvailability.PLANNED, states[TrackingProviderId.LITERT_CUSTOM])
         assertEquals(TrackingProviderAvailability.PLANNED, states[TrackingProviderId.GVXRS_DOCK])
+    }
+
+    @Test
+    fun standaloneLiteRtCannotBeSelectedBeforeItsIndependentModelsAreReady() {
+        val manager = TrackingProviderManager()
+        assertFalse(manager.selectProvider(TrackingProviderId.LITERT_STANDALONE))
+        assertNull(
+            manager.publishFrame(
+                TrackingProviderId.LITERT_STANDALONE,
+                HandTrackingFrame(timestampMs = 10L, hands = emptyList()),
+                receivedAtUptimeMs = 100L
+            )
+        )
+        assertEquals(
+            TrackingProviderAvailability.PLANNED,
+            manager.snapshot(100L).statusByProvider[TrackingProviderId.LITERT_STANDALONE]
+        )
     }
 
     @Test

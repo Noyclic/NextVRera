@@ -1667,26 +1667,24 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             TrackingSelectionMode.MANUAL -> "Ручной выбор"
         }
         val activeLabel = snapshot.activeProvider?.wireId ?: "пока нет свежих кадров"
-        // Keep the choice dialog compact so the four provider rows remain visible on
-        // small screens and Android UIAutomator can select them without relying on
-        // private AlertDialog ListView implementation details. Full per-provider health
-        // counters, age, latency, quality and FPS remain available in EndXR diagnostics.
         val message = buildString {
             append("Режим: ").append(modeLabel).append('\n')
             append("Активный источник: ").append(activeLabel).append("\n\n")
             append("AUTO оценивает качество, задержку и FPS свежих кадров. ")
-            append("Ручной режим не переключается на другой трекер без команды.")
+            append("Ручной режим не переключается на другой трекер без команды.\n\n")
+            append("LiteRT standalone — отдельный движок. Текущий RTMPose refinement ")
+            append("остаётся отдельным экспериментальным гибридом и не считается им.")
         }
-        val liteRtAvailable =
-            snapshot.statusByProvider[TrackingProviderId.LITERT_CUSTOM]
+        val liteRtStandaloneAvailable =
+            snapshot.statusByProvider[TrackingProviderId.LITERT_STANDALONE]
                 ?.canPublishFrames == true
         val choices = arrayOf(
             "AUTO — выбирать по качеству и задержке",
             "MediaPipe — подключён",
-            if (liteRtAvailable) {
-                "MediaPipe + LiteRT — экспериментально"
+            if (liteRtStandaloneAvailable) {
+                "LiteRT — самостоятельный · экспериментально"
             } else {
-                "MediaPipe + LiteRT — выключен"
+                "LiteRT — самостоятельный · ещё не готов"
             },
             "GVXRS Dock Station — пока не подключён"
         )
@@ -1709,18 +1707,18 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                         updateStatus()
                     }
                     2 -> {
-                        if (liteRtAvailable &&
-                            EndXrTrackingInputBridge.selectProvider(TrackingProviderId.LITERT_CUSTOM)
+                        if (liteRtStandaloneAvailable &&
+                            EndXrTrackingInputBridge.selectProvider(TrackingProviderId.LITERT_STANDALONE)
                         ) {
                             Toast.makeText(
                                 this,
-                                "Выбран экспериментальный режим MediaPipe + RTMPose.",
+                                "Выбран самостоятельный LiteRT.",
                                 Toast.LENGTH_LONG
                             ).show()
                         } else {
                             Toast.makeText(
                                 this,
-                                "Включи RTMPose в фоне и дождись успешной инициализации GPU.",
+                                "Самостоятельный LiteRT ещё не готов. Сначала подключаем собственный palm detector и landmark model; MediaPipe не будет скрытым резервом.",
                                 Toast.LENGTH_LONG
                             ).show()
                         }

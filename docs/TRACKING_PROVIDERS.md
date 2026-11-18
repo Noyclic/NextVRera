@@ -7,7 +7,7 @@ controller rows, gestures, or joints directly. The EndXR tracking input bridge s
 provider frame and sends it through the existing shared encoder:
 
 ```text
-MediaPipe baseline / MediaPipe + RTMPose hybrid / future GVXRS Dock adapter
+MediaPipe baseline / independent LiteRT pipeline / optional RTMPose refinement / GVXRS Dock
                          |
                          v
                  HandTrackingFrame
@@ -23,11 +23,20 @@ MediaPipe baseline / MediaPipe + RTMPose hybrid / future GVXRS Dock adapter
               EndXR input snapshot
 ```
 
-This keeps app-facing input stable when the tracking implementation changes. The RTMPose
-path is deliberately a **hybrid refinement**, not a second standalone tracker: MediaPipe owns
+This keeps app-facing input stable when the tracking implementation changes. The existing
+RTMPose path is deliberately a **hybrid refinement**, not a standalone tracker: MediaPipe owns
 full-frame detection, hand association, handedness, world landmarks and pinch state; LiteRT
 RTMPose refines only the 2D image landmarks for a successfully prepared hand crop. When a crop
 is skipped or fails, its original MediaPipe points remain in the published hybrid frame.
+
+The new **LiteRT standalone** provider is a separate pipeline. It must run its own full-frame
+palm detector, build and track hand ROIs, run its own 21-point landmark model, calculate pinch
+from its own observations, and publish a HandTrackingFrame without invoking MediaPipe. The
+pure Kotlin LiteRtStandaloneTracker orchestration contract is now present and tested with fake
+model adapters. The concrete LiteRT palm-detector adapter, model bundle installer, and
+real-device inference path are still pending; therefore this provider deliberately remains
+PLANNED and cannot be selected yet. The current RTMPose refinement switch is not a hidden
+fallback for it.
 
 ## Provider state
 
@@ -44,7 +53,8 @@ treated as a hand-landmark provider until it can emit the shared ordered hand-la
 
 - **MediaPipe Hand Landmarker** remains the current working 21-landmark hand provider. Its task outputs image landmarks, hand-local world landmarks and handedness.
   <https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker>
-- **LiteRT 2.x + a custom hand model** is the planned second full hand provider. The model can remain in `.tflite` format; new Android inference work should target the `CompiledModel` API, which is Google's recommended modern runtime for CPU/GPU/NPU acceleration. We will benchmark each accelerator and fall back explicitly; device support is not assumed from the chipset name.
+- **LiteRT standalone** is the planned second full hand provider. It uses an independent full-frame palm detector followed by a top-down 21-point landmark model. The first landmark candidate remains RTMPose-Hand-LiteRT, but it must receive ROIs from the LiteRT palm detector, never from MediaPipe. The pipeline orchestration contract and tests are in LiteRtStandaloneTrackerPipeline.kt; concrete model adapters are still pending.
+- **Accelerator policy** is per model: Qualcomm QNN HTP first when the delegate can be created and a real inference succeeds, then GPU, then CPU/XNNPACK. A backend is not reported as active merely because its library is present. LiteRtBackendPolicy captures this ordering; actual QNN/GPU/CPU delegate construction and runtime verification are not yet wired. Qualcomm's QNN delegate/runtime are distributed separately and must not be assumed to be available on every Snapdragon device.
   <https://developers.google.com/edge/litert/android>
 - **First LiteRT model candidate — RTMPose-Hand-LiteRT.** It produces the 21 standard wrist/finger keypoints and is distributed under Apache-2.0. The published Android results report about 4 ms GPU inference on Pixel 8a for a 256×256 FP16 model (~28 MB), but the same page says the CPU XNNPACK path declined that graph. Its preprocessing is top-down: a centered single-hand crop is expected. Therefore EndXR still needs a reliable ROI/crop stage, and neither the Pixel timing nor GPU support can be assumed on Redmi Note 13 / Adreno 610.
   <https://huggingface.co/litert-community/RTMPose-Hand-LiteRT>
@@ -103,10 +113,12 @@ The model predicts one crop only and has no presence or handedness outputs; Medi
 
 ## Next integration work
 
-1. Test the explicitly enabled hybrid on a physical Redmi Note 13: two-hand quality, camera-to-input latency, dropped crops, thermal drift, memory and battery.
-2. Add a stable hand-specific ROI confidence from the MediaPipe detector rather than the current neutral 0.5 baseline.
-3. Compare AUTO quality and latency scores against the original MediaPipe-only frame before changing provider preference.
-4. Connect GVXRS Dock pairing, authenticated transport, time synchronization and calibrated landmark conversion.
+1. Add the independent LiteRT palm-detector model store and its pinned model artifact.
+2. Implement the LiteRT Interpreter/CompiledModel adapters for palm detection and RTMPose landmarks, with QNN -> GPU -> CPU fallback selected and measured independently per model.
+3. Wire the standalone pipeline to its own CameraX frame consumer and publish only its own observations; do not start MediaPipe in LiteRT-only mode.
+4. Validate two-hand acquisition, reacquisition, camera-to-input latency, dropped frames, thermal drift, RAM and battery on the physical Redmi Note 13 4G.
+5. Keep the provider PLANNED until the APK build, model tensor tests, and physical-device tests pass.
+6. Connect GVXRS Dock pairing, authenticated transport, time synchronization and calibrated landmark conversion.
 
 
 Model acceptance must be based on the target device, not a benchmark from another SoC. For each
@@ -117,3 +129,36 @@ default until its quality and sustained performance beat or complement the Media
 
 No alternative tracker is claimed to be operational until its adapter is registered as READY and
 tested on physical hardware.
+
+
+## Independent LiteRT pipeline contract
+
+\`\`\`text
+CameraX frame
+    |
+LiteRT palm detector (full frame)
+    |
+up to two normalized palm ROIs
+    |
+LiteRT 21-point hand landmark model (per ROI)
+    |
+ROI continuity + presence checks + hand association
+    |
+shared pinch estimator
+    |
+HandTrackingFrame
+    |
+TrackingProviderManager -> EndXrHandInputEncoder
+\`\`\`
+
+LiteRtStandaloneTracker owns only ROI/track orchestration and the shared frame contract. Its
+LiteRtPalmDetector and LiteRtHandLandmarkEstimator interfaces are deliberately free of
+MediaPipe types. The landmark adapter must return full-frame normalized points after undoing
+the crop transform; this keeps the EndXR encoder independent of model tensor layout. A failed
+landmark inference removes that observation after a bounded miss count; it never copies a
+MediaPipe frame into the LiteRT provider.
+
+LiteRtBackendPolicy is a pure, testable priority contract. Each model may select a different
+backend based on actual probe/inference results. The order is QNN HTP -> GPU -> CPU/XNNPACK.
+The selected backend and every failed attempt must later be exposed in diagnostics, including
+the reason for fallback. No QNN support or NPU execution is claimed by this policy alone.

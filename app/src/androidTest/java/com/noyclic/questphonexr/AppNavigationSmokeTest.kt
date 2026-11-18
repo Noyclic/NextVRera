@@ -297,8 +297,8 @@ class AppNavigationSmokeTest {
             device.wait(Until.hasObject(By.text("MediaPipe — подключён")), 5_000)
         )
         assertTrue(
-            "Hybrid MediaPipe + LiteRT provider is not marked as disabled by default",
-            device.wait(Until.hasObject(By.text("MediaPipe + LiteRT — выключен")), 5_000)
+            "Independent LiteRT provider is not clearly marked unavailable until its own detector and landmark models are connected",
+            device.wait(Until.hasObject(By.text("LiteRT — самостоятельный · ещё не готов")), 5_000)
         )
         assertTrue(
             "GVXRS Dock is not clearly marked as unavailable",
