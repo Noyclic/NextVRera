@@ -2686,11 +2686,13 @@ void enqueueRuntimeTelemetry(
                 queue.pop_front();
             }
         }
-        queue.push_back(PendingRuntimeTelemetry{
-            eventName,
-            sessionId,
-            frameCount
-        });
+        // Build the event explicitly so later trace-only fields keep their
+        // defaults without triggering -Wmissing-field-initializers under NDK Clang.
+        PendingRuntimeTelemetry pending;
+        pending.eventName = eventName;
+        pending.sessionId = sessionId;
+        pending.frameCount = frameCount;
+        queue.push_back(std::move(pending));
     }
     instance->externalInputWake.notify_one();
 }
