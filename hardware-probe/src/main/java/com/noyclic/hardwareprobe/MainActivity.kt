@@ -9,15 +9,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
 import com.qualcomm.qti.QnnDelegate
+import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.CompatibilityList
+import org.tensorflow.lite.gpu.GpuDelegate
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
@@ -28,16 +28,26 @@ class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var output: TextView
     private lateinit var runButton: Button
-    private var report = StringBuilder()
+    private lateinit var scrollView: ScrollView
+    private val report = StringBuilder()
+    private var lastGraphicsError: String? = null
 
     private external fun probeNativeLibraries(): String
+
+    private data class GraphicsInfo(
+        val renderer: String,
+        val openGlesVersion: String,
+        val shadingLanguageVersion: String,
+        val eglVersion: String,
+        val fp16Extensions: List<String>
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
             System.loadLibrary("hardwareprobe")
         } catch (error: Throwable) {
-            append("Native probe library: LOAD FAILED — ${error.message}")
+            append("Native probe library: LOAD FAILED — " + error.message)
         }
         buildUi()
         appendDeviceReport()
@@ -67,7 +77,9 @@ class MainActivity : Activity() {
             text = "COPY DIAGNOSTIC REPORT"
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NextVRera hardware probe", report.toString()))
+                clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText("NextVRera hardware probe", report.toString())
+                )
                 append("Report copied to clipboard.")
             }
         }
@@ -78,41 +90,145 @@ class MainActivity : Activity() {
             setTextIsSelectable(true)
             text = "Collecting device information…"
         }
-        val scroll = ScrollView(this).apply { addView(output) }
+        scrollView = ScrollView(this).apply { addView(output) }
         root.addView(title)
         root.addView(subtitle)
         root.addView(runButton)
         root.addView(copyButton)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
     }
 
     private fun appendDeviceReport() {
         append("=== DEVICE ===")
-        append("Manufacturer: ${Build.MANUFACTURER}")
-        append("Model: ${Build.MODEL}")
-        append("Device: ${Build.DEVICE}")
-        append("Board: ${Build.BOARD}")
-        append("Hardware: ${Build.HARDWARE}")
-        append("SoC model: ${if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else "API<31"}")
-        append("SoC manufacturer: ${if (Build.VERSION.SDK_INT >= 31) Build.SOC_MANUFACTURER else "API<31"}")
-        append("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
-        append("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
+        append("Manufacturer: " + Build.MANUFACTURER)
+        append("Model: " + Build.MODEL)
+        append("Device: " + Build.DEVICE)
+        append("Board: " + Build.BOARD)
+        append("Hardware: " + Build.HARDWARE)
+        append("SoC model: " + if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else "API<31")
+        append("SoC manufacturer: " + if (Build.VERSION.SDK_INT >= 31) Build.SOC_MANUFACTURER else "API<31")
+        append("Android: " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")")
+        append("ABI: " + Build.SUPPORTED_ABIS.joinToString())
         val memory = ActivityManager.MemoryInfo()
         (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
-        append("RAM total: ${memory.totalMem / (1024L * 1024L)} MB")
-        append("RAM available: ${memory.availMem / (1024L * 1024L)} MB")
-        append("Thermal status: ${thermalStatus()}")
+        append("RAM total: " + memory.totalMem / (1024L * 1024L) + " MB")
+        append("RAM available: " + memory.availMem / (1024L * 1024L) + " MB")
+        append("Thermal status at launch: " + thermalStatus())
         append("")
         append("=== GRAPHICS ===")
-        append("OpenGL renderer: ${queryGlInfo()}")
-        append("OpenGL version: ${queryGlVersion()}")
-        append("Vulkan feature: ${packageManager.systemAvailableFeatures.any { it.name == "android.hardware.vulkan.version" }}")
+        val graphics = queryGraphicsInfo()
+        if (graphics == null) {
+            append("OpenGL ES query: FAILED — " + (lastGraphicsError ?: "unknown EGL/GLES error"))
+        } else {
+            append("OpenGL renderer: " + graphics.renderer)
+            append("OpenGL ES version: " + graphics.openGlesVersion)
+            append("GLSL version: " + graphics.shadingLanguageVersion)
+            append("EGL version: " + graphics.eglVersion)
+            append("FP16-related GL extensions: " + graphics.fp16Extensions.joinToString().ifBlank { "none reported" })
+        }
+        val vulkanFeature = packageManager.systemAvailableFeatures
+            .firstOrNull { it.name == "android.hardware.vulkan.version" }
+        append("Vulkan feature: " + (vulkanFeature != null))
+        append("Vulkan feature version code: " + (vulkanFeature?.version?.toString() ?: "not advertised"))
         append("")
         append("=== NATIVE LIBRARY VISIBILITY ===")
-        append(runCatching { probeNativeLibraries() }.getOrElse { "Native probe failed: ${it.message}" })
+        append(runCatching { probeNativeLibraries() }.getOrElse {
+            "Native probe failed: " + it.javaClass.simpleName + ": " + it.message
+        })
         append("")
+        append("=== PROBE BUILD ===")
+        append("LiteRT runtime: 2.16.1")
+        append("LiteRT GPU API: 2.16.1")
+        append("Qualcomm QNN runtime/delegate: 2.34.0")
+        append("Android declares libcdsprpc.so as optional native library.")
         append("Note: library visibility is not proof that a backend can execute a neural network.")
+    }
+
+    private fun queryGraphicsInfo(): GraphicsInfo? {
+        var display = EGL14.EGL_NO_DISPLAY
+        var context = EGL14.EGL_NO_CONTEXT
+        var surface = EGL14.EGL_NO_SURFACE
+        try {
+            display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+            check(display != EGL14.EGL_NO_DISPLAY) { "eglGetDisplay failed" }
+            val eglVersions = IntArray(2)
+            check(EGL14.eglInitialize(display, eglVersions, 0, eglVersions, 1)) {
+                "eglInitialize failed: 0x" + Integer.toHexString(EGL14.eglGetError())
+            }
+
+            // EGL_OPENGL_ES3_BIT_KHR is 0x0040; retain the ES2 bit as a config fallback.
+            val configAttributes = intArrayOf(
+                EGL14.EGL_RENDERABLE_TYPE, 0x0040 or EGL14.EGL_OPENGL_ES2_BIT,
+                EGL14.EGL_RED_SIZE, 8,
+                EGL14.EGL_GREEN_SIZE, 8,
+                EGL14.EGL_BLUE_SIZE, 8,
+                EGL14.EGL_NONE
+            )
+            val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
+            val configCount = IntArray(1)
+            check(EGL14.eglChooseConfig(display, configAttributes, 0, configs, 0, 1, configCount, 0)) {
+                "eglChooseConfig failed: 0x" + Integer.toHexString(EGL14.eglGetError())
+            }
+            check(configCount[0] > 0 && configs[0] != null) { "No GLES3-compatible EGL config" }
+
+            context = EGL14.eglCreateContext(
+                display,
+                configs[0],
+                EGL14.EGL_NO_CONTEXT,
+                intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE),
+                0
+            )
+            check(context != EGL14.EGL_NO_CONTEXT) {
+                "Could not create GLES 3 context: 0x" + Integer.toHexString(EGL14.eglGetError())
+            }
+            surface = EGL14.eglCreatePbufferSurface(
+                display,
+                configs[0],
+                intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE),
+                0
+            )
+            check(surface != EGL14.EGL_NO_SURFACE) {
+                "eglCreatePbufferSurface failed: 0x" + Integer.toHexString(EGL14.eglGetError())
+            }
+            check(EGL14.eglMakeCurrent(display, surface, surface, context)) {
+                "eglMakeCurrent failed: 0x" + Integer.toHexString(EGL14.eglGetError())
+            }
+
+            val renderer = GLES20.glGetString(GLES20.GL_RENDERER) ?: "unknown"
+            val glVersion = GLES20.glGetString(GLES20.GL_VERSION) ?: "unknown"
+            val shadingVersion = GLES20.glGetString(GLES20.GL_SHADING_LANGUAGE_VERSION) ?: "unknown"
+            val extensions = GLES20.glGetString(GLES20.GL_EXTENSIONS).orEmpty().split(' ')
+            val fp16Extensions = extensions
+                .filter { it.contains("half_float", ignoreCase = true) || it.contains("fp16", ignoreCase = true) }
+                .distinct()
+                .sorted()
+
+            return GraphicsInfo(
+                renderer = renderer,
+                openGlesVersion = glVersion,
+                shadingLanguageVersion = shadingVersion,
+                eglVersion = eglVersions[0].toString() + "." + eglVersions[1],
+                fp16Extensions = fp16Extensions
+            )
+        } catch (error: Throwable) {
+            lastGraphicsError = error.javaClass.simpleName + ": " + error.message
+            return null
+        } finally {
+            if (display != EGL14.EGL_NO_DISPLAY) {
+                runCatching {
+                    EGL14.eglMakeCurrent(
+                        display,
+                        EGL14.EGL_NO_SURFACE,
+                        EGL14.EGL_NO_SURFACE,
+                        EGL14.EGL_NO_CONTEXT
+                    )
+                    if (surface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, surface)
+                    if (context != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, context)
+                    EGL14.eglTerminate(display)
+                }
+            }
+        }
     }
 
     private fun thermalStatus(): String {
@@ -130,47 +246,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun queryGlInfo(): String = runCatching {
-        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        check(display != EGL14.EGL_NO_DISPLAY)
-        val versions = IntArray(2)
-        check(EGL14.eglInitialize(display, versions, 0, versions, 1))
-        val configAttributes = intArrayOf(
-            EGL14.EGL_RENDERABLE_TYPE, 4,
-            EGL14.EGL_RED_SIZE, 8,
-            EGL14.EGL_GREEN_SIZE, 8,
-            EGL14.EGL_BLUE_SIZE, 8,
-            EGL14.EGL_NONE
-        )
-        val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
-        val count = IntArray(1)
-        check(EGL14.eglChooseConfig(display, configAttributes, 0, configs, 0, 1, count, 0))
-        val context = EGL14.eglCreateContext(display, configs[0], EGL14.EGL_NO_CONTEXT, intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0)
-        val surface = EGL14.eglCreatePbufferSurface(display, configs[0], intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
-        check(EGL14.eglMakeCurrent(display, surface, surface, context))
-        val renderer = GLES20.glGetString(GLES20.GL_RENDERER) ?: "unknown"
-        val halfFloatExtensions = GLES20.glGetString(GLES20.GL_EXTENSIONS)
-            .orEmpty()
-            .split(' ')
-            .filter { it.contains("half_float", ignoreCase = true) || it.contains("fp16", ignoreCase = true) }
-            .distinct()
-        EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-        EGL14.eglDestroySurface(display, surface)
-        EGL14.eglDestroyContext(display, context)
-        EGL14.eglTerminate(display)
-        "$renderer | FP16-related GL extensions: ${halfFloatExtensions.joinToString().ifBlank { "none reported" }}"
-    }.getOrElse { "unavailable: ${it.message}" }
-
-    private fun queryGlVersion(): String = runCatching {
-        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        if (display == EGL14.EGL_NO_DISPLAY) return@runCatching "unavailable"
-        val versions = IntArray(2)
-        if (!EGL14.eglInitialize(display, versions, 0, versions, 1)) return@runCatching "unavailable"
-        val result = "EGL ${versions[0]}.${versions[1]}"
-        EGL14.eglTerminate(display)
-        result
-    }.getOrElse { "unavailable: ${it.message}" }
-
     private fun runAllTests() {
         runButton.isEnabled = false
         runButton.text = "TESTS RUNNING…"
@@ -179,37 +254,62 @@ class MainActivity : Activity() {
         executor.execute {
             val modelBytes = runCatching { assets.open(MODEL_NAME).use { it.readBytes() } }
                 .getOrElse {
-                    publish("Model load failed: ${it.message}")
+                    publish("Model load failed: " + it.javaClass.simpleName + ": " + it.message)
                     finishTests()
                     return@execute
                 }
-            publish("Model: MobileNet V1 224 INT8 (${modelBytes.size / 1024} KB)")
+
+            publish("Model: MobileNet V1 224 INT8 (" + modelBytes.size / 1024 + " KB)")
+            val thermalBefore = thermalStatus()
+            publish("Thermal status before benchmarks: " + thermalBefore)
+            if (thermalBefore in setOf("SEVERE", "CRITICAL", "EMERGENCY", "SHUTDOWN")) {
+                publish("WARNING: device is thermally throttled; benchmark numbers may be lower than cool-device performance.")
+            }
+
             benchmark("CPU / XNNPACK — 1 thread", modelBytes) { options ->
                 options.setNumThreads(1)
+                null
             }
             benchmark("CPU / XNNPACK — 4 threads", modelBytes) { options ->
                 options.setNumThreads(4)
+                null
             }
             benchmark("CPU / XNNPACK — 8 threads", modelBytes) { options ->
                 options.setNumThreads(8)
+                null
             }
-            benchmark("GPU / OpenGL delegate — default precision", modelBytes) { options ->
-                options.addDelegate(GpuDelegate())
+            benchmark("GPU / OpenGL delegate — compatibility-checked", modelBytes) { options ->
+                val compatibility = CompatibilityList()
+                val supported = compatibility.isDelegateSupportedOnThisDevice
+                publish("GPU compatibility list: " + if (supported) "SUPPORTED" else "NOT SUPPORTED")
+                if (!supported) {
+                    throw UnsupportedOperationException(
+                        "TensorFlow Lite GPU CompatibilityList rejects this device/configuration."
+                    )
+                }
+                val gpuDelegate = GpuDelegate(compatibility.bestOptionsForThisDevice)
+                options.addDelegate(gpuDelegate)
+                gpuDelegate
             }
-            benchmark("Qualcomm QNN / DSP (Hexagon)", modelBytes) { options ->
+            benchmark("Qualcomm QNN / DSP backend", modelBytes) { options ->
                 val qnnOptions = QnnDelegate.Options()
                 qnnOptions.setBackendType(QnnDelegate.Options.BackendType.DSP_BACKEND)
                 qnnOptions.setSkelLibraryDir(applicationInfo.nativeLibraryDir)
-                options.addDelegate(QnnDelegate(qnnOptions))
+                val qnnDelegate = QnnDelegate(qnnOptions)
+                options.addDelegate(qnnDelegate)
+                qnnDelegate
             }
-            benchmark("Qualcomm QNN / HTP", modelBytes) { options ->
+            benchmark("Qualcomm QNN / HTP backend", modelBytes) { options ->
                 val qnnOptions = QnnDelegate.Options()
                 qnnOptions.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
                 qnnOptions.setSkelLibraryDir(applicationInfo.nativeLibraryDir)
-                options.addDelegate(QnnDelegate(qnnOptions))
+                val qnnDelegate = QnnDelegate(qnnOptions)
+                options.addDelegate(qnnDelegate)
+                qnnDelegate
             }
+
             publish("")
-            publish("Thermal status after run: ${thermalStatus()}")
+            publish("Thermal status after run: " + thermalStatus())
             publish("Tests finished. Export the report and send it back here.")
             finishTests()
         }
@@ -218,28 +318,42 @@ class MainActivity : Activity() {
     private fun benchmark(
         name: String,
         modelBytes: ByteArray,
-        configure: (Interpreter.Options) -> Unit
+        configure: (Interpreter.Options) -> Any?
     ) {
         publish("")
-        publish("[$name]")
+        publish("[" + name + "]")
         var interpreter: Interpreter? = null
+        var delegateToClose: Any? = null
+        var stage = "preparing model"
         try {
             val model = ByteBuffer.allocateDirect(modelBytes.size).order(ByteOrder.nativeOrder())
             model.put(modelBytes)
             model.rewind()
+
             val options = Interpreter.Options()
-            configure(options)
+            stage = "configuring backend/delegate"
+            delegateToClose = configure(options)
+
+            stage = "creating interpreter and applying delegate"
             interpreter = Interpreter(model, options)
+
+            stage = "allocating inference tensors"
             val inputTensor = interpreter.getInputTensor(0)
             val outputTensor = interpreter.getOutputTensor(0)
             val input = ByteBuffer.allocateDirect(inputTensor.numBytes()).order(ByteOrder.nativeOrder())
             val outputBuffer = ByteBuffer.allocateDirect(outputTensor.numBytes()).order(ByteOrder.nativeOrder())
-            for (i in 0 until input.capacity()) input.put(i, ((i * 31 + 17) and 0xff).toByte())
+            for (i in 0 until input.capacity()) {
+                input.put(i, ((i * 31 + 17) and 0xff).toByte())
+            }
+
+            stage = "warm-up inference"
             repeat(WARMUP_RUNS) {
                 input.rewind()
                 outputBuffer.clear()
                 interpreter.run(input, outputBuffer)
             }
+
+            stage = "measured inference"
             val samples = ArrayList<Double>(MEASURE_RUNS)
             repeat(MEASURE_RUNS) {
                 input.rewind()
@@ -248,18 +362,51 @@ class MainActivity : Activity() {
                 interpreter.run(input, outputBuffer)
                 samples += (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
             }
+
             samples.sort()
             val median = samples[samples.size / 2]
             val p95 = samples[ceil(samples.size * 0.95).toInt().coerceIn(1, samples.size) - 1]
-            publish("Result: PASS — actual model inference completed")
-            publish(String.format(Locale.US, "Median: %.2f ms | P95: %.2f ms | approx %.1f inferences/s", median, p95, 1000.0 / median))
-            publish("Input tensor: ${inputTensor.shape().contentToString()} / ${inputTensor.dataType()}")
-            publish("Output tensor: ${outputTensor.shape().contentToString()} / ${outputTensor.dataType()}")
+            publish("Result: PASS — interpreter completed actual model inference")
+            publish(
+                String.format(
+                    Locale.US,
+                    "Median: %.2f ms | P95: %.2f ms | approx %.1f inferences/s",
+                    median,
+                    p95,
+                    1000.0 / median
+                )
+            )
+            publish("Input tensor: " + inputTensor.shape().contentToString() + " / " + inputTensor.dataType())
+            publish("Output tensor: " + outputTensor.shape().contentToString() + " / " + outputTensor.dataType())
+            publish("Thermal status after backend: " + thermalStatus())
         } catch (error: Throwable) {
-            publish("Result: FAIL — ${error.javaClass.simpleName}: ${error.message ?: "no message"}")
-            error.cause?.let { publish("Cause: ${it.javaClass.simpleName}: ${it.message}") }
+            publish("Result: FAIL — " + error.javaClass.simpleName + ": " + (error.message ?: "no message"))
+            publish("Failure stage: " + stage)
+            var cause: Throwable? = error.cause
+            var depth = 1
+            while (cause != null && depth <= 5) {
+                publish("Caused by [" + depth + "]: " + cause.javaClass.name + ": " + (cause.message ?: "no message"))
+                cause = cause.cause
+                depth++
+            }
+            error.suppressed.take(3).forEach {
+                publish("Suppressed: " + it.javaClass.name + ": " + (it.message ?: "no message"))
+            }
+            error.stackTrace.take(4).forEach {
+                publish(" at " + it)
+            }
         } finally {
             runCatching { interpreter?.close() }
+            closeDelegate(delegateToClose)
+        }
+    }
+
+    private fun closeDelegate(delegate: Any?) {
+        if (delegate == null || delegate === Unit) return
+        runCatching {
+            delegate.javaClass.methods
+                .firstOrNull { it.name == "close" && it.parameterCount == 0 }
+                ?.invoke(delegate)
         }
     }
 
@@ -276,7 +423,12 @@ class MainActivity : Activity() {
 
     private fun append(line: String) {
         report.append(line).append('\n')
-        if (::output.isInitialized) output.text = report.toString()
+        if (::output.isInitialized) {
+            output.text = report.toString()
+            if (::scrollView.isInitialized) {
+                scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+            }
+        }
     }
 
     override fun onDestroy() {
