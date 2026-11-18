@@ -3,6 +3,7 @@ package com.noyclic.hardwareprobe
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.opengl.EGL14
 import android.opengl.GLES20
 import android.os.Build
@@ -22,6 +23,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.io.File
 import java.io.FileInputStream
+import java.io.OutputStreamWriter
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.ceil
@@ -30,6 +32,7 @@ class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var output: TextView
     private lateinit var runButton: Button
+    private lateinit var exportButton: Button
     private lateinit var scrollView: ScrollView
     private val report = StringBuilder()
     private var lastGraphicsError: String? = null
@@ -86,14 +89,18 @@ class MainActivity : Activity() {
             setOnClickListener { runAllTests() }
         }
         val copyButton = Button(this).apply {
-            text = "COPY DIAGNOSTIC REPORT"
+            text = "COPY DIAGNOSTIC REPORT (SHORT REPORTS ONLY)"
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 clipboard.setPrimaryClip(
                     android.content.ClipData.newPlainText("NextVRera hardware probe", report.toString())
                 )
-                append("Report copied to clipboard.")
+                append("Report copied to clipboard. For full QNN logs, use EXPORT FULL REPORT.")
             }
+        }
+        exportButton = Button(this).apply {
+            text = "EXPORT FULL REPORT (.TXT)"
+            setOnClickListener { exportFullReport() }
         }
         output = TextView(this).apply {
             textSize = 12f
@@ -107,8 +114,42 @@ class MainActivity : Activity() {
         root.addView(subtitle)
         root.addView(runButton)
         root.addView(copyButton)
+        root.addView(exportButton)
         root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+    }
+
+    private fun exportFullReport() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, "NextVRera-QNN-diagnostics.txt")
+        }
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_REPORT)
+        } catch (error: Throwable) {
+            append("Report export failed: ${error.javaClass.simpleName}: ${error.message}")
+        }
+    }
+
+    @Deprecated("Uses the platform document picker for broad Android compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_EXPORT_REPORT || resultCode != RESULT_OK) return
+        val uri = data?.data ?: run {
+            append("Report export cancelled: no destination selected.")
+            return
+        }
+        try {
+            val snapshot = report.toString()
+            contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+                OutputStreamWriter(stream, Charsets.UTF_8).use { writer -> writer.write(snapshot) }
+            } ?: error("Android could not open the selected destination")
+            append("FULL REPORT EXPORTED: $uri")
+            append("Attach the saved .txt file to your ChatGPT message; no clipboard required.")
+        } catch (error: Throwable) {
+            append("Report export failed: ${error.javaClass.simpleName}: ${error.message}")
+        }
     }
 
     private fun appendDeviceReport() {
@@ -512,6 +553,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val REQUEST_EXPORT_REPORT = 7104
         private const val MODEL_NAME = "mobilenet_v1_1.0_224_quant.tflite"
         private const val WARMUP_RUNS = 3
         private const val MEASURE_RUNS = 15
