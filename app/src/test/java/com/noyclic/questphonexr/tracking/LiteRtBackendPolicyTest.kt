@@ -70,6 +70,18 @@ class LiteRtBackendPolicyTest {
         assertNull(selected.backend)
     }
     @Test
+    fun prefersDspBeforeHtpWhenBothAreVerified() {
+        val selected = LiteRtBackendPolicy.select(
+            listOf(
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_HTP, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.GPU, true)
+            )
+        )
+        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, selected.backend)
+    }
+
+    @Test
     fun strictDspSelectionDoesNotFallBackToGpuOrCpu() {
         val selection = LiteRtBackendPolicy.selectStrict(
             listOf(
