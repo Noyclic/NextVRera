@@ -23,7 +23,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.io.File
 import java.io.FileInputStream
-import java.io.OutputStreamWriter
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.ceil
@@ -122,8 +123,8 @@ class MainActivity : Activity() {
     private fun exportFullReport() {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TITLE, "NextVRera-QNN-diagnostics.txt")
+            type = "application/zip"
+            putExtra(Intent.EXTRA_TITLE, "NextVRera-QNN-diagnostics.zip")
         }
         try {
             startActivityForResult(intent, REQUEST_EXPORT_REPORT)
@@ -143,10 +144,32 @@ class MainActivity : Activity() {
         try {
             val snapshot = report.toString()
             contentResolver.openOutputStream(uri, "wt")?.use { stream ->
-                OutputStreamWriter(stream, Charsets.UTF_8).use { writer -> writer.write(snapshot) }
+                ZipOutputStream(stream).use { zip ->
+                    fun addEntry(name: String, value: String) {
+                        zip.putNextEntry(ZipEntry(name))
+                        zip.write(value.toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
+
+                    addEntry("full-diagnostic-report.txt", snapshot)
+                    val dspStart = snapshot.indexOf("[Qualcomm QNN / DSP backend]")
+                    val htpStart = snapshot.indexOf("[Qualcomm QNN / HTP backend]")
+                    val runEnd = snapshot.indexOf("Thermal status after run:", htpStart.coerceAtLeast(0))
+                        .let { if (it < 0) snapshot.length else it }
+                    if (dspStart >= 0 && htpStart > dspStart) {
+                        addEntry("qnn-dsp-attempt.txt", snapshot.substring(dspStart, htpStart))
+                        addEntry("qnn-htp-attempt.txt", snapshot.substring(htpStart, runEnd))
+                    }
+                    val nativeLines = snapshot.lineSequence().filter { line ->
+                        val lower = line.lowercase(Locale.US)
+                        listOf("qnn", "fastrpc", "adsprpc", "hexagon", "dsp", "htp", "cdsprpc")
+                            .any { lower.contains(it) }
+                    }.joinToString("\n")
+                    addEntry("qnn-native-and-fastrpc-lines.txt", nativeLines)
+                }
             } ?: error("Android could not open the selected destination")
-            append("FULL REPORT EXPORTED: $uri")
-            append("Attach the saved .txt file to your ChatGPT message; no clipboard required.")
+            append("FULL DIAGNOSTIC ZIP EXPORTED: $uri")
+            append("Attach the saved .zip file to your ChatGPT message; no clipboard required.")
         } catch (error: Throwable) {
             append("Report export failed: ${error.javaClass.simpleName}: ${error.message}")
         }
