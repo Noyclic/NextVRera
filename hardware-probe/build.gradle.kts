@@ -72,7 +72,7 @@ val downloadProbeModel by tasks.registering {
             destination.parentFile.mkdirs()
             val temporary = destination.resolveSibling("${destination.name}.part")
             try {
-                URL("https://storage.googleapis.com/download.tensorflow.org/models/tflite/mobilenet_v1_1.0_224_quant.tflite")
+                URL("https://raw.githubusercontent.com/tflite-soc/tensorflow-models/master/mobilenet-v1/mobilenet_v1_1.0_224_quant.tflite")
                     .openConnection()
                     .apply {
                         connectTimeout = 20_000
