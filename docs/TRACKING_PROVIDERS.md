@@ -168,8 +168,9 @@ the reason for fallback. No QNN support or NPU execution is claimed by this poli
 The Sandbox exposes a separate **LiteRT DSP — чёрный экран** action. It starts a CameraX
 ImageAnalysis-only activity: no Preview surface is bound, and only the 21-point skeleton is
 drawn over a black canvas. The diagnostic constructs the TensorFlow Lite Interpreter with
-Qualcomm QNN `DSP_BACKEND`, disables NNAPI and XNNPACK, and does not configure GPU or CPU
-fallback. Hexagon DSP skeleton ELF files are extracted from the APK into app-private storage
+Qualcomm QNN `DSP_BACKEND`, disables NNAPI and XNNPACK delegates, and does not configure a GPU delegate. The
+Interpreter's built-in CPU kernels can still execute operators that QNN does not delegate;
+operator coverage must therefore be checked separately. Hexagon DSP skeleton ELF files are extracted from the APK into app-private storage
 and passed to QNN with `setSkelLibraryDir`.
 
 The first diagnostic model is the existing RTMPose-Hand FP16 LiteRT model. It is a top-down
@@ -177,7 +178,7 @@ single-hand landmark model: it does not find palms in a full frame and has no pr
 handedness output. The screen therefore starts with a center ROI and updates that ROI from
 the previous 21 landmarks. A successful QNN inference is reported separately from complete
 operator placement; operator coverage remains **NOT VERIFIED** until QNN telemetry confirms
-the whole graph was delegated. This diagnostic does not use MediaPipe as a detector or fallback.
+the whole graph was delegated. Unsupported operations may still execute on default CPU kernels. This diagnostic does not use MediaPipe as a detector or fallback.
 
 A later standalone tracker stage still needs its own full-frame palm detector and explicit
 two-hand association/reacquisition before it can be promoted from diagnostic to a selectable
