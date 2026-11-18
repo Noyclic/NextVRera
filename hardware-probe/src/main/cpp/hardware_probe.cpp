@@ -11,7 +11,6 @@ Java_com_noyclic_hardwareprobe_MainActivity_probeNativeLibraries(JNIEnv* env, jo
         "libcdsprpc.so",
         "libQnnSystem.so",
         "libQnnDsp.so",
-        "libQnnDspV66Skel.so",
         "libQnnDspV66Stub.so",
         "libQnnHtp.so",
         "libQnnHtpPrepare.so",
