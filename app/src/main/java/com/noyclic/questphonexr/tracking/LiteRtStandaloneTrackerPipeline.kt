@@ -167,7 +167,7 @@ class LiteRtStandaloneTracker(
             )
         }
 
-        lostTrackIds.forEach(tracks::remove)
+        lostTrackIds.forEach { tracks.remove(it) }
         val pinchSignals = pinchTracker.updateFrame(
             observedHands.map { HandPinchSample(it.side, it.points) },
             frame.timestampMs
@@ -214,8 +214,9 @@ class LiteRtStandaloneTracker(
             .sortedByDescending { it.confidence }
             .forEach { candidate ->
                 if (tracks.size >= maxHands) return
-                val overlapsExisting = tracks.values.any {
-                    intersectionOverUnion(it.region, candidate) >= DUPLICATE_ROI_IOU
+                val overlapsExisting = tracks.values.any { existing ->
+                    intersectionOverUnion(existing.region, candidate) >= DUPLICATE_ROI_IOU ||
+                        centersAreNear(existing.region, candidate)
                 }
                 if (!overlapsExisting) {
                     val id = nextTrackId++
@@ -260,6 +261,15 @@ class LiteRtStandaloneTracker(
     private fun isFinite(point: HandPoint): Boolean =
         point.x.isFinite() && point.y.isFinite() && point.z.isFinite()
 
+    private fun centersAreNear(a: LiteRtPalmRegion, b: LiteRtPalmRegion): Boolean {
+        val dx = a.centerX - b.centerX
+        val dy = a.centerY - b.centerY
+        val maxWidth = maxOf(a.width, b.width)
+        val maxHeight = maxOf(a.height, b.height)
+        return dx * dx + dy * dy <=
+            (maxWidth * maxWidth + maxHeight * maxHeight) * CENTER_MATCH_DISTANCE_SQUARED
+    }
+
     private fun intersectionOverUnion(a: LiteRtPalmRegion, b: LiteRtPalmRegion): Float {
         val aLeft = a.centerX - a.width * 0.5f
         val aTop = a.centerY - a.height * 0.5f
@@ -284,6 +294,7 @@ class LiteRtStandaloneTracker(
         const val DEFAULT_MIN_PALM_CONFIDENCE = 0.50f
         const val DEFAULT_MIN_PRESENCE_SCORE = 0.45f
         private const val DUPLICATE_ROI_IOU = 0.20f
+        private const val CENTER_MATCH_DISTANCE_SQUARED = 0.16f
         private const val ROI_EXPANSION = 1.35f
         private const val MINIMUM_TRACKED_ROI = 0.08f
         private const val NANOS_PER_MILLISECOND = 1_000_000L
