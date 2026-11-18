@@ -7,7 +7,7 @@ A standalone diagnostic APK for measuring real Android inference backends on phy
 - Device identity, ABI, memory and current thermal state.
 - Actual OpenGL ES and GLSL versions, EGL version, renderer and FP16-related extensions.
 - Vulkan feature advertisement.
-- Native linker visibility for Qualcomm QNN / HTP, FastRPC, OpenCL and Vulkan libraries.
+- Native linker visibility for Qualcomm QNN / HTP, FastRPC, OpenCL and Vulkan libraries. DSP-side skeleton ELF files are inspected by architecture, not passed to the ARM linker.
 - Actual MobileNet V1 INT8 LiteRT inference using CPU/XNNPACK (1, 4 and 8 threads), GPU delegate, QNN DSP and QNN HTP.
 - Warm-up and repeated inference timings (median, P95 and approximate inferences/second).
 - Backend setup, interpreter creation and inference failures reported as separate stages, including nested exception causes.
@@ -36,7 +36,7 @@ For comparable numbers, let the phone cool to a NONE/LIGHT thermal state, unplug
 - **FAIL at delegate setup/interpreter creation** is not proof that the silicon lacks the accelerator; inspect the full cause chain and native-library scan.
 - **GPU CompatibilityList NOT SUPPORTED** means the TensorFlow Lite GPU runtime rejects the device/configuration before inference.
 - **QNN HTP/DSP FAIL** can be due to inaccessible FastRPC, backend/SoC support, model quantization or unsupported operators. It does not alone prove that no DSP hardware exists.
-- A loadable library is only a linker result, not proof that a backend can execute a neural network.
+- A loadable library is only a linker result, not proof that a backend can execute a neural network. QNN DSP skeletons are Hexagon DSP images (for example ELF32 / QUALCOMM DSP6), so `dlopen` from the ARM app process is not a valid test; the probe reports their presence and ELF machine instead.
 - The benchmark uses one common INT8 CNN model across providers. It is a backend capability check, not a final hand-tracking performance score.
 
 The APK is arm64-v8a only and does not change the main NextVRera app or GVXRS Mobile runtime.
