@@ -222,6 +222,7 @@ internal object EndXrHandTrackingDiagnostics {
     fun report(): String {
         val snapshot = metrics
         val providerSnapshot = EndXrTrackingInputBridge.diagnosticSnapshot()
+        val trackingHealth = EndXrTrackingInputBridge.healthSnapshot()
         val timestamp = lastResultTimestampMs
         val nowUptimeMs = diagnosticUptimeMillis()
         val resultAgeMs = if (timestamp > 0L && nowUptimeMs >= timestamp) {
@@ -260,6 +261,13 @@ internal object EndXrHandTrackingDiagnostics {
             append("service_last_result_hands=").append(lastResultHands).append('\n')
             append("service_last_result_age_ms=").append(resultAgeMs).append('\n')
             append("service_tracking_active_provider=").append(latestProviderId).append('\n')
+            append("service_tracking_input_health_state=").append(trackingHealth.state.name).append('\n')
+            append("service_tracking_input_accepted_frames=").append(trackingHealth.acceptedFrames).append('\n')
+            append("service_tracking_input_gap_count=").append(trackingHealth.gapCount).append('\n')
+            append("service_tracking_input_stale_transitions=").append(trackingHealth.staleTransitions).append('\n')
+            append("service_tracking_input_recoveries=").append(trackingHealth.recoveries).append('\n')
+            append("service_tracking_input_last_accepted_ms=").append(trackingHealth.lastAcceptedAtMs).append('\n')
+            append("service_tracking_input_last_cleared_ms=").append(trackingHealth.lastClearedAtMs).append('\n')
             append("service_tracking_selection_mode=").append(providerSnapshot.mode.name).append('\n')
             append("service_tracking_requested_provider=").append(providerSnapshot.requestedProvider.wireId).append('\n')
             append("service_tracking_provider_reason=").append(providerSnapshot.reason).append('\n')
@@ -326,6 +334,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
     private val trackingWatchdog = object : Runnable {
         override fun run() {
             if (!activeOrPending) return
+            EndXrTrackingInputBridge.tick()
             checkTrackingHealth()
             mainHandler.postDelayed(this, WATCHDOG_POLL_INTERVAL_MS)
         }
@@ -1002,7 +1011,7 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
         private const val MAX_HEIGHT_PX = 960
         private const val MAX_MODEL_INPUT_WIDTH_PX = 480
         private const val MAX_MODEL_INPUT_HEIGHT_PX = 360
-        private const val WATCHDOG_POLL_INTERVAL_MS = 1_000L
+        private const val WATCHDOG_POLL_INTERVAL_MS = 100L
         private const val INFERENCE_STALL_TIMEOUT_MS = 2_500L
         private const val CAMERA_START_TIMEOUT_MS = 8_000L
 
