@@ -6,6 +6,7 @@ import com.noyclic.questphonexr.tracking.TrackingProviderAvailability
 import com.noyclic.questphonexr.tracking.TrackingProviderId
 import com.noyclic.questphonexr.tracking.TrackingProviderManager
 import com.noyclic.questphonexr.tracking.TrackingProviderManagerSnapshot
+import com.noyclic.questphonexr.tracking.TrackingHealthTracker
 
 /**
  * Common entrance from every tracking implementation into the existing EndXR input path.
@@ -23,7 +24,7 @@ internal object EndXrTrackingInputBridge {
         // Use a neutral baseline instead of awarding it a fabricated maximum score.
         qualityScore: Float = 0.5f
     ): Boolean {
-        val now = SystemClock.uptimeMillis()
+        val now = runCatching { SystemClock.uptimeMillis() }.getOrDefault(0L)
         val selected = providerManager.publishFrame(
             providerId = providerId,
             frame = frame,
@@ -50,13 +51,13 @@ internal object EndXrTrackingInputBridge {
 
     fun selectProvider(providerId: TrackingProviderId): Boolean {
         val selected = providerManager.selectProvider(providerId)
-        if (selected) EndXrInputSnapshotStore.clear()
+        if (selected) clearInputSnapshot()
         return selected
     }
 
     fun setAutoMode() {
         providerManager.setAutoMode()
-        EndXrInputSnapshotStore.clear()
+        clearInputSnapshot()
     }
 
     fun updateProviderAvailability(
@@ -64,11 +65,22 @@ internal object EndXrTrackingInputBridge {
         availability: TrackingProviderAvailability
     ): Boolean {
         val updated = providerManager.updateAvailability(providerId, availability)
-        if (updated) EndXrInputSnapshotStore.clear()
+        if (updated) {
+            clearInputSnapshot()
+            healthTracker.reset()
+        }
         return updated
     }
 
     fun clearFrames() = providerManager.clearFrames()
+
+    private fun clearInputSnapshot() {
+        // The Android SDK stub throws in local JVM tests; a zero timestamp is safe there.
+        // On-device this always uses Android's monotonic elapsed-realtime clock.
+        val nowElapsedRealtimeNanos =
+            runCatching { SystemClock.elapsedRealtimeNanos() }.getOrDefault(0L)
+        EndXrInputSnapshotStore.clear(nowElapsedRealtimeNanos)
+    }
 
     fun diagnosticSnapshot(): TrackingProviderManagerSnapshot {
         // Android's mocked SystemClock throws in local JVM tests. Diagnostics must
