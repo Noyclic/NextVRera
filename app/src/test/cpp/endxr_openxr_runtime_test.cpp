@@ -1889,7 +1889,6 @@ void testReferenceSpacesFloorHeightAndLocateSpaces() {
 
     const XrSpace targetSpaces[3] = {viewSpace, stageSpace, floorSpace};
     XrSpaceLocationData locationData[3]{};
-    for (auto& location : locationData) location.type = XR_TYPE_SPACE_LOCATION;
     XrSpaceLocations batchOutput{XR_TYPE_SPACE_LOCATIONS, nullptr, 3, locationData};
     XrSpacesLocateInfo batchInfo{XR_TYPE_SPACES_LOCATE_INFO, nullptr, localSpace, 1, 3, targetSpaces};
     expect(locateSpaces(session, &batchInfo, &batchOutput) == XR_SUCCESS &&
@@ -1900,7 +1899,6 @@ void testReferenceSpacesFloorHeightAndLocateSpaces() {
            "batch locate VIEW, STAGE, and LOCAL_FLOOR via OpenXR 1.1 xrLocateSpaces");
 
     XrSpaceLocationData khrData[2]{};
-    for (auto& location : khrData) location.type = XR_TYPE_SPACE_LOCATION;
     XrSpaceLocationsKHR khrOutput{XR_TYPE_SPACE_LOCATIONS_KHR, nullptr, 2, khrData};
     XrSpacesLocateInfoKHR khrInfo{XR_TYPE_SPACES_LOCATE_INFO_KHR, nullptr, floorSpace, 1, 2, targetSpaces};
     expect(locateSpacesKhr(session, &khrInfo, &khrOutput) == XR_SUCCESS &&
