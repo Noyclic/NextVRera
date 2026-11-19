@@ -2047,6 +2047,28 @@ void testSwapchainFormatsMultiviewDepthAndSingleProjectionLayer() {
     expect(endFrame(session, &endInfo) == XR_SUCCESS,
            "composite one stereo projection layer from a two-slice array swapchain");
 
+    const XrCompositionLayerBaseHeader* excessiveLayers[] = {
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection),
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection)
+    };
+    expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
+               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
+           "begin unsupported multi-layer frame");
+    endInfo.displayTime = frameState.predictedDisplayTime;
+    endInfo.layerCount = 2;
+    endInfo.layers = excessiveLayers;
+    expect(endFrame(session, &endInfo) == XR_ERROR_LAYER_LIMIT_EXCEEDED,
+           "reject multiple layers instead of silently dropping the extra layer");
+
+    expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
+               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
+           "begin projection frame after rejected multi-layer submission");
+    endInfo.displayTime = frameState.predictedDisplayTime;
+    endInfo.layerCount = 1;
+    endInfo.layers = projectionOnlyLayers;
+    expect(endFrame(session, &endInfo) == XR_SUCCESS,
+           "continue frame loop after a rejected multi-layer submission");
+
     expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
                beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
            "begin invalid depth-as-color frame");
