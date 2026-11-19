@@ -65,7 +65,7 @@ internal class TrackingHealthTracker(
                 false
             }
             age < staleAfterMs -> {
-                gapCount++
+                if (state != State.GRACE) gapCount++
                 state = State.GRACE
                 false
             }
