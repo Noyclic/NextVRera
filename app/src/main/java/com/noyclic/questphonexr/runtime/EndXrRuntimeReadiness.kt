@@ -53,43 +53,23 @@ object EndXrRuntimeReadiness {
         ),
         RuntimeOpenXrExtensionCapability(
             "XR_KHR_android_thread_settings",
-            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "Thread priority scheduling hints (application/renderer main and worker threads) are implemented for Android OpenXR game engines."
-        ),
-        RuntimeOpenXrExtensionCapability(
-            "XR_KHR_composition_layer_depth",
             RuntimeCapabilityState.PARTIAL,
-            "Depth swapchain formats (GL_DEPTH24_STENCIL8, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT16) and projection depth info are accepted by the runtime."
+            "The runtime makes a best-effort Android thread-priority request. The OS may reject priority changes; actual scheduling effects are not verified on the target phone."
         ),
         RuntimeOpenXrExtensionCapability(
             "XR_KHR_convert_timespec_time",
             RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "Conversion between OpenXR XrTime and POSIX struct timespec monotonic timestamps is implemented."
+            "Conversion between OpenXR XrTime and POSIX struct timespec monotonic timestamps is implemented and covered by native tests."
         ),
         RuntimeOpenXrExtensionCapability(
             "XR_KHR_locate_spaces",
             RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "Batched multi-space pose queries via xrLocateSpacesKHR (and OpenXR 1.1 core xrLocateSpaces) are implemented."
-        ),
-        RuntimeOpenXrExtensionCapability(
-            "XR_EXT_performance_settings",
-            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "CPU/GPU performance level hints via xrPerfSettingsSetPerformanceLevelEXT are accepted by the runtime."
+            "Batched multi-space pose queries via xrLocateSpacesKHR (and OpenXR 1.1 core xrLocateSpaces) are implemented and covered by native tests."
         ),
         RuntimeOpenXrExtensionCapability(
             "XR_EXT_local_floor",
-            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "Standing floor-origin reference space LOCAL_FLOOR is supported alongside VIEW, LOCAL and STAGE."
-        ),
-        RuntimeOpenXrExtensionCapability(
-            "XR_FB_display_refresh_rate",
-            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "Display refresh rate enumeration, current query and requests (60/72/90/120 Hz) plus change events are implemented."
-        ),
-        RuntimeOpenXrExtensionCapability(
-            "XR_FB_color_space",
-            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
-            "Color space enumeration and active selection (Rec709, Quest, Rec2020) are implemented."
+            RuntimeCapabilityState.PARTIAL,
+            "LOCAL_FLOOR and STAGE use a fixed 1.65 m eye-height estimate. This is not calibrated floor tracking, does not provide room bounds, and does not add positional 6DoF."
         )
     )
 
@@ -136,7 +116,7 @@ object EndXrRuntimeReadiness {
     const val OPEN_XR_GAME_WARNING =
         "Перед запуском внешней игры учитывай ограничения: camera foreground service передаёт MediaPipe pinch и аналоговую силу grasp (0..1), приближённую позу ладони и 26 суставов через IPC; XR_EXT_hand_tracking и XR_EXT_hand_interaction доступны частично (pinch, grasp, aim-activate и hand poses), но внешний игровой процесс ещё не проверен. " +
             "В QuestPhoneXR можно вручную выбрать одно установленное приложение и выдать ему read-only доступ только к URI controller_state; разрешение привязано к подписи пакета и может быть отозвано. " +
-            "Игра всё равно должна поддерживать этот IPC-контракт. Это не настоящие tracked controller poses и не 6DoF; Android gamepad capture и haptics пока отсутствуют, поэтому полноценная игра ещё не подтверждена."
+            "Игра всё равно должна поддерживать этот IPC-контракт. Это не настоящие tracked controller poses и не 6DoF; Android gamepad capture и haptics пока отсутствуют. STAGE/LOCAL_FLOOR используют фиксированную оценку высоты глаз 1,65 м, а не калиброванный пол или guardian bounds."
 
     const val QUEST_GAME_WARNING =
         "Quest APK может зависеть от Meta/Oculus Runtime и системных сервисов гарнитуры. На обычном Android " +
