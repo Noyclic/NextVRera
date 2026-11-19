@@ -160,7 +160,6 @@ struct XrInstance_T {
     bool handTrackingExtensionEnabled = false;
     bool handInteractionExtensionEnabled = false;
     bool androidThreadSettingsExtensionEnabled = false;
-    bool compositionLayerDepthExtensionEnabled = false;
     bool convertTimespecTimeExtensionEnabled = false;
     bool locateSpacesExtensionEnabled = false;
     bool performanceSettingsExtensionEnabled = false;
@@ -878,13 +877,9 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
     bool handTrackingEnabled = false;
     bool handInteractionEnabled = false;
     bool androidThreadSettingsEnabled = false;
-    bool compositionLayerDepthEnabled = false;
     bool convertTimespecTimeEnabled = false;
     bool locateSpacesEnabled = false;
-    bool performanceSettingsEnabled = false;
     bool localFloorEnabled = false;
-    bool displayRefreshRateEnabled = false;
-    bool colorSpaceEnabled = false;
     for (std::uint32_t i = 0; i < createInfo->enabledExtensionCount; ++i) {
         const char* name = createInfo->enabledExtensionNames[i];
         if (name == nullptr) return XR_ERROR_VALIDATION_FAILURE;
