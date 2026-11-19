@@ -247,8 +247,8 @@ void testSystemDiscoveryAndGraphicsRequirements() {
            "advertise XR_EXT_hand_tracking support when enabled");
     expect(colorSpaceProps.colorSpace == XR_COLOR_SPACE_REC709_FB,
            "populate native REC709 color space property on xrGetSystemProperties");
-    expect(properties.graphicsProperties.maxLayerCount == 16,
-           "advertise multi-layer OpenXR composition support");
+    expect(properties.graphicsProperties.maxLayerCount == 1,
+           "advertise only the single stereo projection layer actually composited");
     expect(properties.trackingProperties.orientationTracking == XR_TRUE &&
                properties.trackingProperties.positionTracking == XR_FALSE,
            "advertise orientation-only tracking");
