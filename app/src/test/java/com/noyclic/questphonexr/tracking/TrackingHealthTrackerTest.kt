@@ -17,6 +17,9 @@ class TrackingHealthTrackerTest {
         tracker.tick(150L)
         assertEquals(TrackingHealthTracker.State.GRACE, tracker.snapshot().state)
         assertEquals(1L, tracker.snapshot().gapCount)
+        tracker.tick(200L)
+        tracker.tick(250L)
+        assertEquals("One continuous inference gap is counted once.", 1L, tracker.snapshot().gapCount)
 
         assertTrue(tracker.tick(301L))
         assertEquals(TrackingHealthTracker.State.STALE, tracker.snapshot().state)
