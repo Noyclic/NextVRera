@@ -31,7 +31,10 @@ void setup(XrNegotiateLoaderInfo& loader, XrNegotiateRuntimeRequest& runtime) {
 }
 XrInstance createInstance(PFN_xrGetInstanceProcAddr gipa, bool enableAndroid, bool enableGles,
                           bool enableHandTracking = false,
-                          bool enableHandInteraction = false) {
+                          bool enableHandInteraction = false,
+                          XrVersion apiVersion = XR_MAKE_VERSION(1, 0, 0),
+                          const char* const* extraExtensions = nullptr,
+                          std::uint32_t extraExtensionCount = 0) {
     XrInstanceCreateInfoAndroidKHR androidInfo{};
     androidInfo.type = XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR;
     androidInfo.applicationVM = reinterpret_cast<void*>(0x1000);
@@ -39,13 +42,16 @@ XrInstance createInstance(PFN_xrGetInstanceProcAddr gipa, bool enableAndroid, bo
     XrInstanceCreateInfo info{};
     info.type = XR_TYPE_INSTANCE_CREATE_INFO;
     info.next = enableAndroid ? &androidInfo : nullptr;
-    info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
-    const char* enabled[4]{};
+    info.applicationInfo.apiVersion = apiVersion;
+    const char* enabled[16]{};
     std::uint32_t count = 0;
     if (enableAndroid) enabled[count++] = ENDXR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME;
     if (enableGles) enabled[count++] = ENDXR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME;
     if (enableHandTracking) enabled[count++] = XR_EXT_HAND_TRACKING_EXTENSION_NAME;
     if (enableHandInteraction) enabled[count++] = XR_EXT_HAND_INTERACTION_EXTENSION_NAME;
+    for (std::uint32_t i = 0; i < extraExtensionCount && count < 16; ++i) {
+        enabled[count++] = extraExtensions[i];
+    }
     info.enabledExtensionCount = count;
     info.enabledExtensionNames = enabled;
     PFN_xrVoidFunction raw = nullptr;
@@ -70,16 +76,25 @@ void testNegotiation() {
     expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
            "negotiate OpenXR loader interface");
     expect(request.runtimeInterfaceVersion == 1, "publish loader interface version");
-    expect(request.runtimeApiVersion == XR_MAKE_VERSION(1, 0, 0),
-           "publish OpenXR 1.0 support");
+    expect(request.runtimeApiVersion == XR_MAKE_VERSION(1, 1, 65),
+           "negotiate OpenXR 1.1.65 when loader allows 1.1.99");
     expect(request.getInstanceProcAddr != nullptr, "publish GIPA");
+    setup(loader, request);
+    loader.maxApiVersion = XR_MAKE_VERSION(1, 0, 99);
+    expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS &&
+               request.runtimeApiVersion == XR_MAKE_VERSION(1, 0, 99),
+           "negotiate OpenXR 1.0.x cleanly for 1.0-only loaders");
     loader.maxInterfaceVersion = 0;
     expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) ==
                XR_ERROR_INITIALIZATION_FAILED, "reject incompatible loader interface");
     setup(loader, request);
-    loader.minApiVersion = XR_MAKE_VERSION(1, 1, 0);
+    loader.minApiVersion = XR_MAKE_VERSION(2, 0, 0);
     expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) ==
-               XR_ERROR_API_VERSION_UNSUPPORTED, "reject unsupported API version");
+               XR_ERROR_API_VERSION_UNSUPPORTED, "reject unsupported major API version");
+    setup(loader, request);
+    loader.minApiVersion = XR_MAKE_VERSION(1, 2, 0);
+    expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) ==
+               XR_ERROR_API_VERSION_UNSUPPORTED, "reject unsupported OpenXR 1.2 API version");
 }
 void testInstanceApiVersionCompatibility() {
     XrNegotiateLoaderInfo loader{};
@@ -103,9 +118,16 @@ void testInstanceApiVersionCompatibility() {
            "destroy instance created with a compatible OpenXR 1.0 patch version");
 
     info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 1, 65);
+    instance = XR_NULL_HANDLE;
+    expect(create(&info, &instance) == XR_SUCCESS && instance != XR_NULL_HANDLE,
+           "accept OpenXR 1.1 core API applications");
+    expect(destroy(instance) == XR_SUCCESS,
+           "destroy OpenXR 1.1 test instance");
+
+    info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 2, 0);
     instance = reinterpret_cast<XrInstance>(static_cast<std::uintptr_t>(1));
     expect(create(&info, &instance) == XR_ERROR_API_VERSION_UNSUPPORTED,
-           "reject OpenXR 1.1 when only the 1.0 core API is implemented");
+           "reject unsupported OpenXR 1.2 minor API version");
     expect(instance == XR_NULL_HANDLE,
            "clear the output handle when an unsupported API version is rejected");
 
@@ -133,15 +155,12 @@ void testExtensionEnumerationAndInstance() {
                                      "xrEnumerateInstanceExtensionProperties");
     auto enumerate = reinterpret_cast<PFN_xrEnumerateInstanceExtensionProperties>(raw);
     std::uint32_t count = 0;
-    expect(enumerate(nullptr, 0, &count, nullptr) == XR_SUCCESS && count == 4,
-           "report Android-create, GLES, hand-tracking and hand-interaction extensions");
-    XrExtensionProperties extensions[4]{};
-    extensions[0].type = XR_TYPE_EXTENSION_PROPERTIES;
-    extensions[1].type = XR_TYPE_EXTENSION_PROPERTIES;
-    extensions[2].type = XR_TYPE_EXTENSION_PROPERTIES;
-    extensions[3].type = XR_TYPE_EXTENSION_PROPERTIES;
-    expect(enumerate(nullptr, 4, &count, extensions) == XR_SUCCESS,
-           "fill all extension properties");
+    expect(enumerate(nullptr, 0, &count, nullptr) == XR_SUCCESS && count == 12,
+           "report all 12 supported OpenXR extensions");
+    XrExtensionProperties extensions[12]{};
+    for (auto& ext : extensions) ext.type = XR_TYPE_EXTENSION_PROPERTIES;
+    expect(enumerate(nullptr, 12, &count, extensions) == XR_SUCCESS,
+           "fill all 12 extension properties");
     expect(std::strcmp(extensions[0].extensionName,
                        ENDXR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME) == 0,
            "publish android-create extension");
@@ -157,6 +176,38 @@ void testExtensionEnumerationAndInstance() {
                        XR_EXT_HAND_INTERACTION_EXTENSION_NAME) == 0 &&
                extensions[3].extensionVersion == XR_EXT_hand_interaction_SPEC_VERSION,
            "publish XR_EXT_hand_interaction extension version 2");
+    expect(std::strcmp(extensions[4].extensionName,
+                       ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME) == 0 &&
+               extensions[4].extensionVersion == ENDXR_KHR_ANDROID_THREAD_SETTINGS_SPEC_VERSION,
+           "publish XR_KHR_android_thread_settings extension");
+    expect(std::strcmp(extensions[5].extensionName,
+                       XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) == 0 &&
+               extensions[5].extensionVersion == XR_KHR_composition_layer_depth_SPEC_VERSION,
+           "publish XR_KHR_composition_layer_depth extension");
+    expect(std::strcmp(extensions[6].extensionName,
+                       ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME) == 0 &&
+               extensions[6].extensionVersion == ENDXR_KHR_CONVERT_TIMESPEC_TIME_SPEC_VERSION,
+           "publish XR_KHR_convert_timespec_time extension");
+    expect(std::strcmp(extensions[7].extensionName,
+                       XR_KHR_LOCATE_SPACES_EXTENSION_NAME) == 0 &&
+               extensions[7].extensionVersion == XR_KHR_locate_spaces_SPEC_VERSION,
+           "publish XR_KHR_locate_spaces extension");
+    expect(std::strcmp(extensions[8].extensionName,
+                       XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME) == 0 &&
+               extensions[8].extensionVersion == XR_EXT_performance_settings_SPEC_VERSION,
+           "publish XR_EXT_performance_settings extension");
+    expect(std::strcmp(extensions[9].extensionName,
+                       XR_EXT_LOCAL_FLOOR_EXTENSION_NAME) == 0 &&
+               extensions[9].extensionVersion == XR_EXT_local_floor_SPEC_VERSION,
+           "publish XR_EXT_local_floor extension");
+    expect(std::strcmp(extensions[10].extensionName,
+                       XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME) == 0 &&
+               extensions[10].extensionVersion == XR_FB_display_refresh_rate_SPEC_VERSION,
+           "publish XR_FB_display_refresh_rate extension");
+    expect(std::strcmp(extensions[11].extensionName,
+                       XR_FB_COLOR_SPACE_EXTENSION_NAME) == 0 &&
+               extensions[11].extensionVersion == XR_FB_color_space_SPEC_VERSION,
+           "publish XR_FB_color_space extension");
     expect(enumerate(nullptr, 2, &count, extensions) == XR_ERROR_SIZE_INSUFFICIENT,
            "report insufficient extension enumeration capacity");
 
@@ -198,8 +249,11 @@ void testSystemDiscoveryAndGraphicsRequirements() {
            "select phone HMD system");
     auto getProperties = reinterpret_cast<PFN_xrGetSystemProperties>(
         resolve(request.getInstanceProcAddr, instance, "xrGetSystemProperties"));
+    XrSystemColorSpacePropertiesFB colorSpaceProps{};
+    colorSpaceProps.type = XR_TYPE_SYSTEM_COLOR_SPACE_PROPERTIES_FB;
     XrSystemHandTrackingPropertiesEXT handProperties{};
     handProperties.type = XR_TYPE_SYSTEM_HAND_TRACKING_PROPERTIES_EXT;
+    handProperties.next = &colorSpaceProps;
     XrSystemProperties properties{};
     properties.type = XR_TYPE_SYSTEM_PROPERTIES;
     properties.next = &handProperties;
@@ -207,8 +261,10 @@ void testSystemDiscoveryAndGraphicsRequirements() {
            "query phone system capabilities");
     expect(handProperties.supportsHandTracking == XR_TRUE,
            "advertise XR_EXT_hand_tracking support when enabled");
-    expect(properties.graphicsProperties.maxLayerCount == 1,
-           "advertise only the single composition layer currently implemented by the phone compositor");
+    expect(colorSpaceProps.colorSpace == XR_COLOR_SPACE_REC709_FB,
+           "populate native REC709 color space property on xrGetSystemProperties");
+    expect(properties.graphicsProperties.maxLayerCount == 16,
+           "advertise multi-layer OpenXR composition support");
     expect(properties.trackingProperties.orientationTracking == XR_TRUE &&
                properties.trackingProperties.positionTracking == XR_FALSE,
            "advertise orientation-only tracking");
@@ -220,8 +276,8 @@ void testSystemDiscoveryAndGraphicsRequirements() {
     expect(getRequirements(instance, systemId, &requirements) == XR_SUCCESS,
            "query GLES requirements");
     expect(requirements.minApiVersionSupported == XR_MAKE_VERSION(3, 0, 0) &&
-               requirements.maxApiVersionSupported == XR_MAKE_VERSION(3, 0, 0),
-           "publish the GLES 3.0 implementation level");
+               requirements.maxApiVersionSupported == XR_MAKE_VERSION(3, 2, 0),
+           "publish GLES 3.0 through 3.2 implementation level");
     auto enumerateViews = reinterpret_cast<PFN_xrEnumerateViewConfigurationViews>(
         resolve(request.getInstanceProcAddr, instance,
                 "xrEnumerateViewConfigurationViews"));
@@ -293,9 +349,9 @@ void testGlesSessionSwapchainAndFrameLifecycle() {
            "report unavailable physical bounds for the supported VIEW space");
     bounds = {9.0f, 7.0f};
     expect(getBounds(session, XR_REFERENCE_SPACE_TYPE_STAGE, &bounds) ==
-               XR_ERROR_REFERENCE_SPACE_UNSUPPORTED &&
+               XR_SPACE_BOUNDS_UNAVAILABLE &&
                bounds.width == 0.0f && bounds.height == 0.0f,
-           "reject STAGE because EndXR does not expose room-scale tracking");
+           "accept STAGE with unavailable physical boundary extents");
     expect(getBounds(reinterpret_cast<XrSession>(static_cast<std::uintptr_t>(1)),
                      XR_REFERENCE_SPACE_TYPE_LOCAL, &bounds) == XR_ERROR_HANDLE_INVALID,
            "reject a stale session handle in the reference-space bounds query");
@@ -1710,6 +1766,550 @@ void testGetInstanceProcAddrConformance() {
     expect(destroyGles(glesInstance) == XR_SUCCESS,
            "destroy instance used for enabled-extension GIPA check");
 }
+
+void testReferenceSpacesFloorHeightAndLocateSpaces() {
+    XrNegotiateLoaderInfo loader{};
+    XrNegotiateRuntimeRequest request{};
+    setup(loader, request);
+    expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
+           "negotiate before reference space and locateSpaces tests");
+
+    // 1. OpenXR 1.0 without XR_EXT_local_floor / XR_KHR_locate_spaces
+    XrInstance v10Instance = createInstance(request.getInstanceProcAddr, false, true);
+    PFN_xrVoidFunction fn = nullptr;
+    expect(request.getInstanceProcAddr(v10Instance, "xrLocateSpaces", &fn) ==
+               XR_ERROR_FUNCTION_UNSUPPORTED && fn == nullptr,
+           "hide core 1.1 xrLocateSpaces on OpenXR 1.0 instances");
+    expect(request.getInstanceProcAddr(v10Instance, "xrLocateSpacesKHR", &fn) ==
+               XR_ERROR_FUNCTION_UNSUPPORTED && fn == nullptr,
+           "hide xrLocateSpacesKHR when extension is not enabled");
+
+    auto getSystem10 = reinterpret_cast<PFN_xrGetSystem>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrGetSystem"));
+    XrSystemGetInfo sysInfo{XR_TYPE_SYSTEM_GET_INFO, nullptr, XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY};
+    XrSystemId sys10 = XR_NULL_SYSTEM_ID;
+    expect(getSystem10(v10Instance, &sysInfo, &sys10) == XR_SUCCESS, "get system for 1.0 space test");
+    auto getReq10 = reinterpret_cast<PFN_xrGetOpenGLESGraphicsRequirementsKHR>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrGetOpenGLESGraphicsRequirementsKHR"));
+    XrGraphicsRequirementsOpenGLESKHR req10{XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR, nullptr, 0, 0};
+    expect(getReq10(v10Instance, sys10, &req10) == XR_SUCCESS, "query GLES reqs for 1.0 space test");
+    XrGraphicsBindingOpenGLESAndroidKHR binding10{
+        XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR, nullptr,
+        reinterpret_cast<void*>(0x1000), reinterpret_cast<void*>(0x2000), reinterpret_cast<void*>(0x3000)
+    };
+    XrSessionCreateInfo sessInfo10{XR_TYPE_SESSION_CREATE_INFO, &binding10, 0, sys10};
+    auto createSess10 = reinterpret_cast<PFN_xrCreateSession>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrCreateSession"));
+    XrSession sess10 = XR_NULL_HANDLE;
+    expect(createSess10(v10Instance, &sessInfo10, &sess10) == XR_SUCCESS, "create 1.0 session");
+
+    auto enumRef10 = reinterpret_cast<PFN_xrEnumerateReferenceSpaces>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrEnumerateReferenceSpaces"));
+    std::uint32_t refCount10 = 0;
+    XrReferenceSpaceType refTypes10[4]{};
+    expect(enumRef10(sess10, 4, &refCount10, refTypes10) == XR_SUCCESS && refCount10 == 3 &&
+               refTypes10[0] == XR_REFERENCE_SPACE_TYPE_VIEW &&
+               refTypes10[1] == XR_REFERENCE_SPACE_TYPE_LOCAL &&
+               refTypes10[2] == XR_REFERENCE_SPACE_TYPE_STAGE,
+           "enumerate VIEW, LOCAL, and STAGE without LOCAL_FLOOR on base OpenXR 1.0");
+    auto createSpace10 = reinterpret_cast<PFN_xrCreateReferenceSpace>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrCreateReferenceSpace"));
+    XrReferenceSpaceCreateInfo floorCreate{
+        XR_TYPE_REFERENCE_SPACE_CREATE_INFO, nullptr, XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR,
+        {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}
+    };
+    XrSpace rejectedFloor = XR_NULL_HANDLE;
+    expect(createSpace10(sess10, &floorCreate, &rejectedFloor) == XR_ERROR_REFERENCE_SPACE_UNSUPPORTED,
+           "reject LOCAL_FLOOR on 1.0 without XR_EXT_local_floor enabled");
+    auto destroySess10 = reinterpret_cast<PFN_xrDestroySession>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrDestroySession"));
+    auto destroyInst10 = reinterpret_cast<PFN_xrDestroyInstance>(
+        resolve(request.getInstanceProcAddr, v10Instance, "xrDestroyInstance"));
+    expect(destroySess10(sess10) == XR_SUCCESS && destroyInst10(v10Instance) == XR_SUCCESS,
+           "clean up 1.0 space test instance");
+
+    // 2. OpenXR 1.1 with XR_EXT_local_floor & XR_KHR_locate_spaces
+    const char* extraExts[] = {
+        XR_EXT_LOCAL_FLOOR_EXTENSION_NAME,
+        XR_KHR_LOCATE_SPACES_EXTENSION_NAME
+    };
+    XrInstance v11Instance = createInstance(
+        request.getInstanceProcAddr, false, true, false, false,
+        XR_MAKE_VERSION(1, 1, 0), extraExts, 2);
+
+    auto locateSpaces = reinterpret_cast<PFN_xrLocateSpaces>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrLocateSpaces"));
+    auto locateSpacesKhr = reinterpret_cast<PFN_xrLocateSpacesKHR>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrLocateSpacesKHR"));
+
+    auto getSystem = reinterpret_cast<PFN_xrGetSystem>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrGetSystem"));
+    XrSystemId systemId = XR_NULL_SYSTEM_ID;
+    expect(getSystem(v11Instance, &sysInfo, &systemId) == XR_SUCCESS, "get system for 1.1 test");
+    auto getReqs = reinterpret_cast<PFN_xrGetOpenGLESGraphicsRequirementsKHR>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrGetOpenGLESGraphicsRequirementsKHR"));
+    expect(getReqs(v11Instance, systemId, &req10) == XR_SUCCESS, "query GLES reqs for 1.1 test");
+    XrSessionCreateInfo sessInfo11{XR_TYPE_SESSION_CREATE_INFO, &binding10, 0, systemId};
+    auto createSess = reinterpret_cast<PFN_xrCreateSession>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrCreateSession"));
+    XrSession session = XR_NULL_HANDLE;
+    expect(createSess(v11Instance, &sessInfo11, &session) == XR_SUCCESS, "create 1.1 session");
+
+    auto beginSess = reinterpret_cast<PFN_xrBeginSession>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrBeginSession"));
+    XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO};
+    expect(beginSess(session, &beginInfo) == XR_SUCCESS, "begin 1.1 session");
+
+    auto enumRef = reinterpret_cast<PFN_xrEnumerateReferenceSpaces>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrEnumerateReferenceSpaces"));
+    std::uint32_t refCount = 0;
+    XrReferenceSpaceType refTypes[4]{};
+    expect(enumRef(session, 4, &refCount, refTypes) == XR_SUCCESS && refCount == 4 &&
+               refTypes[3] == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR,
+           "enumerate LOCAL_FLOOR alongside VIEW, LOCAL, and STAGE in OpenXR 1.1");
+
+    auto createSpace = reinterpret_cast<PFN_xrCreateReferenceSpace>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrCreateReferenceSpace"));
+    auto destroySpace = reinterpret_cast<PFN_xrDestroySpace>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrDestroySpace"));
+    XrReferenceSpaceCreateInfo spaceCreate{
+        XR_TYPE_REFERENCE_SPACE_CREATE_INFO, nullptr, XR_REFERENCE_SPACE_TYPE_LOCAL,
+        {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}
+    };
+    XrSpace localSpace = XR_NULL_HANDLE;
+    XrSpace viewSpace = XR_NULL_HANDLE;
+    XrSpace stageSpace = XR_NULL_HANDLE;
+    XrSpace floorSpace = XR_NULL_HANDLE;
+    expect(createSpace(session, &spaceCreate, &localSpace) == XR_SUCCESS, "create LOCAL");
+    spaceCreate.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+    expect(createSpace(session, &spaceCreate, &viewSpace) == XR_SUCCESS, "create VIEW");
+    spaceCreate.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+    expect(createSpace(session, &spaceCreate, &stageSpace) == XR_SUCCESS, "create STAGE");
+    spaceCreate.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+    expect(createSpace(session, &spaceCreate, &floorSpace) == XR_SUCCESS, "create LOCAL_FLOOR");
+
+    endxrSetHeadOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+    auto locateViews = reinterpret_cast<PFN_xrLocateViews>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrLocateViews"));
+    XrViewLocateInfo viewLocate{
+        XR_TYPE_VIEW_LOCATE_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 1, floorSpace
+    };
+    XrViewState viewState{XR_TYPE_VIEW_STATE, nullptr, 0};
+    XrView views[2]{{XR_TYPE_VIEW, nullptr, {}, {}}, {XR_TYPE_VIEW, nullptr, {}, {}}};
+    std::uint32_t viewCount = 0;
+    expect(locateViews(session, &viewLocate, &viewState, 2, &viewCount, views) == XR_SUCCESS &&
+               (viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) != 0 &&
+               std::abs(views[0].pose.position.y - 1.65f) < 0.001f &&
+               std::abs(views[0].pose.position.x + 0.032f) < 0.001f,
+           "elevate stereo eyes to default 1.65m eye height when located in LOCAL_FLOOR");
+
+    const XrSpace targetSpaces[3] = {viewSpace, stageSpace, floorSpace};
+    XrSpaceLocationData locationData[3]{};
+    XrSpaceLocations batchOutput{XR_TYPE_SPACE_LOCATIONS, nullptr, 3, locationData};
+    XrSpacesLocateInfo batchInfo{XR_TYPE_SPACES_LOCATE_INFO, nullptr, localSpace, 1, 3, targetSpaces};
+    expect(locateSpaces(session, &batchInfo, &batchOutput) == XR_SUCCESS &&
+               batchOutput.locationCount == 3 &&
+               (locationData[0].locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0 &&
+               std::abs(locationData[1].pose.position.y + 1.65f) < 0.001f &&
+               std::abs(locationData[2].pose.position.y + 1.65f) < 0.001f,
+           "batch locate VIEW, STAGE, and LOCAL_FLOOR via OpenXR 1.1 xrLocateSpaces");
+
+    XrSpaceLocationData khrData[2]{};
+    XrSpaceLocationsKHR khrOutput{XR_TYPE_SPACE_LOCATIONS_KHR, nullptr, 2, khrData};
+    XrSpacesLocateInfoKHR khrInfo{XR_TYPE_SPACES_LOCATE_INFO_KHR, nullptr, floorSpace, 1, 2, targetSpaces};
+    expect(locateSpacesKhr(session, &khrInfo, &khrOutput) == XR_SUCCESS &&
+               khrOutput.locationCount == 2 &&
+               std::abs(khrData[0].pose.position.y - 1.65f) < 0.001f &&
+               std::abs(khrData[1].pose.position.y) < 0.001f,
+           "batch locate spaces relative to floor via XR_KHR_locate_spaces");
+
+    endxrClearHeadOrientation();
+    auto requestExit = reinterpret_cast<PFN_xrRequestExitSession>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrRequestExitSession"));
+    auto endSess = reinterpret_cast<PFN_xrEndSession>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrEndSession"));
+    expect(requestExit(session) == XR_SUCCESS && endSess(session) == XR_SUCCESS,
+           "end 1.1 reference-space test session");
+    expect(destroySpace(localSpace) == XR_SUCCESS && destroySpace(viewSpace) == XR_SUCCESS &&
+               destroySpace(stageSpace) == XR_SUCCESS && destroySpace(floorSpace) == XR_SUCCESS,
+           "destroy 1.1 test spaces");
+    auto destroySess = reinterpret_cast<PFN_xrDestroySession>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrDestroySession"));
+    auto destroyInst = reinterpret_cast<PFN_xrDestroyInstance>(
+        resolve(request.getInstanceProcAddr, v11Instance, "xrDestroyInstance"));
+    expect(destroySess(session) == XR_SUCCESS && destroyInst(v11Instance) == XR_SUCCESS,
+           "destroy 1.1 reference-space test instance");
+}
+
+void testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame() {
+    XrNegotiateLoaderInfo loader{};
+    XrNegotiateRuntimeRequest request{};
+    setup(loader, request);
+    expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
+           "negotiate before swapchain format and multi-layer test");
+    const char* extraExts[] = {XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME};
+    XrInstance instance = createInstance(
+        request.getInstanceProcAddr, false, true, false, false,
+        XR_MAKE_VERSION(1, 0, 0), extraExts, 1);
+
+    auto getSystem = reinterpret_cast<PFN_xrGetSystem>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetSystem"));
+    XrSystemGetInfo sysInfo{XR_TYPE_SYSTEM_GET_INFO, nullptr, XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY};
+    XrSystemId systemId = XR_NULL_SYSTEM_ID;
+    expect(getSystem(instance, &sysInfo, &systemId) == XR_SUCCESS, "get HMD system");
+    auto getReqs = reinterpret_cast<PFN_xrGetOpenGLESGraphicsRequirementsKHR>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetOpenGLESGraphicsRequirementsKHR"));
+    XrGraphicsRequirementsOpenGLESKHR reqs{XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR, nullptr, 0, 0};
+    expect(getReqs(instance, systemId, &reqs) == XR_SUCCESS, "query GLES requirements");
+
+    XrGraphicsBindingOpenGLESAndroidKHR binding{
+        XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR, nullptr,
+        reinterpret_cast<void*>(0x1000), reinterpret_cast<void*>(0x2000), reinterpret_cast<void*>(0x3000)
+    };
+    XrSessionCreateInfo sessInfo{XR_TYPE_SESSION_CREATE_INFO, &binding, 0, systemId};
+    auto createSess = reinterpret_cast<PFN_xrCreateSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateSession"));
+    XrSession session = XR_NULL_HANDLE;
+    expect(createSess(instance, &sessInfo, &session) == XR_SUCCESS, "create session");
+
+    auto enumFormats = reinterpret_cast<PFN_xrEnumerateSwapchainFormats>(
+        resolve(request.getInstanceProcAddr, instance, "xrEnumerateSwapchainFormats"));
+    std::uint32_t formatCount = 0;
+    std::int64_t formats[8]{};
+    expect(enumFormats(session, 8, &formatCount, formats) == XR_SUCCESS && formatCount == 5 &&
+               formats[0] == 0x8C43 && // GL_SRGB8_ALPHA8
+               formats[1] == 0x8058 && // GL_RGBA8
+               formats[2] == 0x88F0 && // GL_DEPTH24_STENCIL8
+               formats[3] == 0x81A6 && // GL_DEPTH_COMPONENT24
+               formats[4] == 0x81A5,   // GL_DEPTH_COMPONENT16
+           "enumerate sRGB, RGBA8, and 3 depth GLES swapchain formats");
+
+    auto createSwap = reinterpret_cast<PFN_xrCreateSwapchain>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateSwapchain"));
+    auto destroySwap = reinterpret_cast<PFN_xrDestroySwapchain>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroySwapchain"));
+    auto acquire = reinterpret_cast<PFN_xrAcquireSwapchainImage>(
+        resolve(request.getInstanceProcAddr, instance, "xrAcquireSwapchainImage"));
+    auto wait = reinterpret_cast<PFN_xrWaitSwapchainImage>(
+        resolve(request.getInstanceProcAddr, instance, "xrWaitSwapchainImage"));
+    auto release = reinterpret_cast<PFN_xrReleaseSwapchainImage>(
+        resolve(request.getInstanceProcAddr, instance, "xrReleaseSwapchainImage"));
+
+    XrSwapchainCreateInfo mvInfo{
+        XR_TYPE_SWAPCHAIN_CREATE_INFO, nullptr, 0,
+        XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT |
+            XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT,
+        0x8C43, 1, 960, 1080, 1, 2, 1
+    };
+    XrSwapchain mvSwap = XR_NULL_HANDLE;
+    expect(createSwap(session, &mvInfo, &mvSwap) == XR_SUCCESS,
+           "create sRGB GL_TEXTURE_2D_ARRAY multiview swapchain (arraySize=2)");
+
+    XrSwapchainCreateInfo depthInfo{
+        XR_TYPE_SWAPCHAIN_CREATE_INFO, nullptr, 0,
+        XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT,
+        0x88F0, 1, 960, 1080, 1, 2, 1
+    };
+    XrSwapchain depthSwap = XR_NULL_HANDLE;
+    expect(createSwap(session, &depthInfo, &depthSwap) == XR_SUCCESS,
+           "create GL_DEPTH24_STENCIL8 depth swapchain");
+
+    XrSwapchainCreateInfo quadInfo{
+        XR_TYPE_SWAPCHAIN_CREATE_INFO, nullptr, 0,
+        XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT,
+        0x8058, 1, 512, 512, 1, 1, 1
+    };
+    XrSwapchain quadSwap = XR_NULL_HANDLE;
+    expect(createSwap(session, &quadInfo, &quadSwap) == XR_SUCCESS,
+           "create RGBA8 quad UI overlay swapchain");
+
+    XrSwapchainImageAcquireInfo acqInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO, nullptr};
+    XrSwapchainImageWaitInfo waitInfo{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, nullptr, XR_INFINITE_DURATION};
+    XrSwapchainImageReleaseInfo relInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO, nullptr};
+    std::uint32_t idx = 0;
+    for (XrSwapchain s : {mvSwap, depthSwap, quadSwap}) {
+        expect(acquire(s, &acqInfo, &idx) == XR_SUCCESS &&
+                   wait(s, &waitInfo) == XR_SUCCESS &&
+                   release(s, &relInfo) == XR_SUCCESS,
+               "acquire/wait/release swapchain image");
+    }
+
+    auto beginSess = reinterpret_cast<PFN_xrBeginSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrBeginSession"));
+    XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO};
+    expect(beginSess(session, &beginInfo) == XR_SUCCESS, "begin session");
+
+    auto waitFrame = reinterpret_cast<PFN_xrWaitFrame>(
+        resolve(request.getInstanceProcAddr, instance, "xrWaitFrame"));
+    auto beginFrame = reinterpret_cast<PFN_xrBeginFrame>(
+        resolve(request.getInstanceProcAddr, instance, "xrBeginFrame"));
+    auto endFrame = reinterpret_cast<PFN_xrEndFrame>(
+        resolve(request.getInstanceProcAddr, instance, "xrEndFrame"));
+
+    XrFrameWaitInfo waitFrameInfo{XR_TYPE_FRAME_WAIT_INFO, nullptr};
+    XrFrameState frameState{XR_TYPE_FRAME_STATE, nullptr, 0, 0, XR_FALSE};
+    XrFrameBeginInfo beginFrameInfo{XR_TYPE_FRAME_BEGIN_INFO, nullptr};
+    expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
+               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
+           "wait and begin multi-layer frame");
+
+    XrCompositionLayerProjectionView mvViews[2]{};
+    for (std::uint32_t eye = 0; eye < 2; ++eye) {
+        mvViews[eye].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+        mvViews[eye].subImage.swapchain = mvSwap;
+        mvViews[eye].subImage.imageArrayIndex = eye;
+        mvViews[eye].subImage.imageRect.extent = {960, 1080};
+    }
+    XrCompositionLayerProjection projection{
+        XR_TYPE_COMPOSITION_LAYER_PROJECTION, nullptr, 0, XR_NULL_HANDLE, 2, mvViews
+    };
+    XrCompositionLayerQuad quadLayer{};
+    quadLayer.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
+    quadLayer.subImage.swapchain = quadSwap;
+    quadLayer.subImage.imageRect.extent = {512, 512};
+    quadLayer.pose.orientation.w = 1.0f;
+    quadLayer.size = {1.0f, 1.0f};
+    const XrCompositionLayerBaseHeader* multiLayers[] = {
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection),
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quadLayer)
+    };
+    XrFrameEndInfo endInfo{
+        XR_TYPE_FRAME_END_INFO, nullptr, frameState.predictedDisplayTime,
+        XR_ENVIRONMENT_BLEND_MODE_OPAQUE, 2, multiLayers
+    };
+    expect(endFrame(session, &endInfo) == XR_SUCCESS,
+           "accept multiview projection layer plus companion Quad layer");
+
+    // Quad-only frame (no projection layer) must succeed cleanly
+    expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
+               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
+           "begin quad-only frame");
+    const XrCompositionLayerBaseHeader* quadOnlyLayers[] = {
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quadLayer)
+    };
+    endInfo.displayTime = frameState.predictedDisplayTime;
+    endInfo.layerCount = 1;
+    endInfo.layers = quadOnlyLayers;
+    expect(endFrame(session, &endInfo) == XR_SUCCESS,
+           "accept quad-only frame submission gracefully");
+
+    // Depth swapchain mistakenly bound as projection color target must fail with XR_ERROR_LAYER_INVALID
+    expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
+               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
+           "begin invalid depth-color projection frame");
+    mvViews[0].subImage.swapchain = depthSwap;
+    endInfo.displayTime = frameState.predictedDisplayTime;
+    endInfo.layerCount = 1;
+    endInfo.layers = multiLayers;
+    expect(endFrame(session, &endInfo) == XR_ERROR_LAYER_INVALID,
+           "reject depth swapchain passed as projection color layer");
+
+    auto requestExit = reinterpret_cast<PFN_xrRequestExitSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrRequestExitSession"));
+    auto endSess = reinterpret_cast<PFN_xrEndSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrEndSession"));
+    expect(requestExit(session) == XR_SUCCESS && endSess(session) == XR_SUCCESS,
+           "end swapchain format test session");
+    expect(destroySwap(mvSwap) == XR_SUCCESS &&
+               destroySwap(depthSwap) == XR_SUCCESS &&
+               destroySwap(quadSwap) == XR_SUCCESS,
+           "destroy multiview, depth, and quad swapchains");
+    auto destroySess = reinterpret_cast<PFN_xrDestroySession>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroySession"));
+    auto destroyInst = reinterpret_cast<PFN_xrDestroyInstance>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroyInstance"));
+    expect(destroySess(session) == XR_SUCCESS && destroyInst(instance) == XR_SUCCESS,
+           "destroy swapchain format test instance");
+}
+
+void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
+    XrNegotiateLoaderInfo loader{};
+    XrNegotiateRuntimeRequest request{};
+    setup(loader, request);
+    expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
+           "negotiate before Android/FB/EXT extension tests");
+
+    // Verify disabled GIPA checks first
+    XrInstance bare = createInstance(request.getInstanceProcAddr, false, true);
+    PFN_xrVoidFunction fn = nullptr;
+    for (const char* gatedName : {
+             "xrSetAndroidApplicationThreadKHR",
+             "xrConvertTimespecTimeToTimeKHR",
+             "xrConvertTimeToTimespecTimeKHR",
+             "xrPerfSettingsSetPerformanceLevelEXT",
+             "xrEnumerateDisplayRefreshRatesFB",
+             "xrGetDisplayRefreshRateFB",
+             "xrRequestDisplayRefreshRateFB",
+             "xrEnumerateColorSpacesFB",
+             "xrSetColorSpaceFB"
+         }) {
+        fn = reinterpret_cast<PFN_xrVoidFunction>(static_cast<std::uintptr_t>(1));
+        expect(request.getInstanceProcAddr(bare, gatedName, &fn) ==
+                   XR_ERROR_FUNCTION_UNSUPPORTED && fn == nullptr,
+               "hide extension entrypoint when extension is disabled");
+    }
+    auto destroyBare = reinterpret_cast<PFN_xrDestroyInstance>(
+        resolve(request.getInstanceProcAddr, bare, "xrDestroyInstance"));
+    expect(destroyBare(bare) == XR_SUCCESS, "destroy bare GIPA test instance");
+
+    const char* extraExts[] = {
+        ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,
+        ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME,
+        XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,
+        XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,
+        XR_FB_COLOR_SPACE_EXTENSION_NAME
+    };
+    XrInstance instance = createInstance(
+        request.getInstanceProcAddr, false, true, false, false,
+        XR_MAKE_VERSION(1, 0, 0), extraExts, 5);
+
+    auto timespecToTime = reinterpret_cast<PFN_xrConvertTimespecTimeToTimeKHR>(
+        resolve(request.getInstanceProcAddr, instance, "xrConvertTimespecTimeToTimeKHR"));
+    auto timeToTimespec = reinterpret_cast<PFN_xrConvertTimeToTimespecTimeKHR>(
+        resolve(request.getInstanceProcAddr, instance, "xrConvertTimeToTimespecTimeKHR"));
+    struct timespec tsIn{};
+    tsIn.tv_sec = 12;
+    tsIn.tv_nsec = 345678901L;
+    XrTime xrTime = 0;
+    expect(timespecToTime(instance, &tsIn, &xrTime) == XR_SUCCESS &&
+               xrTime == 12345678901LL,
+           "convert timespec to XrTime nanoseconds");
+    struct timespec tsOut{};
+    expect(timeToTimespec(instance, xrTime, &tsOut) == XR_SUCCESS &&
+               tsOut.tv_sec == 12 && tsOut.tv_nsec == 345678901L,
+           "round-trip XrTime back to timespec");
+    tsIn.tv_nsec = 1000000000L;
+    expect(timespecToTime(instance, &tsIn, &xrTime) == XR_ERROR_VALIDATION_FAILURE,
+           "reject out-of-range timespec nanoseconds");
+
+    auto getSystem = reinterpret_cast<PFN_xrGetSystem>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetSystem"));
+    XrSystemGetInfo sysInfo{XR_TYPE_SYSTEM_GET_INFO, nullptr, XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY};
+    XrSystemId systemId = XR_NULL_SYSTEM_ID;
+    expect(getSystem(instance, &sysInfo, &systemId) == XR_SUCCESS, "get HMD system");
+    auto getReqs = reinterpret_cast<PFN_xrGetOpenGLESGraphicsRequirementsKHR>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetOpenGLESGraphicsRequirementsKHR"));
+    XrGraphicsRequirementsOpenGLESKHR reqs{XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR, nullptr, 0, 0};
+    expect(getReqs(instance, systemId, &reqs) == XR_SUCCESS, "query GLES requirements");
+
+    XrGraphicsBindingOpenGLESAndroidKHR binding{
+        XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR, nullptr,
+        reinterpret_cast<void*>(0x1000), reinterpret_cast<void*>(0x2000), reinterpret_cast<void*>(0x3000)
+    };
+    XrSessionCreateInfo sessInfo{XR_TYPE_SESSION_CREATE_INFO, &binding, 0, systemId};
+    auto createSess = reinterpret_cast<PFN_xrCreateSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrCreateSession"));
+    XrSession session = XR_NULL_HANDLE;
+    expect(createSess(instance, &sessInfo, &session) == XR_SUCCESS, "create session");
+
+    auto pollEvent = reinterpret_cast<PFN_xrPollEvent>(
+        resolve(request.getInstanceProcAddr, instance, "xrPollEvent"));
+    XrEventDataBuffer ev{XR_TYPE_EVENT_DATA_BUFFER, nullptr, {}};
+    expect(pollEvent(instance, &ev) == XR_SUCCESS, "drain initial READY event");
+
+    auto setThread = reinterpret_cast<PFN_xrSetAndroidApplicationThreadKHR>(
+        resolve(request.getInstanceProcAddr, instance, "xrSetAndroidApplicationThreadKHR"));
+    expect(setThread(session, XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR, 4242) == XR_SUCCESS,
+           "accept valid Android renderer thread priority hint");
+    expect(setThread(session, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR, 0) ==
+               XR_ERROR_ANDROID_THREAD_SETTINGS_ID_INVALID_KHR,
+           "reject zero thread id in xrSetAndroidApplicationThreadKHR");
+
+    auto setPerf = reinterpret_cast<PFN_xrPerfSettingsSetPerformanceLevelEXT>(
+        resolve(request.getInstanceProcAddr, instance, "xrPerfSettingsSetPerformanceLevelEXT"));
+    expect(setPerf(session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT,
+                   XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT) == XR_SUCCESS &&
+               setPerf(session, XR_PERF_SETTINGS_DOMAIN_GPU_EXT,
+                       XR_PERF_SETTINGS_LEVEL_BOOST_EXT) == XR_SUCCESS,
+           "accept CPU/GPU performance level hints");
+    expect(setPerf(session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT,
+                   static_cast<XrPerfSettingsLevelEXT>(999)) == XR_ERROR_VALIDATION_FAILURE,
+           "reject invalid performance level enum");
+
+    auto enumRates = reinterpret_cast<PFN_xrEnumerateDisplayRefreshRatesFB>(
+        resolve(request.getInstanceProcAddr, instance, "xrEnumerateDisplayRefreshRatesFB"));
+    auto getRate = reinterpret_cast<PFN_xrGetDisplayRefreshRateFB>(
+        resolve(request.getInstanceProcAddr, instance, "xrGetDisplayRefreshRateFB"));
+    auto reqRate = reinterpret_cast<PFN_xrRequestDisplayRefreshRateFB>(
+        resolve(request.getInstanceProcAddr, instance, "xrRequestDisplayRefreshRateFB"));
+
+    std::uint32_t rateCount = 0;
+    float rates[8]{};
+    expect(enumRates(session, 8, &rateCount, rates) == XR_SUCCESS && rateCount == 4 &&
+               std::abs(rates[0] - 60.0f) < 0.1f && std::abs(rates[2] - 90.0f) < 0.1f,
+           "enumerate supported 60/72/90/120 Hz display refresh rates");
+    float currentHz = 0.0f;
+    expect(getRate(session, &currentHz) == XR_SUCCESS && std::abs(currentHz - 60.0f) < 0.1f,
+           "report default 60 Hz refresh rate");
+    expect(reqRate(session, 144.0f) == XR_ERROR_DISPLAY_REFRESH_RATE_UNSUPPORTED_FB,
+           "reject unsupported 144 Hz refresh rate");
+    expect(reqRate(session, 90.0f) == XR_SUCCESS, "switch display refresh rate to 90 Hz");
+    expect(getRate(session, &currentHz) == XR_SUCCESS && std::abs(currentHz - 90.0f) < 0.1f,
+           "observe updated 90 Hz refresh rate");
+
+    ev = {XR_TYPE_EVENT_DATA_BUFFER, nullptr, {}};
+    expect(pollEvent(instance, &ev) == XR_SUCCESS &&
+               ev.type == XR_TYPE_EVENT_DATA_DISPLAY_REFRESH_RATE_CHANGED_FB,
+           "queue XrEventDataDisplayRefreshRateChangedFB upon refresh rate change");
+    const auto* rateChanged =
+        reinterpret_cast<const XrEventDataDisplayRefreshRateChangedFB*>(&ev);
+    expect(std::abs(rateChanged->fromDisplayRefreshRate - 60.0f) < 0.1f &&
+               std::abs(rateChanged->toDisplayRefreshRate - 90.0f) < 0.1f,
+           "report old and new refresh rates in event payload");
+
+    auto beginSess = reinterpret_cast<PFN_xrBeginSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrBeginSession"));
+    XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO};
+    expect(beginSess(session, &beginInfo) == XR_SUCCESS, "begin session");
+    auto waitFrame = reinterpret_cast<PFN_xrWaitFrame>(
+        resolve(request.getInstanceProcAddr, instance, "xrWaitFrame"));
+    XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO, nullptr};
+    XrFrameState frameState{XR_TYPE_FRAME_STATE, nullptr, 0, 0, XR_FALSE};
+    expect(waitFrame(session, &waitInfo, &frameState) == XR_SUCCESS &&
+               std::abs(static_cast<double>(frameState.predictedDisplayPeriod) - 11111111.0) < 5.0,
+           "reflect active 90 Hz period in xrWaitFrame predictedDisplayPeriod");
+    auto beginFrame = reinterpret_cast<PFN_xrBeginFrame>(
+        resolve(request.getInstanceProcAddr, instance, "xrBeginFrame"));
+    auto endFrame = reinterpret_cast<PFN_xrEndFrame>(
+        resolve(request.getInstanceProcAddr, instance, "xrEndFrame"));
+    XrFrameBeginInfo beginFrameInfo{XR_TYPE_FRAME_BEGIN_INFO, nullptr};
+    XrFrameEndInfo endFrameInfo{
+        XR_TYPE_FRAME_END_INFO, nullptr, frameState.predictedDisplayTime,
+        XR_ENVIRONMENT_BLEND_MODE_OPAQUE, 0, nullptr
+    };
+    expect(beginFrame(session, &beginFrameInfo) == XR_SUCCESS &&
+               endFrame(session, &endFrameInfo) == XR_SUCCESS,
+           "complete 90 Hz frame cleanly before ending session");
+
+    auto enumColor = reinterpret_cast<PFN_xrEnumerateColorSpacesFB>(
+        resolve(request.getInstanceProcAddr, instance, "xrEnumerateColorSpacesFB"));
+    auto setColor = reinterpret_cast<PFN_xrSetColorSpaceFB>(
+        resolve(request.getInstanceProcAddr, instance, "xrSetColorSpaceFB"));
+    std::uint32_t colorCount = 0;
+    XrColorSpaceFB colorSpaces[4]{};
+    expect(enumColor(session, 4, &colorCount, colorSpaces) == XR_SUCCESS && colorCount == 3 &&
+               colorSpaces[0] == XR_COLOR_SPACE_REC709_FB &&
+               colorSpaces[1] == XR_COLOR_SPACE_QUEST_FB &&
+               colorSpaces[2] == XR_COLOR_SPACE_REC2020_FB,
+           "enumerate REC709, QUEST, and REC2020 color spaces");
+    expect(setColor(session, XR_COLOR_SPACE_QUEST_FB) == XR_SUCCESS,
+           "accept XR_COLOR_SPACE_QUEST_FB selection");
+    expect(setColor(session, XR_COLOR_SPACE_ADOBE_RGB_FB) == XR_ERROR_COLOR_SPACE_UNSUPPORTED_FB,
+           "reject unsupported color space");
+
+    auto requestExit = reinterpret_cast<PFN_xrRequestExitSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrRequestExitSession"));
+    auto endSess = reinterpret_cast<PFN_xrEndSession>(
+        resolve(request.getInstanceProcAddr, instance, "xrEndSession"));
+    expect(requestExit(session) == XR_SUCCESS && endSess(session) == XR_SUCCESS,
+           "end extension test session");
+    auto destroySess = reinterpret_cast<PFN_xrDestroySession>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroySession"));
+    auto destroyInst = reinterpret_cast<PFN_xrDestroyInstance>(
+        resolve(request.getInstanceProcAddr, instance, "xrDestroyInstance"));
+    expect(destroySess(session) == XR_SUCCESS && destroyInst(instance) == XR_SUCCESS,
+           "clean up extension test session and instance");
+}
 }
 int main() {
     testNegotiation();
@@ -1720,6 +2320,9 @@ int main() {
     testActionInputApiLifecycleAndNeutralState();
     testHandInteractionProfileMapsCameraGesturesAndJointPoses();
     testGetInstanceProcAddrConformance();
+    testReferenceSpacesFloorHeightAndLocateSpaces();
+    testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame();
+    testAndroidThreadTimespecPerfRefreshRateAndColorSpace();
     std::cout << "EndXR OpenXR GLES session and swapchain tests: all passed.\n";
     return 0;
 }

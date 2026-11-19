@@ -3,11 +3,39 @@
 #include "third_party/openxr/include/openxr/openxr_loader_negotiation.h"
 
 #include <cstdint>
+#include <ctime>
 
 #define ENDXR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME "XR_KHR_android_create_instance"
 #define ENDXR_KHR_ANDROID_CREATE_INSTANCE_SPEC_VERSION 3
 #define ENDXR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME "XR_KHR_opengl_es_enable"
 #define ENDXR_KHR_OPENGL_ES_ENABLE_SPEC_VERSION 10
+#define ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME "XR_KHR_android_thread_settings"
+#define ENDXR_KHR_ANDROID_THREAD_SETTINGS_SPEC_VERSION 6
+#define ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME "XR_KHR_convert_timespec_time"
+#define ENDXR_KHR_CONVERT_TIMESPEC_TIME_SPEC_VERSION 1
+
+typedef enum XrAndroidThreadTypeKHR {
+    XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR = 1,
+    XR_ANDROID_THREAD_TYPE_APPLICATION_WORKER_KHR = 2,
+    XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR = 3,
+    XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR = 4,
+    XR_ANDROID_THREAD_TYPE_MAX_ENUM_KHR = 0x7FFFFFFF
+} XrAndroidThreadTypeKHR;
+
+typedef XrResult (XRAPI_PTR *PFN_xrSetAndroidApplicationThreadKHR)(
+    XrSession session,
+    XrAndroidThreadTypeKHR threadType,
+    uint32_t threadId);
+
+typedef XrResult (XRAPI_PTR *PFN_xrConvertTimespecTimeToTimeKHR)(
+    XrInstance instance,
+    const struct timespec* timespecTime,
+    XrTime* time);
+
+typedef XrResult (XRAPI_PTR *PFN_xrConvertTimeToTimespecTimeKHR)(
+    XrInstance instance,
+    XrTime time,
+    struct timespec* timespecTime);
 
 // Khronos XR_KHR_android_create_instance ABI structure.
 typedef struct XrInstanceCreateInfoAndroidKHR {

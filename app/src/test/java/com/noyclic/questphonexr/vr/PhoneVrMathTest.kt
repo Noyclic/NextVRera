@@ -1,6 +1,7 @@
 package com.noyclic.questphonexr.vr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,46 @@ class PhoneVrMathTest {
         assertNull(PhoneVrMath.slerpQuat(identity, floatArrayOf(0f, 0f, 0f, 0f), 0.5f))
         assertNull(PhoneVrMath.slerpQuat(identity, floatArrayOf(0f, Float.NaN, 0f, 1f), 0.5f))
         assertNull(PhoneVrMath.slerpQuat(identity, identity, Float.NaN))
+    }
+
+    @Test
+    fun rotationMatrixToQuaternionConvertsIdentityAndQuarterTurnsWithoutAllocation() {
+        val out = FloatArray(4)
+        assertTrue(
+            PhoneVrMath.rotationMatrixToQuaternion(
+                floatArrayOf(
+                    1f, 0f, 0f,
+                    0f, 1f, 0f,
+                    0f, 0f, 1f
+                ),
+                out
+            )
+        )
+        assertEquals(0f, out[0], 0.0001f)
+        assertEquals(0f, out[1], 0.0001f)
+        assertEquals(0f, out[2], 0.0001f)
+        assertEquals(1f, out[3], 0.0001f)
+
+        // +90 degree rotation around Z axis
+        assertTrue(
+            PhoneVrMath.rotationMatrixToQuaternion(
+                floatArrayOf(
+                    0f, -1f, 0f,
+                    1f, 0f, 0f,
+                    0f, 0f, 1f
+                ),
+                out
+            )
+        )
+        val halfAngle = kotlin.math.sin(Math.PI / 4.0).toFloat()
+        assertEquals(0f, out[0], 0.0001f)
+        assertEquals(0f, out[1], 0.0001f)
+        assertEquals(halfAngle, out[2], 0.0001f)
+        assertEquals(halfAngle, out[3], 0.0001f)
+        assertNormalized(out)
+
+        assertFalse(PhoneVrMath.rotationMatrixToQuaternion(FloatArray(8), out))
+        assertFalse(PhoneVrMath.rotationMatrixToQuaternion(FloatArray(9), FloatArray(3)))
     }
 
     private fun assertNormalized(value: FloatArray) {

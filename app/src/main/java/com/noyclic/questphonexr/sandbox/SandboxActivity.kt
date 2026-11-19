@@ -11,6 +11,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import com.noyclic.questphonexr.vr.PhoneVrMath
 import android.hardware.input.InputManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -152,6 +153,10 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
     private var lastStatusUpdateMs = 0L
     private var trackingSender: XrTrackingUdpSender? = null
     @Volatile private var latestHeadRotationMatrix: FloatArray? = null
+    private val deviceRotationScratch = FloatArray(9)
+    private val displayRotationScratch = FloatArray(9)
+    private val headRotationSnapshotScratch = FloatArray(9)
+    private val quaternionScratch = FloatArray(4)
     private var pcBridgeHost = ""
     private var pcBridgeStatus = "ПК: отключён"
     private var shouldOpenPcBridgeOnStart = false
@@ -2643,46 +2648,53 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             event.sensor.type != Sensor.TYPE_GAME_ROTATION_VECTOR
         ) return
 
-        val deviceRotation = FloatArray(9)
-        val displayRotationMatrix = FloatArray(9)
-        SensorManager.getRotationMatrixFromVector(deviceRotation, event.values)
+        SensorManager.getRotationMatrixFromVector(deviceRotationScratch, event.values)
 
         val remapped = when (windowManager.defaultDisplay.rotation) {
             Surface.ROTATION_90 -> SensorManager.remapCoordinateSystem(
-                deviceRotation,
+                deviceRotationScratch,
                 SensorManager.AXIS_Y,
                 SensorManager.AXIS_MINUS_X,
-                displayRotationMatrix
+                displayRotationScratch
             )
             Surface.ROTATION_180 -> SensorManager.remapCoordinateSystem(
-                deviceRotation,
+                deviceRotationScratch,
                 SensorManager.AXIS_MINUS_X,
                 SensorManager.AXIS_MINUS_Y,
-                displayRotationMatrix
+                displayRotationScratch
             )
             Surface.ROTATION_270 -> SensorManager.remapCoordinateSystem(
-                deviceRotation,
+                deviceRotationScratch,
                 SensorManager.AXIS_MINUS_Y,
                 SensorManager.AXIS_X,
-                displayRotationMatrix
+                displayRotationScratch
             )
             else -> {
-                System.arraycopy(deviceRotation, 0, displayRotationMatrix, 0, 9)
+                System.arraycopy(deviceRotationScratch, 0, displayRotationScratch, 0, 9)
                 true
             }
         }
         if (remapped) {
-            renderer.updateHeadRotation(displayRotationMatrix)
-            latestHeadRotationMatrix = displayRotationMatrix.copyOf()
-            val quaternion = FloatArray(4)
-            SensorManager.getQuaternionFromVector(quaternion, event.values)
-            endXrRuntime.setHeadOrientation(
-                quaternion[1], quaternion[2], quaternion[3], quaternion[0]
-            )
-            EndXrInputSnapshotStore.publishHeadOrientation(
-                quaternion[1], quaternion[2], quaternion[3], quaternion[0]
-            )
-            trackingSender?.updateHeadRotation(displayRotationMatrix)
+            renderer.updateHeadRotation(displayRotationScratch)
+            System.arraycopy(displayRotationScratch, 0, headRotationSnapshotScratch, 0, 9)
+            latestHeadRotationMatrix = headRotationSnapshotScratch
+            if (PhoneVrMath.rotationMatrixToQuaternion(displayRotationScratch, quaternionScratch)) {
+                endXrRuntime.setHeadOrientation(
+                    quaternionScratch[0], quaternionScratch[1], quaternionScratch[2], quaternionScratch[3]
+                )
+                EndXrInputSnapshotStore.publishHeadOrientation(
+                    quaternionScratch[0], quaternionScratch[1], quaternionScratch[2], quaternionScratch[3]
+                )
+            } else {
+                SensorManager.getQuaternionFromVector(quaternionScratch, event.values)
+                endXrRuntime.setHeadOrientation(
+                    quaternionScratch[1], quaternionScratch[2], quaternionScratch[3], quaternionScratch[0]
+                )
+                EndXrInputSnapshotStore.publishHeadOrientation(
+                    quaternionScratch[1], quaternionScratch[2], quaternionScratch[3], quaternionScratch[0]
+                )
+            }
+            trackingSender?.updateHeadRotation(displayRotationScratch)
         }
     }
 

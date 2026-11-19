@@ -50,6 +50,46 @@ object EndXrRuntimeReadiness {
             "XR_EXT_hand_interaction",
             RuntimeCapabilityState.PARTIAL,
             "Pinch, grasp and aim-activate interaction values are exposed through the current input path; physical 6DoF controllers, real controller buttons/sticks and haptics are not implemented."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_android_thread_settings",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Thread priority scheduling hints (application/renderer main and worker threads) are implemented for Android OpenXR game engines."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_composition_layer_depth",
+            RuntimeCapabilityState.PARTIAL,
+            "Depth swapchain formats (GL_DEPTH24_STENCIL8, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT16) and projection depth info are accepted by the runtime."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_convert_timespec_time",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Conversion between OpenXR XrTime and POSIX struct timespec monotonic timestamps is implemented."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_locate_spaces",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Batched multi-space pose queries via xrLocateSpacesKHR (and OpenXR 1.1 core xrLocateSpaces) are implemented."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_EXT_performance_settings",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "CPU/GPU performance level hints via xrPerfSettingsSetPerformanceLevelEXT are accepted by the runtime."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_EXT_local_floor",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Standing floor-origin reference space LOCAL_FLOOR is supported alongside VIEW, LOCAL and STAGE."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_FB_display_refresh_rate",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Display refresh rate enumeration, current query and requests (60/72/90/120 Hz) plus change events are implemented."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_FB_color_space",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Color space enumeration and active selection (Rec709, Quest, Rec2020) are implemented."
         )
     )
 
