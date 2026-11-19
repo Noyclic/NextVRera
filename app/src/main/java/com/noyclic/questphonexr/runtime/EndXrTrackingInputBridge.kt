@@ -6,7 +6,6 @@ import com.noyclic.questphonexr.tracking.TrackingProviderAvailability
 import com.noyclic.questphonexr.tracking.TrackingProviderId
 import com.noyclic.questphonexr.tracking.TrackingProviderManager
 import com.noyclic.questphonexr.tracking.TrackingProviderManagerSnapshot
-import com.noyclic.questphonexr.tracking.TrackingHealthTracker
 
 /**
  * Common entrance from every tracking implementation into the existing EndXR input path.
@@ -16,7 +15,10 @@ import com.noyclic.questphonexr.tracking.TrackingHealthTracker
  */
 internal object EndXrTrackingInputBridge {
     private val providerManager = TrackingProviderManager()
+    private val healthTracker = TrackingHealthTracker()
+    private val healthTracker = com.noyclic.questphonexr.tracking.TrackingHealthTracker()
 
+    @Synchronized
     fun publish(
         providerId: TrackingProviderId,
         frame: HandTrackingFrame,
@@ -32,6 +34,7 @@ internal object EndXrTrackingInputBridge {
             receivedAtUptimeMs = now
         ) ?: return false
 
+        healthTracker.onFrameAccepted(now)
         EndXrHandTrackingDiagnostics.onFrame(selected.frame, selected.providerId.wireId)
         val encoded = EndXrHandInputEncoder.encode(selected.frame)
         EndXrHandTrackingDiagnostics.updateNaturalGestures(
@@ -49,30 +52,53 @@ internal object EndXrTrackingInputBridge {
         return true
     }
 
+    @Synchronized
     fun selectProvider(providerId: TrackingProviderId): Boolean {
         val selected = providerManager.selectProvider(providerId)
-        if (selected) clearInputSnapshot()
+        if (selected) {
+            clearInputSnapshot()
+            healthTracker.reset()
+        }
         return selected
     }
 
+    @Synchronized
     fun setAutoMode() {
         providerManager.setAutoMode()
         clearInputSnapshot()
+        healthTracker.reset()
     }
 
+    @Synchronized
     fun updateProviderAvailability(
         providerId: TrackingProviderId,
         availability: TrackingProviderAvailability
     ): Boolean {
         val updated = providerManager.updateAvailability(providerId, availability)
-        if (updated) {
-            clearInputSnapshot()
-            healthTracker.reset()
-        }
+        if (updated) clearInputSnapshot()
         return updated
     }
 
-    fun clearFrames() = providerManager.clearFrames()
+    /** Advances freshness state; returns true when stale input was cleared on this tick. */
+    @Synchronized
+    fun tick(nowUptimeMs: Long = runCatching { SystemClock.uptimeMillis() }.getOrDefault(0L)): Boolean {
+        if (!healthTracker.tick(nowUptimeMs)) return false
+        clearInputSnapshot()
+        healthTracker.onInputCleared(nowUptimeMs)
+        providerManager.clearFrames()
+        return true
+    }
+
+    @Synchronized
+    fun healthSnapshot(): com.noyclic.questphonexr.tracking.TrackingHealthTracker.Snapshot =
+        healthTracker.snapshot()
+
+    @Synchronized
+    fun clearFrames() {
+        providerManager.clearFrames()
+        clearInputSnapshot()
+        healthTracker.reset()
+    }
 
     private fun clearInputSnapshot() {
         // The Android SDK stub throws in local JVM tests; a zero timestamp is safe there.
@@ -82,6 +108,7 @@ internal object EndXrTrackingInputBridge {
         EndXrInputSnapshotStore.clear(nowElapsedRealtimeNanos)
     }
 
+    @Synchronized
     fun diagnosticSnapshot(): TrackingProviderManagerSnapshot {
         // Android's mocked SystemClock throws in local JVM tests. Diagnostics must
         // remain readable there, while production continues to use receiver uptime.
