@@ -14,6 +14,10 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.display.DisplayManager
+import android.view.Display
+import android.view.Surface
+import com.noyclic.questphonexr.vr.PhoneVrMath
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -330,10 +334,14 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
         getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     }
     private val sensorManager by lazy { getSystemService(SENSOR_SERVICE) as SensorManager }
+    private val displayManager by lazy { getSystemService(DISPLAY_SERVICE) as DisplayManager }
     private val rotationSensor by lazy {
         sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
             ?: sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     }
+    private val deviceRotationScratch = FloatArray(9)
+    private val displayRotationScratch = FloatArray(9)
+    private val quaternionScratch = FloatArray(4)
 
     @Volatile private var handTracker: HandLandmarkerController? = null
     @Volatile private var rtmposeLiteRtRunner: RtmposeLiteRtRunner? = null
@@ -856,11 +864,42 @@ class EndXrHandTrackingService : Service(), LifecycleOwner, SensorEventListener 
         if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR &&
             event.sensor.type != Sensor.TYPE_GAME_ROTATION_VECTOR
         ) return
-        val quaternion = FloatArray(4)
-        SensorManager.getQuaternionFromVector(quaternion, event.values)
-        EndXrInputSnapshotStore.publishHeadOrientation(
-            quaternion[1], quaternion[2], quaternion[3], quaternion[0]
-        )
+        SensorManager.getRotationMatrixFromVector(deviceRotationScratch, event.values)
+        val displayRotation = displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: Surface.ROTATION_0
+        val remapped = when (displayRotation) {
+            Surface.ROTATION_90 -> SensorManager.remapCoordinateSystem(
+                deviceRotationScratch,
+                SensorManager.AXIS_Y,
+                SensorManager.AXIS_MINUS_X,
+                displayRotationScratch
+            )
+            Surface.ROTATION_180 -> SensorManager.remapCoordinateSystem(
+                deviceRotationScratch,
+                SensorManager.AXIS_MINUS_X,
+                SensorManager.AXIS_MINUS_Y,
+                displayRotationScratch
+            )
+            Surface.ROTATION_270 -> SensorManager.remapCoordinateSystem(
+                deviceRotationScratch,
+                SensorManager.AXIS_MINUS_Y,
+                SensorManager.AXIS_X,
+                displayRotationScratch
+            )
+            else -> {
+                System.arraycopy(deviceRotationScratch, 0, displayRotationScratch, 0, 9)
+                true
+            }
+        }
+        if (remapped && PhoneVrMath.rotationMatrixToQuaternion(displayRotationScratch, quaternionScratch)) {
+            EndXrInputSnapshotStore.publishHeadOrientation(
+                quaternionScratch[0], quaternionScratch[1], quaternionScratch[2], quaternionScratch[3]
+            )
+        } else {
+            SensorManager.getQuaternionFromVector(quaternionScratch, event.values)
+            EndXrInputSnapshotStore.publishHeadOrientation(
+                quaternionScratch[1], quaternionScratch[2], quaternionScratch[3], quaternionScratch[0]
+            )
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

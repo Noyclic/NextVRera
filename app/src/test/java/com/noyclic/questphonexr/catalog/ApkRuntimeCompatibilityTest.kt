@@ -465,4 +465,22 @@ class ApkRuntimeCompatibilityTest {
         }
     }
 
+    @Test
+    fun hybridOpenXrAndLegacyVrApiApkPrioritizesOpenXrCandidateRoute() {
+        val result = ApkRuntimeCompatibility.assess(
+            info = sample(),
+            archiveEntries = listOf(
+                "lib/arm64-v8a/libopenxr_loader.so",
+                "lib/arm64-v8a/libvrapi.so",
+                "lib/arm64-v8a/libunity.so"
+            ),
+            deviceApiLevel = 35,
+            supportedAbis = listOf("arm64-v8a"),
+            missingRequiredFeatures = emptySet()
+        )
+
+        assertEquals(ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE, result.route)
+        assertTrue(result.xrTechnologies.contains("OpenXR"))
+    }
+
 }

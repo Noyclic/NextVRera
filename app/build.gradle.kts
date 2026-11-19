@@ -22,6 +22,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17")
@@ -66,6 +69,10 @@ kotlin {
 dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     val cameraXVersion = "1.4.2"
     implementation("androidx.camera:camera-camera2:$cameraXVersion")

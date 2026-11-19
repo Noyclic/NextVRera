@@ -25,8 +25,9 @@ object HandRoiRgbPreprocessor {
     ): Boolean {
         val rotation = normalizeRightAngleRotation(sourceRotationDegrees) ?: return false
         if (outputWidthPx <= 0 || outputHeightPx <= 0) return false
-        val rawDimensions = rawDimensionsFor(crop, rotation)
-        val requiredSourcePixels = rawDimensions.first.toLong() * rawDimensions.second.toLong()
+        val rawWidth = rawWidthFor(crop, rotation)
+        val rawHeight = rawHeightFor(crop, rotation)
+        val requiredSourcePixels = rawWidth.toLong() * rawHeight.toLong()
         val requiredDestinationValues =
             outputWidthPx.toLong() * outputHeightPx.toLong() * CHANNELS_PER_PIXEL
         if (requiredSourcePixels > sourceArgb.size.toLong() ||
@@ -51,16 +52,16 @@ object HandRoiRgbPreprocessor {
                 val x1 = (x0 + 1).coerceAtMost(cropRight)
                 val xWeight = (sourceX - x0).coerceIn(0f, 1f)
                 val topLeft = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x0, y0, rotation
+                    sourceArgb, rawWidth, rawHeight, x0, y0, rotation
                 )
                 val topRight = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x1, y0, rotation
+                    sourceArgb, rawWidth, rawHeight, x1, y0, rotation
                 )
                 val bottomLeft = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x0, y1, rotation
+                    sourceArgb, rawWidth, rawHeight, x0, y1, rotation
                 )
                 val bottomRight = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x1, y1, rotation
+                    sourceArgb, rawWidth, rawHeight, x1, y1, rotation
                 )
                 destinationRgb[outputIndex++] = interpolateChannel(
                     topLeft ushr 16 and 0xff, topRight ushr 16 and 0xff,
@@ -92,8 +93,9 @@ object HandRoiRgbPreprocessor {
     ): Boolean {
         val rotation = normalizeRightAngleRotation(sourceRotationDegrees) ?: return false
         if (outputSizePx <= 0) return false
-        val rawDimensions = rawDimensionsFor(crop, rotation)
-        val requiredSourcePixels = rawDimensions.first.toLong() * rawDimensions.second.toLong()
+        val rawWidth = rawWidthFor(crop, rotation)
+        val rawHeight = rawHeightFor(crop, rotation)
+        val requiredSourcePixels = rawWidth.toLong() * rawHeight.toLong()
         val planeSizeLong = outputSizePx.toLong() * outputSizePx.toLong()
         if (requiredSourcePixels > sourceArgb.size.toLong() ||
             planeSizeLong * CHANNELS_PER_PIXEL > destinationNchw.size.toLong() ||
@@ -118,16 +120,16 @@ object HandRoiRgbPreprocessor {
                 val x1 = (x0 + 1).coerceAtMost(cropRight)
                 val xWeight = (sourceX - x0).coerceIn(0f, 1f)
                 val topLeft = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x0, y0, rotation
+                    sourceArgb, rawWidth, rawHeight, x0, y0, rotation
                 )
                 val topRight = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x1, y0, rotation
+                    sourceArgb, rawWidth, rawHeight, x1, y0, rotation
                 )
                 val bottomLeft = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x0, y1, rotation
+                    sourceArgb, rawWidth, rawHeight, x0, y1, rotation
                 )
                 val bottomRight = argbAtRotated(
-                    sourceArgb, rawDimensions.first, rawDimensions.second, x1, y1, rotation
+                    sourceArgb, rawWidth, rawHeight, x1, y1, rotation
                 )
                 val pixelIndex = outputY * outputSizePx + outputX
                 val red = interpolateChannel(
@@ -153,10 +155,17 @@ object HandRoiRgbPreprocessor {
         return true
     }
 
-    private fun rawDimensionsFor(crop: HandRoiCrop, rotation: Int): Pair<Int, Int> =
+    private fun rawWidthFor(crop: HandRoiCrop, rotation: Int): Int =
         when (rotation) {
-            0, 180 -> crop.sourceWidthPx to crop.sourceHeightPx
-            90, 270 -> crop.sourceHeightPx to crop.sourceWidthPx
+            0, 180 -> crop.sourceWidthPx
+            90, 270 -> crop.sourceHeightPx
+            else -> error("Unsupported source rotation: $rotation")
+        }
+
+    private fun rawHeightFor(crop: HandRoiCrop, rotation: Int): Int =
+        when (rotation) {
+            0, 180 -> crop.sourceHeightPx
+            90, 270 -> crop.sourceWidthPx
             else -> error("Unsupported source rotation: $rotation")
         }
 
@@ -168,11 +177,25 @@ object HandRoiRgbPreprocessor {
         rotatedY: Int,
         rotation: Int
     ): Int {
-        val (rawX, rawY) = when (rotation) {
-            0 -> rotatedX to rotatedY
-            90 -> rotatedY to (rawHeight - 1 - rotatedX)
-            180 -> (rawWidth - 1 - rotatedX) to (rawHeight - 1 - rotatedY)
-            270 -> (rawWidth - 1 - rotatedY) to rotatedX
+        val rawX: Int
+        val rawY: Int
+        when (rotation) {
+            0 -> {
+                rawX = rotatedX
+                rawY = rotatedY
+            }
+            90 -> {
+                rawX = rotatedY
+                rawY = rawHeight - 1 - rotatedX
+            }
+            180 -> {
+                rawX = rawWidth - 1 - rotatedX
+                rawY = rawHeight - 1 - rotatedY
+            }
+            270 -> {
+                rawX = rawWidth - 1 - rotatedY
+                rawY = rotatedX
+            }
             else -> error("Unsupported source rotation: $rotation")
         }
         return sourceArgb[rawY * rawWidth + rawX]

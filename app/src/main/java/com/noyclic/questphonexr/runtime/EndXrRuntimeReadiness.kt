@@ -50,6 +50,26 @@ object EndXrRuntimeReadiness {
             "XR_EXT_hand_interaction",
             RuntimeCapabilityState.PARTIAL,
             "Pinch, grasp and aim-activate interaction values are exposed through the current input path; physical 6DoF controllers, real controller buttons/sticks and haptics are not implemented."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_android_thread_settings",
+            RuntimeCapabilityState.PARTIAL,
+            "The runtime makes a best-effort Android thread-priority request. The OS may reject priority changes; actual scheduling effects are not verified on the target phone."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_convert_timespec_time",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Conversion between OpenXR XrTime and POSIX struct timespec monotonic timestamps is implemented and covered by native tests."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_KHR_locate_spaces",
+            RuntimeCapabilityState.VERIFIED_IN_PROCESS,
+            "Batched multi-space pose queries via xrLocateSpacesKHR (and OpenXR 1.1 core xrLocateSpaces) are implemented and covered by native tests."
+        ),
+        RuntimeOpenXrExtensionCapability(
+            "XR_EXT_local_floor",
+            RuntimeCapabilityState.PARTIAL,
+            "LOCAL_FLOOR and STAGE use a fixed 1.65 m eye-height estimate. This is not calibrated floor tracking, does not provide room bounds, and does not add positional 6DoF."
         )
     )
 
@@ -96,7 +116,7 @@ object EndXrRuntimeReadiness {
     const val OPEN_XR_GAME_WARNING =
         "Перед запуском внешней игры учитывай ограничения: camera foreground service передаёт MediaPipe pinch и аналоговую силу grasp (0..1), приближённую позу ладони и 26 суставов через IPC; XR_EXT_hand_tracking и XR_EXT_hand_interaction доступны частично (pinch, grasp, aim-activate и hand poses), но внешний игровой процесс ещё не проверен. " +
             "В QuestPhoneXR можно вручную выбрать одно установленное приложение и выдать ему read-only доступ только к URI controller_state; разрешение привязано к подписи пакета и может быть отозвано. " +
-            "Игра всё равно должна поддерживать этот IPC-контракт. Это не настоящие tracked controller poses и не 6DoF; Android gamepad capture и haptics пока отсутствуют, поэтому полноценная игра ещё не подтверждена."
+            "Игра всё равно должна поддерживать этот IPC-контракт. Это не настоящие tracked controller poses и не 6DoF; Android gamepad capture и haptics пока отсутствуют. STAGE/LOCAL_FLOOR используют фиксированную оценку высоты глаз 1,65 м, а не калиброванный пол или guardian bounds."
 
     const val QUEST_GAME_WARNING =
         "Quest APK может зависеть от Meta/Oculus Runtime и системных сервисов гарнитуры. На обычном Android " +

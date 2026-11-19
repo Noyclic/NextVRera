@@ -366,12 +366,11 @@ object ApkRuntimeCompatibility {
             hardBlockers.isNotEmpty() -> ApkLaunchRoute.DEVICE_REQUIREMENTS_BLOCKED
             endGvrAssessment.classification == EndGvrClassification.GEAR_VR_MARKED ->
                 ApkLaunchRoute.GEAR_VR_LEGACY_CANDIDATE
+            // Hybrid APKs that bundle both libopenxr_loader.so and legacy libvrapi.so should
+            // prioritize the managed OpenXR EndXR route unless explicit Gear VR markers exist.
+            "OpenXR" in xrTechnologies -> ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE
             endGvrAssessment.classification == EndGvrClassification.LEGACY_OCULUS_MOBILE_SDK ->
                 ApkLaunchRoute.LEGACY_OCULUS_MOBILE_CANDIDATE
-            // OpenXR apps with missing VR sensor declarations still deserve the
-            // managed EndXR preflight. The missing feature remains a visible warning;
-            // it must not hide the only route that can test the external runtime.
-            "OpenXR" in xrTechnologies -> ApkLaunchRoute.OPENXR_RUNTIME_CANDIDATE
             questSignals.isNotEmpty() -> ApkLaunchRoute.QUEST_RUNTIME_REQUIRED
             xrTechnologies.isNotEmpty() -> ApkLaunchRoute.XR_SOURCE_ADAPTATION_REQUIRED
             else -> ApkLaunchRoute.ANDROID_APP_CANDIDATE

@@ -29,6 +29,8 @@
 #include <jni.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #else
 using EGLDisplay = void*;
 using EGLConfig = void*;
@@ -46,6 +48,11 @@ constexpr EGLint EGL_WIDTH = 0x3057;
 constexpr EGLint EGL_HEIGHT = 0x3056;
 constexpr EGLint EGL_FALSE = 0;
 constexpr GLenum GL_TEXTURE_2D = 0x0DE1;
+constexpr GLenum GL_TEXTURE_2D_ARRAY = 0x8C1A;
+constexpr GLenum GL_SRGB8_ALPHA8 = 0x8C43;
+constexpr GLenum GL_DEPTH24_STENCIL8 = 0x88F0;
+constexpr GLenum GL_DEPTH_COMPONENT24 = 0x81A6;
+constexpr GLenum GL_DEPTH_COMPONENT16 = 0x81A5;
 constexpr GLenum GL_RGBA8 = 0x8058;
 constexpr GLenum GL_RGBA = 0x1908;
 constexpr GLenum GL_UNSIGNED_BYTE = 0x1401;
@@ -152,9 +159,20 @@ struct XrInstance_T {
     bool glesExtensionEnabled = false;
     bool handTrackingExtensionEnabled = false;
     bool handInteractionExtensionEnabled = false;
+    bool androidThreadSettingsExtensionEnabled = false;
+    bool convertTimespecTimeExtensionEnabled = false;
+    bool locateSpacesExtensionEnabled = false;
+    bool performanceSettingsExtensionEnabled = false;
+    bool localFloorExtensionEnabled = false;
+    bool displayRefreshRateExtensionEnabled = false;
+    bool colorSpaceExtensionEnabled = false;
     bool glesRequirementsQueried = false;
+#if defined(__ANDROID__)
+    bool cursorColumnsCached = false;
+    std::array<jint, 40> cursorColumnIndices{};
+#endif
     std::mutex eventMutex;
-    std::deque<XrEventDataSessionStateChanged> pendingSessionEvents;
+    std::deque<XrEventDataBuffer> pendingSessionEvents;
     std::unordered_map<std::string, XrPath> pathHandles;
     std::unordered_map<XrPath, std::string> pathStrings;
     std::unordered_map<XrPath, std::vector<XrActionSuggestedBinding>> suggestedBindings;
@@ -189,18 +207,24 @@ struct XrSession_T {
     std::unordered_map<XrActionStateKey, XrActionStateSnapshot, XrActionStateKeyHash>
         actionStateSnapshots;
     GLuint compositorFramebuffer = 0;
+    float displayRefreshRateHz = 60.0f;
+    XrColorSpaceFB colorSpace = XR_COLOR_SPACE_REC709_FB;
 };
 
 struct XrSwapchain_T {
     XrSession owner = XR_NULL_HANDLE;
+    std::int64_t format = 0;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    std::uint32_t arraySize = 1;
     std::uint32_t imageCount = 3;
     std::array<GLuint, 3> images{};
     std::uint32_t nextAcquire = 0;
     std::uint32_t acquiredIndex = std::numeric_limits<std::uint32_t>::max();
     std::uint32_t lastReleasedIndex = std::numeric_limits<std::uint32_t>::max();
     bool imageWaited = false;
+    bool isDepth = false;
+    bool fboValidated = false;
 };
 
 struct XrSpace_T {
@@ -264,17 +288,40 @@ XrPosef inversePose(const XrPosef& value);
 constexpr XrSystemId kEndXrSystemId = 1;
 constexpr std::uint32_t kRecommendedEyeWidth = 960;
 constexpr std::uint32_t kRecommendedEyeHeight = 1080;
-constexpr std::uint32_t kMaximumEyeWidth = 1200;
-constexpr std::uint32_t kMaximumEyeHeight = 1200;
+constexpr std::uint32_t kMaximumEyeWidth = 2048;
+constexpr std::uint32_t kMaximumEyeHeight = 2048;
 constexpr std::uint32_t kEndXrVendorId = 0x454E4458; // "ENDX"
-constexpr XrVersion kEndXrApiVersion = XR_MAKE_VERSION(1, 0, 0);
-// OpenXR patch revisions do not add a new API surface. EndXR currently
-// implements the 1.0 command set, so 1.0.x is accepted while 1.1+ is rejected.
+constexpr XrVersion kMinEndXrApiVersion = XR_MAKE_VERSION(1, 0, 0);
+constexpr XrVersion kEndXrApiVersion = XR_MAKE_VERSION(1, 1, 65);
 bool isSupportedApiVersion(XrVersion requested) {
-    return XR_VERSION_MAJOR(requested) == XR_VERSION_MAJOR(kEndXrApiVersion) &&
-        XR_VERSION_MINOR(requested) <= XR_VERSION_MINOR(kEndXrApiVersion);
+    return XR_VERSION_MAJOR(requested) == 1 && XR_VERSION_MINOR(requested) <= 1;
 }
+constexpr float kDefaultStageEyeHeightMeters = 1.65f;
+constexpr std::uint32_t kMaxSupportedLayers = 1;
+constexpr std::array<float, 4> kSupportedRefreshRatesHz{{60.0f, 72.0f, 90.0f, 120.0f}};
+constexpr std::array<XrColorSpaceFB, 3> kSupportedColorSpacesFB{{
+    XR_COLOR_SPACE_REC709_FB,
+    XR_COLOR_SPACE_QUEST_FB,
+    XR_COLOR_SPACE_REC2020_FB
+}};
+
 constexpr XrDuration kFramePeriod = 33333333;
+XrDuration sessionFramePeriodNs() {
+    // Until Android display-mode switching is wired to the host compositor,
+    // keep the runtime's prediction conservative and honest at 30 Hz.
+    return kFramePeriod;
+}
+
+bool isColorSwapchainFormat(std::int64_t format) {
+    return format == static_cast<std::int64_t>(GL_RGBA8) ||
+        format == static_cast<std::int64_t>(GL_SRGB8_ALPHA8);
+}
+
+bool isDepthSwapchainFormat(std::int64_t format) {
+    return format == static_cast<std::int64_t>(GL_DEPTH24_STENCIL8) ||
+        format == static_cast<std::int64_t>(GL_DEPTH_COMPONENT24) ||
+        format == static_cast<std::int64_t>(GL_DEPTH_COMPONENT16);
+}
 constexpr float kHalfIpdMeters = 0.032f;
 constexpr const char* kRuntimeName = "EndXR Phone Runtime";
 constexpr const char* kSystemName = "EndXR Phone VR";
@@ -420,6 +467,13 @@ XrInstance_T* getInstance(XrInstance instance) {
     const auto found = g_instances.find(instance);
     return found == g_instances.end() ? nullptr : found->second;
 }
+bool isLocalFloorEnabled(const XrSession_T* session) {
+    if (session == nullptr) return false;
+    const XrInstance_T* instance = getInstance(session->owner);
+    if (instance == nullptr) return false;
+    return instance->requestedApiVersion >= XR_MAKE_VERSION(1, 1, 0) ||
+        instance->localFloorExtensionEnabled;
+}
 XrSession_T* getSession(XrSession session) {
     std::lock_guard<std::mutex> lock(g_sessionMutex);
     const auto found = g_sessions.find(session);
@@ -475,6 +529,16 @@ XrTime monotonicTimeNow() {
     return static_cast<XrTime>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
+template <typename EventT>
+void queueInstanceEvent(XrInstance_T* instance, const EventT& event) {
+    if (instance == nullptr) return;
+    static_assert(sizeof(EventT) <= sizeof(XrEventDataBuffer), "Event exceeds XrEventDataBuffer");
+    XrEventDataBuffer buffer{};
+    std::memcpy(&buffer, &event, sizeof(event));
+    std::lock_guard<std::mutex> lock(instance->eventMutex);
+    instance->pendingSessionEvents.push_back(buffer);
+}
+
 void queueSessionState(XrSession_T* session, XrSessionState state) {
     session->state = state;
     XrInstance_T* instance = getInstance(session->owner);
@@ -495,8 +559,7 @@ void queueSessionState(XrSession_T* session, XrSessionState state) {
         }
     }
 #endif
-    std::lock_guard<std::mutex> lock(instance->eventMutex);
-    instance->pendingSessionEvents.push_back(event);
+    queueInstanceEvent(instance, event);
 }
 bool graphicsContextIsCurrent(const XrSession_T* session) {
 #if defined(__ANDROID__)
@@ -508,8 +571,14 @@ bool graphicsContextIsCurrent(const XrSession_T* session) {
         session->config != nullptr && session->context != nullptr;
 #endif
 }
-bool createGlesTexture(std::uint32_t width, std::uint32_t height, GLuint* output) {
-    if (output == nullptr || width == 0 || height == 0) return false;
+bool createGlesTexture(
+    std::uint32_t width,
+    std::uint32_t height,
+    std::int64_t format,
+    std::uint32_t arraySize,
+    GLuint* output
+) {
+    if (output == nullptr || width == 0 || height == 0 || arraySize == 0) return false;
 #if defined(__ANDROID__)
     g_lastGlesError = 0;
     auto captureError = []() {
@@ -517,24 +586,34 @@ bool createGlesTexture(std::uint32_t width, std::uint32_t height, GLuint* output
         if (error != GL_NO_ERROR && g_lastGlesError == 0) g_lastGlesError = error;
         return error;
     };
+    const GLenum target = arraySize > 1 ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
+    const GLenum filter = isDepthSwapchainFormat(format) ? GL_NEAREST : GL_LINEAR;
+    const GLenum internalFormat = static_cast<GLenum>(format);
     GLuint texture = 0;
     glGenTextures(1, &texture);
     if (captureError() != GL_NO_ERROR || texture == 0) return false;
-    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindTexture(target, texture);
     if (captureError() != GL_NO_ERROR) { glDeleteTextures(1, &texture); return false; }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(filter));
     if (captureError() != GL_NO_ERROR) { glDeleteTextures(1, &texture); return false; }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(target, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(filter));
     if (captureError() != GL_NO_ERROR) { glDeleteTextures(1, &texture); return false; }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     if (captureError() != GL_NO_ERROR) { glDeleteTextures(1, &texture); return false; }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     if (captureError() != GL_NO_ERROR) { glDeleteTextures(1, &texture); return false; }
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, static_cast<GLsizei>(width),
-                   static_cast<GLsizei>(height));
+    if (arraySize > 1) {
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, internalFormat, static_cast<GLsizei>(width),
+                       static_cast<GLsizei>(height), static_cast<GLsizei>(arraySize));
+    } else {
+        glTexStorage2D(GL_TEXTURE_2D, 1, internalFormat, static_cast<GLsizei>(width),
+                       static_cast<GLsizei>(height));
+    }
     if (captureError() != GL_NO_ERROR) { glDeleteTextures(1, &texture); return false; }
     *output = texture;
 #else
+    (void)format;
+    (void)arraySize;
     static std::uint32_t nextTexture = 1;
     *output = nextTexture++;
 #endif
@@ -569,7 +648,6 @@ bool compositeProjectionLayer(XrSession_T* session,
         const auto& view = projection->views[eye];
         if (view.type != XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW ||
             view.subImage.swapchain == XR_NULL_HANDLE ||
-            view.subImage.imageArrayIndex != 0 ||
             view.subImage.imageRect.offset.x < 0 ||
             view.subImage.imageRect.offset.y < 0 ||
             view.subImage.imageRect.extent.width <= 0 ||
@@ -578,7 +656,9 @@ bool compositeProjectionLayer(XrSession_T* session,
             return false;
         }
         XrSwapchain_T* swapchain = getSwapchain(view.subImage.swapchain);
-        if (swapchain == nullptr || swapchain->owner != reinterpret_cast<XrSession>(session) ||
+        if (swapchain == nullptr || swapchain->isDepth ||
+            view.subImage.imageArrayIndex >= swapchain->arraySize ||
+            swapchain->owner != reinterpret_cast<XrSession>(session) ||
             swapchain->lastReleasedIndex >= swapchain->imageCount) {
 #if XR_PTR_SIZE != 8
             XrSession ownerHandle = XR_NULL_HANDLE;
@@ -588,7 +668,9 @@ bool compositeProjectionLayer(XrSession_T* session,
                     if (entry.second == session) ownerHandle = entry.first;
                 }
             }
-            if (swapchain == nullptr || swapchain->owner != ownerHandle ||
+            if (swapchain == nullptr || swapchain->isDepth ||
+                view.subImage.imageArrayIndex >= swapchain->arraySize ||
+                swapchain->owner != ownerHandle ||
                 swapchain->lastReleasedIndex >= swapchain->imageCount) {
                 if (error != nullptr) *error = XR_ERROR_LAYER_INVALID;
                 return false;
@@ -633,11 +715,9 @@ bool compositeProjectionLayer(XrSession_T* session,
     GLint previousReadFramebuffer = 0;
     GLint previousDrawFramebuffer = 0;
     GLint previousScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
-    GLfloat previousClearColor[4]{};
     GLboolean previousColorMask[4]{};
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFramebuffer);
-    glGetFloatv(GL_COLOR_CLEAR_VALUE, previousClearColor);
     glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
 
     if (session->compositorFramebuffer == 0) {
@@ -650,24 +730,39 @@ bool compositeProjectionLayer(XrSession_T* session,
 
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, session->compositorFramebuffer);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
 
     bool success = true;
     const GLint halfWidth = screenWidth / 2;
     for (std::uint32_t eye = 0; eye < 2; ++eye) {
-        const auto& rect = projection->views[eye].subImage.imageRect;
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, session->compositorFramebuffer);
-        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, swapchains[eye]->images[imageIndices[eye]], 0);
-        if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            success = false;
-            break;
+        const auto& subImage = projection->views[eye].subImage;
+        const auto& rect = subImage.imageRect;
+        if (swapchains[eye]->arraySize > 1) {
+            glFramebufferTextureLayer(
+                GL_READ_FRAMEBUFFER,
+                GL_COLOR_ATTACHMENT0,
+                swapchains[eye]->images[imageIndices[eye]],
+                0,
+                static_cast<GLint>(subImage.imageArrayIndex)
+            );
+        } else {
+            glFramebufferTexture2D(
+                GL_READ_FRAMEBUFFER,
+                GL_COLOR_ATTACHMENT0,
+                GL_TEXTURE_2D,
+                swapchains[eye]->images[imageIndices[eye]],
+                0
+            );
+        }
+        if (!swapchains[eye]->fboValidated) {
+            if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                success = false;
+                break;
+            }
         }
         const GLint destinationLeft = eye == 0 ? 0 : halfWidth;
         const GLint destinationRight = eye == 0 ? halfWidth : screenWidth;
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(
             rect.offset.x,
             rect.offset.y,
@@ -680,18 +775,20 @@ bool compositeProjectionLayer(XrSession_T* session,
             GL_COLOR_BUFFER_BIT,
             GL_LINEAR
         );
-        if (glGetError() != GL_NO_ERROR) {
+        if (!swapchains[eye]->fboValidated && glGetError() != GL_NO_ERROR) {
             success = false;
             break;
         }
+    }
+    if (success) {
+        swapchains[0]->fboValidated = true;
+        swapchains[1]->fboValidated = true;
     }
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
     glColorMask(previousColorMask[0], previousColorMask[1],
                 previousColorMask[2], previousColorMask[3]);
-    glClearColor(previousClearColor[0], previousClearColor[1],
-                 previousClearColor[2], previousClearColor[3]);
     if (previousScissorEnabled == GL_TRUE) glEnable(GL_SCISSOR_TEST);
     else glDisable(GL_SCISSOR_TEST);
 
@@ -728,15 +825,25 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateInstanceExtensionProperties(
     if (layerName != nullptr && layerName[0] != '\0') {
         return XR_ERROR_API_LAYER_NOT_PRESENT;
     }
-    constexpr std::array<const char*, 4> names{{
-        kAndroidExtension, kGlesExtension, XR_EXT_HAND_TRACKING_EXTENSION_NAME,
-        XR_EXT_HAND_INTERACTION_EXTENSION_NAME
+    constexpr std::array<const char*, 8> names{{
+        kAndroidExtension,
+        kGlesExtension,
+        XR_EXT_HAND_TRACKING_EXTENSION_NAME,
+        XR_EXT_HAND_INTERACTION_EXTENSION_NAME,
+        ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,
+        ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME,
+        XR_KHR_LOCATE_SPACES_EXTENSION_NAME,
+        XR_EXT_LOCAL_FLOOR_EXTENSION_NAME
     }};
-    constexpr std::array<std::uint32_t, 4> versions{{
+    constexpr std::array<std::uint32_t, 8> versions{{
         ENDXR_KHR_ANDROID_CREATE_INSTANCE_SPEC_VERSION,
         ENDXR_KHR_OPENGL_ES_ENABLE_SPEC_VERSION,
         XR_EXT_hand_tracking_SPEC_VERSION,
-        XR_EXT_hand_interaction_SPEC_VERSION
+        XR_EXT_hand_interaction_SPEC_VERSION,
+        ENDXR_KHR_ANDROID_THREAD_SETTINGS_SPEC_VERSION,
+        ENDXR_KHR_CONVERT_TIMESPEC_TIME_SPEC_VERSION,
+        XR_KHR_locate_spaces_SPEC_VERSION,
+        XR_EXT_local_floor_SPEC_VERSION
     }};
     *count = static_cast<std::uint32_t>(names.size());
     if (capacity == 0) return XR_SUCCESS;
@@ -761,7 +868,6 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
     if (createInfo == nullptr) return XR_ERROR_VALIDATION_FAILURE;
     if (createInfo->type != XR_TYPE_INSTANCE_CREATE_INFO) return XR_ERROR_VALIDATION_FAILURE;
     if (createInfo->enabledApiLayerCount != 0) return XR_ERROR_API_LAYER_NOT_PRESENT;
-    if (createInfo->enabledExtensionCount > 4) return XR_ERROR_EXTENSION_NOT_PRESENT;
     if (createInfo->enabledExtensionCount > 0 && createInfo->enabledExtensionNames == nullptr) {
         return XR_ERROR_VALIDATION_FAILURE;
     }
@@ -770,6 +876,10 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
     bool glesEnabled = false;
     bool handTrackingEnabled = false;
     bool handInteractionEnabled = false;
+    bool androidThreadSettingsEnabled = false;
+    bool convertTimespecTimeEnabled = false;
+    bool locateSpacesEnabled = false;
+    bool localFloorEnabled = false;
     for (std::uint32_t i = 0; i < createInfo->enabledExtensionCount; ++i) {
         const char* name = createInfo->enabledExtensionNames[i];
         if (name == nullptr) return XR_ERROR_VALIDATION_FAILURE;
@@ -785,6 +895,18 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
         } else if (std::strcmp(name, XR_EXT_HAND_INTERACTION_EXTENSION_NAME) == 0) {
             if (handInteractionEnabled) return XR_ERROR_NAME_DUPLICATED;
             handInteractionEnabled = true;
+        } else if (std::strcmp(name, ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME) == 0) {
+            if (androidThreadSettingsEnabled) return XR_ERROR_NAME_DUPLICATED;
+            androidThreadSettingsEnabled = true;
+        } else if (std::strcmp(name, ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME) == 0) {
+            if (convertTimespecTimeEnabled) return XR_ERROR_NAME_DUPLICATED;
+            convertTimespecTimeEnabled = true;
+        } else if (std::strcmp(name, XR_KHR_LOCATE_SPACES_EXTENSION_NAME) == 0) {
+            if (locateSpacesEnabled) return XR_ERROR_NAME_DUPLICATED;
+            locateSpacesEnabled = true;
+        } else if (std::strcmp(name, XR_EXT_LOCAL_FLOOR_EXTENSION_NAME) == 0) {
+            if (localFloorEnabled) return XR_ERROR_NAME_DUPLICATED;
+            localFloorEnabled = true;
         } else {
             return XR_ERROR_EXTENSION_NOT_PRESENT;
         }
@@ -815,6 +937,10 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
     created->glesExtensionEnabled = glesEnabled;
     created->handTrackingExtensionEnabled = handTrackingEnabled;
     created->handInteractionExtensionEnabled = handInteractionEnabled;
+    created->androidThreadSettingsExtensionEnabled = androidThreadSettingsEnabled;
+    created->convertTimespecTimeExtensionEnabled = convertTimespecTimeEnabled;
+    created->locateSpacesExtensionEnabled = locateSpacesEnabled;
+    created->localFloorExtensionEnabled = localFloorEnabled;
     if (androidInfo != nullptr) {
 #if defined(__ANDROID__)
         created->applicationVm = reinterpret_cast<JavaVM*>(androidInfo->applicationVM);
@@ -976,10 +1102,9 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystemProperties(
     std::snprintf(properties->systemName, sizeof(properties->systemName), "%s", kSystemName);
     properties->graphicsProperties.maxSwapchainImageWidth = kMaximumEyeWidth;
     properties->graphicsProperties.maxSwapchainImageHeight = kMaximumEyeHeight;
-    // The current phone compositor accepts one projection layer. Report the
-    // implemented limit rather than claiming the OpenXR minimum of 16 while
-    // xrEndFrame would reject multiple layers.
-    properties->graphicsProperties.maxLayerCount = 1;
+    // Only one stereo projection layer is composited. Additional quad/cylinder
+    // layers are not rendered yet, so do not advertise them as supported.
+    properties->graphicsProperties.maxLayerCount = kMaxSupportedLayers;
     properties->trackingProperties.orientationTracking = XR_TRUE;
     properties->trackingProperties.positionTracking = XR_FALSE;
     auto* next = static_cast<BaseInStructure*>(properties->next);
@@ -989,6 +1114,10 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystemProperties(
                 reinterpret_cast<XrSystemHandTrackingPropertiesEXT*>(next);
             handProperties->supportsHandTracking =
                 getInstance(instance)->handTrackingExtensionEnabled ? XR_TRUE : XR_FALSE;
+        } else if (next->type == XR_TYPE_SYSTEM_COLOR_SPACE_PROPERTIES_FB) {
+            auto* colorSpaceProps =
+                reinterpret_cast<XrSystemColorSpacePropertiesFB*>(next);
+            colorSpaceProps->colorSpace = XR_COLOR_SPACE_REC709_FB;
         }
         next = const_cast<BaseInStructure*>(
             static_cast<const BaseInStructure*>(next->next));
@@ -1087,7 +1216,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHRImpl(
         return XR_ERROR_VALIDATION_FAILURE;
     }
     requirements->minApiVersionSupported = XR_MAKE_VERSION(3, 0, 0);
-    requirements->maxApiVersionSupported = XR_MAKE_VERSION(3, 0, 0);
+    requirements->maxApiVersionSupported = XR_MAKE_VERSION(3, 2, 0);
     owner->glesRequirementsQueried = true;
     return XR_SUCCESS;
 }
@@ -1243,7 +1372,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrPollEvent(
     if (eventData == nullptr) return XR_ERROR_VALIDATION_FAILURE;
     std::lock_guard<std::mutex> lock(owner->eventMutex);
     if (owner->pendingSessionEvents.empty()) return XR_EVENT_UNAVAILABLE;
-    const XrEventDataSessionStateChanged event = owner->pendingSessionEvents.front();
+    const XrEventDataBuffer event = owner->pendingSessionEvents.front();
     owner->pendingSessionEvents.pop_front();
     std::memset(eventData, 0, sizeof(*eventData));
     std::memcpy(eventData, &event, sizeof(event));
@@ -1262,15 +1391,16 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrameImpl(
     if (!object->running) return XR_ERROR_SESSION_NOT_RUNNING;
     if (object->frameWaited || object->frameBegun) return XR_ERROR_CALL_ORDER_INVALID;
     const XrTime now = monotonicTimeNow();
+    const XrDuration period = sessionFramePeriodNs();
     const XrTime next = object->hasPredictedTime
-        ? std::max(now, object->predictedDisplayTime + kFramePeriod)
-        : now + kFramePeriod;
+        ? std::max(now + period, object->predictedDisplayTime + 1)
+        : now + period;
     object->predictedDisplayTime = next;
-    object->predictedDisplayPeriod = kFramePeriod;
+    object->predictedDisplayPeriod = period;
     object->hasPredictedTime = true;
     object->frameWaited = true;
     frameState->predictedDisplayTime = next;
-    frameState->predictedDisplayPeriod = kFramePeriod;
+    frameState->predictedDisplayPeriod = period;
     frameState->shouldRender =
         object->state == XR_SESSION_STATE_VISIBLE ||
         object->state == XR_SESSION_STATE_FOCUSED ? XR_TRUE : XR_FALSE;
@@ -1305,21 +1435,28 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrameImpl(
     if (endInfo->environmentBlendMode != XR_ENVIRONMENT_BLEND_MODE_OPAQUE) {
         return XR_ERROR_ENVIRONMENT_BLEND_MODE_UNSUPPORTED;
     }
-    if (endInfo->layerCount > 1 ||
-        (endInfo->layerCount > 0 && endInfo->layers == nullptr)) {
+    const auto finishFrame = [object]() {
+        object->frameWaited = false;
+        object->frameBegun = false;
+    };
+    if (endInfo->layerCount > kMaxSupportedLayers) {
+        finishFrame();
         return XR_ERROR_LAYER_LIMIT_EXCEEDED;
     }
+    if (endInfo->layerCount > 0 && endInfo->layers == nullptr) {
+        finishFrame();
+        return XR_ERROR_LAYER_INVALID;
+    }
+    const XrCompositionLayerProjection* primaryProjection = nullptr;
     if (endInfo->layerCount == 1) {
         const XrCompositionLayerBaseHeader* layer = endInfo->layers[0];
         if (layer == nullptr || layer->type != XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
+            finishFrame();
             return XR_ERROR_LAYER_INVALID;
         }
-        const auto* projection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
+        primaryProjection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
         XrResult composeError = XR_SUCCESS;
-        if (compositeProjectionLayer(object, projection, &composeError)) {
-            // The application is done with this frame. The host compositor has
-            // copied the two released images into the current Android window surface.
-        } else {
+        if (!compositeProjectionLayer(object, primaryProjection, &composeError)) {
             object->frameWaited = false;
             object->frameBegun = false;
             return composeError;
@@ -1328,10 +1465,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrameImpl(
     object->frameWaited = false;
     object->frameBegun = false;
 #if defined(__ANDROID__)
-    // Only count a frame when the runtime successfully composited a submitted
-    // projection layer. Empty xrEndFrame calls are valid OpenXR calls, but they
-    // are not evidence that the game sent an image to the phone display.
-    if (endInfo->layerCount == 1) {
+    if (primaryProjection != nullptr) {
         ++object->telemetryFrameCount;
         if (object->telemetryFrameCount == 1 || object->telemetryFrameCount % 30 == 0) {
             if (XrInstance_T* owner = getInstance(object->owner)) {
@@ -1352,15 +1486,20 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateReferenceSpaces(
     XrSession session, std::uint32_t capacity, std::uint32_t* count,
     XrReferenceSpaceType* spaces
 ) {
-    if (getSession(session) == nullptr) return XR_ERROR_HANDLE_INVALID;
+    const XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
     if (count == nullptr) return XR_ERROR_VALIDATION_FAILURE;
-    *count = 2;
+    const bool includeLocalFloor = isLocalFloorEnabled(object);
+    const std::uint32_t total = includeLocalFloor ? 4u : 3u;
+    *count = total;
     if (capacity == 0) return XR_SUCCESS;
     if (spaces == nullptr) return XR_ERROR_VALIDATION_FAILURE;
-    const std::uint32_t fill = std::min<std::uint32_t>(capacity, 2);
+    const std::uint32_t fill = std::min(capacity, total);
     if (fill >= 1) spaces[0] = XR_REFERENCE_SPACE_TYPE_VIEW;
     if (fill >= 2) spaces[1] = XR_REFERENCE_SPACE_TYPE_LOCAL;
-    return capacity < 2 ? XR_ERROR_SIZE_INSUFFICIENT : XR_SUCCESS;
+    if (fill >= 3) spaces[2] = XR_REFERENCE_SPACE_TYPE_STAGE;
+    if (includeLocalFloor && fill >= 4) spaces[3] = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+    return capacity < total ? XR_ERROR_SIZE_INSUFFICIENT : XR_SUCCESS;
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL endxrGetReferenceSpaceBoundsRect(
@@ -1368,17 +1507,18 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetReferenceSpaceBoundsRect(
     XrReferenceSpaceType referenceSpaceType,
     XrExtent2Df* bounds
 ) {
-    if (getSession(session) == nullptr) return XR_ERROR_HANDLE_INVALID;
+    const XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
     if (bounds == nullptr) return XR_ERROR_VALIDATION_FAILURE;
-
-    // EndXR currently exposes VIEW and LOCAL spaces only. It has no room-scale
-    // guardian/floor-boundary source, so supported spaces report the standard
-    // XR_SPACE_BOUNDS_UNAVAILABLE success code with zero extents. STAGE remains
-    // unsupported rather than inventing a physical boundary for a 3DoF phone.
     bounds->width = 0.0f;
     bounds->height = 0.0f;
+    const bool localFloorAllowed =
+        referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR &&
+        isLocalFloorEnabled(object);
     if (referenceSpaceType != XR_REFERENCE_SPACE_TYPE_VIEW &&
-        referenceSpaceType != XR_REFERENCE_SPACE_TYPE_LOCAL) {
+        referenceSpaceType != XR_REFERENCE_SPACE_TYPE_LOCAL &&
+        referenceSpaceType != XR_REFERENCE_SPACE_TYPE_STAGE &&
+        !localFloorAllowed) {
         return XR_ERROR_REFERENCE_SPACE_UNSUPPORTED;
     }
     return XR_SPACE_BOUNDS_UNAVAILABLE;
@@ -1394,8 +1534,13 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateReferenceSpace(
         return XR_ERROR_VALIDATION_FAILURE;
     }
     *space = XR_NULL_HANDLE;
+    const bool localFloorAllowed =
+        createInfo->referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR &&
+        isLocalFloorEnabled(owner);
     if (createInfo->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_VIEW &&
-        createInfo->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_LOCAL) {
+        createInfo->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_LOCAL &&
+        createInfo->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_STAGE &&
+        !localFloorAllowed) {
         return XR_ERROR_REFERENCE_SPACE_UNSUPPORTED;
     }
     XrSpace_T* created = new (std::nothrow) XrSpace_T();
@@ -1463,25 +1608,37 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateSpace(
     }
     if (base->isActionSpace) return XR_SUCCESS;
 
-    if ((object->type != XR_REFERENCE_SPACE_TYPE_LOCAL &&
-         object->type != XR_REFERENCE_SPACE_TYPE_VIEW) ||
-        (base->type != XR_REFERENCE_SPACE_TYPE_LOCAL &&
-         base->type != XR_REFERENCE_SPACE_TYPE_VIEW)) {
+    auto isFloorSpace = [](XrReferenceSpaceType t) {
+        return t == XR_REFERENCE_SPACE_TYPE_STAGE ||
+            t == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+    };
+    auto isSupportedRefSpace = [&](XrReferenceSpaceType t) {
+        return t == XR_REFERENCE_SPACE_TYPE_LOCAL ||
+            t == XR_REFERENCE_SPACE_TYPE_VIEW ||
+            isFloorSpace(t);
+    };
+    if (!isSupportedRefSpace(object->type) || !isSupportedRefSpace(base->type)) {
         return XR_ERROR_REFERENCE_SPACE_UNSUPPORTED;
     }
 
-    // Two spaces of the same reference type share the same tracking frame;
-    // their relative transform is known even when the phone sensor is stale.
-    // Crossing VIEW <-> LOCAL requires a fresh phone orientation sample.
+    const bool involvesView =
+        object->type == XR_REFERENCE_SPACE_TYPE_VIEW ||
+        base->type == XR_REFERENCE_SPACE_TYPE_VIEW;
     const bool sameReferenceType = object->type == base->type;
     XrPosef viewInLocal = identity;
-    if (!sameReferenceType && !readFreshHeadOrientation(&viewInLocal.orientation)) {
+    if (involvesView && !sameReferenceType &&
+        !readFreshHeadOrientation(&viewInLocal.orientation)) {
         return XR_SUCCESS;
     }
 
+    const XrPosef stageInLocal{
+        {0.0f, 0.0f, 0.0f, 1.0f},
+        {0.0f, -kDefaultStageEyeHeightMeters, 0.0f}
+    };
     const auto spaceInLocal = [&](const XrSpace_T* value) {
-        const XrPosef& frame = value->type == XR_REFERENCE_SPACE_TYPE_VIEW
-            ? viewInLocal : identity;
+        const XrPosef frame = value->type == XR_REFERENCE_SPACE_TYPE_VIEW
+            ? viewInLocal
+            : (isFloorSpace(value->type) ? stageInLocal : identity);
         return composePose(frame, value->poseInReferenceSpace);
     };
     const XrPosef objectInLocal = spaceInLocal(object);
@@ -1518,8 +1675,12 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateViewsImpl(
     if (base == nullptr || base->owner != session || base->isActionSpace) {
         return XR_ERROR_HANDLE_INVALID;
     }
+    const bool isFloorBase =
+        base->type == XR_REFERENCE_SPACE_TYPE_STAGE ||
+        base->type == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
     if (base->type != XR_REFERENCE_SPACE_TYPE_LOCAL &&
-        base->type != XR_REFERENCE_SPACE_TYPE_VIEW) {
+        base->type != XR_REFERENCE_SPACE_TYPE_VIEW &&
+        !isFloorBase) {
         return XR_ERROR_REFERENCE_SPACE_UNSUPPORTED;
     }
     if (locateInfo->displayTime <= 0) return XR_ERROR_TIME_INVALID;
@@ -1533,15 +1694,19 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateViewsImpl(
 
     const XrPosef identity{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}};
     XrPosef headInBase = identity;
-    if (base->type == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+    if (base->type == XR_REFERENCE_SPACE_TYPE_LOCAL || isFloorBase) {
         XrQuaternionf headOrientation{};
         if (readFreshHeadOrientation(&headOrientation)) {
-            XrPosef headInLocal = identity;
-            headInLocal.orientation = headOrientation;
-            headInBase = composePose(inversePose(base->poseInReferenceSpace), headInLocal);
+            XrPosef headInWorld = identity;
+            headInWorld.orientation = headOrientation;
+            if (isFloorBase) {
+                headInWorld.position.y = kDefaultStageEyeHeightMeters;
+            }
+            headInBase = composePose(inversePose(base->poseInReferenceSpace), headInWorld);
             viewState->viewStateFlags =
                 XR_VIEW_STATE_ORIENTATION_VALID_BIT |
-                XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
+                XR_VIEW_STATE_ORIENTATION_TRACKED_BIT |
+                (isFloorBase ? XR_VIEW_STATE_POSITION_VALID_BIT : 0u);
         } else {
             // The stereo eye separation is still known, but the camera-relative
             // orientation in LOCAL space is not. Do not invent a tracked pose.
@@ -1571,11 +1736,21 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateSwapchainFormats(
 ) {
     if (getSession(session) == nullptr) return XR_ERROR_HANDLE_INVALID;
     if (count == nullptr) return XR_ERROR_VALIDATION_FAILURE;
-    *count = 1;
+    constexpr std::array<std::int64_t, 5> supported{{
+        static_cast<std::int64_t>(GL_SRGB8_ALPHA8),
+        static_cast<std::int64_t>(GL_RGBA8),
+        static_cast<std::int64_t>(GL_DEPTH24_STENCIL8),
+        static_cast<std::int64_t>(GL_DEPTH_COMPONENT24),
+        static_cast<std::int64_t>(GL_DEPTH_COMPONENT16)
+    }};
+    *count = static_cast<std::uint32_t>(supported.size());
     if (capacity == 0) return XR_SUCCESS;
     if (formats == nullptr) return XR_ERROR_VALIDATION_FAILURE;
-    formats[0] = static_cast<std::int64_t>(GL_RGBA8);
-    return XR_SUCCESS;
+    const std::uint32_t fillCount = std::min(capacity, *count);
+    for (std::uint32_t i = 0; i < fillCount; ++i) {
+        formats[i] = supported[i];
+    }
+    return capacity < *count ? XR_ERROR_SIZE_INSUFFICIENT : XR_SUCCESS;
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSwapchainImpl(
@@ -1589,27 +1764,47 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSwapchainImpl(
     }
     *swapchain = XR_NULL_HANDLE;
     if (!graphicsContextIsCurrent(owner)) return XR_ERROR_GRAPHICS_DEVICE_INVALID;
-    if (createInfo->format != static_cast<std::int64_t>(GL_RGBA8)) {
+    const bool colorFormat = isColorSwapchainFormat(createInfo->format);
+    const bool depthFormat = isDepthSwapchainFormat(createInfo->format);
+    if (!colorFormat && !depthFormat) {
         return XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED;
     }
-    if ((createInfo->usageFlags & XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT) == 0 ||
-        (createInfo->usageFlags & ~(XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT |
-                                   XR_SWAPCHAIN_USAGE_SAMPLED_BIT)) != 0) {
-        return XR_ERROR_VALIDATION_FAILURE;
+    constexpr XrSwapchainUsageFlags kAllowedCommonUsage =
+        XR_SWAPCHAIN_USAGE_SAMPLED_BIT |
+        XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT |
+        XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT |
+        XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
+    if (colorFormat) {
+        if ((createInfo->usageFlags & XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT) == 0 ||
+            (createInfo->usageFlags & ~(XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT |
+                                        kAllowedCommonUsage)) != 0) {
+            return XR_ERROR_VALIDATION_FAILURE;
+        }
+    } else {
+        if ((createInfo->usageFlags & XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0 ||
+            (createInfo->usageFlags & ~(XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                        kAllowedCommonUsage)) != 0) {
+            return XR_ERROR_VALIDATION_FAILURE;
+        }
     }
     if (createInfo->width == 0 || createInfo->height == 0 ||
         createInfo->width > kMaximumEyeWidth || createInfo->height > kMaximumEyeHeight ||
         createInfo->sampleCount != 1 || createInfo->faceCount != 1 ||
-        createInfo->arraySize != 1 || createInfo->mipCount != 1) {
+        (createInfo->arraySize != 1 && createInfo->arraySize != 2) ||
+        createInfo->mipCount != 1) {
         return XR_ERROR_VALIDATION_FAILURE;
     }
     XrSwapchain_T* created = new (std::nothrow) XrSwapchain_T();
     if (created == nullptr) return XR_ERROR_OUT_OF_MEMORY;
     created->owner = session;
+    created->format = createInfo->format;
     created->width = createInfo->width;
     created->height = createInfo->height;
+    created->arraySize = createInfo->arraySize;
+    created->isDepth = depthFormat;
     for (std::uint32_t i = 0; i < created->imageCount; ++i) {
-        if (!createGlesTexture(created->width, created->height, &created->images[i])) {
+        if (!createGlesTexture(created->width, created->height, created->format,
+                               created->arraySize, &created->images[i])) {
             for (std::uint32_t j = 0; j < i; ++j) destroyGlesTexture(created->images[j]);
             delete created;
             return XR_ERROR_RUNTIME_FAILURE;
@@ -1892,85 +2087,154 @@ bool refreshExternalControllerInputImpl(XrInstance_T* instance) {
         return false;
     }
 
+    struct InputJniCache {
+        JavaVM* vm = nullptr;
+        jobject controllerUri = nullptr;
+        jmethodID getContentResolver = nullptr;
+        jmethodID query = nullptr;
+        jmethodID moveToFirst = nullptr;
+        jmethodID getColumnIndex = nullptr;
+        jmethodID getInt = nullptr;
+        jmethodID getFloat = nullptr;
+        jmethodID getBlob = nullptr;
+        jmethodID close = nullptr;
+    };
+    static std::mutex g_inputJniCacheMutex;
+    static InputJniCache g_inputJniCache;
+    InputJniCache jni{};
+    {
+        std::lock_guard<std::mutex> lock(g_inputJniCacheMutex);
+        if (g_inputJniCache.vm != instance->applicationVm || g_inputJniCache.controllerUri == nullptr) {
+            if (g_inputJniCache.controllerUri != nullptr &&
+                g_inputJniCache.vm == instance->applicationVm) {
+                env->DeleteGlobalRef(g_inputJniCache.controllerUri);
+            }
+            g_inputJniCache = {};
+            if (env->PushLocalFrame(32) >= 0) {
+                jclass contextClass = env->FindClass("android/content/Context");
+                jclass uriClass = env->FindClass("android/net/Uri");
+                jclass resolverClass = env->FindClass("android/content/ContentResolver");
+                jclass cursorClass = env->FindClass("android/database/Cursor");
+                if (contextClass != nullptr && uriClass != nullptr &&
+                    resolverClass != nullptr && cursorClass != nullptr &&
+                    !env->ExceptionCheck()) {
+                    jmethodID getContentResolver = env->GetMethodID(
+                        contextClass, "getContentResolver",
+                        "()Landroid/content/ContentResolver;");
+                    jmethodID parseUri = env->GetStaticMethodID(
+                        uriClass, "parse", "(Ljava/lang/String;)Landroid/net/Uri;");
+                    jmethodID query = env->GetMethodID(
+                        resolverClass, "query",
+                        "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;");
+                    jmethodID moveToFirst = env->GetMethodID(cursorClass, "moveToFirst", "()Z");
+                    jmethodID getColumnIndex = env->GetMethodID(
+                        cursorClass, "getColumnIndexOrThrow", "(Ljava/lang/String;)I");
+                    jmethodID getInt = env->GetMethodID(cursorClass, "getInt", "(I)I");
+                    jmethodID getFloat = env->GetMethodID(cursorClass, "getFloat", "(I)F");
+                    jmethodID getBlob = env->GetMethodID(cursorClass, "getBlob", "(I)[B");
+                    jmethodID close = env->GetMethodID(cursorClass, "close", "()V");
+                    jstring uriText = env->NewStringUTF(
+                        "content://com.noyclic.questphonexr.endxrinput/controller_state");
+                    jobject localUri = (parseUri != nullptr && uriText != nullptr)
+                        ? env->CallStaticObjectMethod(uriClass, parseUri, uriText)
+                        : nullptr;
+                    jobject globalUri = (localUri != nullptr && !env->ExceptionCheck())
+                        ? env->NewGlobalRef(localUri)
+                        : nullptr;
+                    if (!env->ExceptionCheck() && globalUri != nullptr &&
+                        getContentResolver != nullptr && query != nullptr &&
+                        moveToFirst != nullptr && getColumnIndex != nullptr &&
+                        getInt != nullptr && getFloat != nullptr &&
+                        getBlob != nullptr && close != nullptr) {
+                        g_inputJniCache.vm = instance->applicationVm;
+                        g_inputJniCache.controllerUri = globalUri;
+                        g_inputJniCache.getContentResolver = getContentResolver;
+                        g_inputJniCache.query = query;
+                        g_inputJniCache.moveToFirst = moveToFirst;
+                        g_inputJniCache.getColumnIndex = getColumnIndex;
+                        g_inputJniCache.getInt = getInt;
+                        g_inputJniCache.getFloat = getFloat;
+                        g_inputJniCache.getBlob = getBlob;
+                        g_inputJniCache.close = close;
+                    } else if (globalUri != nullptr) {
+                        env->DeleteGlobalRef(globalUri);
+                    }
+                }
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->PopLocalFrame(nullptr);
+            }
+        }
+        jni = g_inputJniCache;
+    }
+
     bool success = false;
-    if (env->PushLocalFrame(64) >= 0) {
+    if (jni.controllerUri != nullptr && env->PushLocalFrame(128) >= 0) {
         do {
-            jclass contextClass = env->FindClass("android/content/Context");
-            if (contextClass == nullptr || env->ExceptionCheck()) break;
-            jmethodID getContentResolver = env->GetMethodID(
-                contextClass, "getContentResolver",
-                "()Landroid/content/ContentResolver;");
-            if (getContentResolver == nullptr || env->ExceptionCheck()) break;
             jobject resolver = env->CallObjectMethod(
-                instance->applicationActivity, getContentResolver);
+                instance->applicationActivity, jni.getContentResolver);
             if (resolver == nullptr || env->ExceptionCheck()) break;
 
-            jclass uriClass = env->FindClass("android/net/Uri");
-            if (uriClass == nullptr || env->ExceptionCheck()) break;
-            jmethodID parseUri = env->GetStaticMethodID(
-                uriClass, "parse", "(Ljava/lang/String;)Landroid/net/Uri;");
-            if (parseUri == nullptr || env->ExceptionCheck()) break;
-            jstring uriText = env->NewStringUTF(
-                "content://com.noyclic.questphonexr.endxrinput/controller_state");
-            if (uriText == nullptr || env->ExceptionCheck()) break;
-            jobject uri = env->CallStaticObjectMethod(uriClass, parseUri, uriText);
-            if (uri == nullptr || env->ExceptionCheck()) break;
-
-            jclass resolverClass = env->FindClass("android/content/ContentResolver");
-            if (resolverClass == nullptr || env->ExceptionCheck()) break;
-            jmethodID query = env->GetMethodID(
-                resolverClass, "query",
-                "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;");
-            if (query == nullptr || env->ExceptionCheck()) break;
             jobject cursor = env->CallObjectMethod(
-                resolver, query, uri, nullptr, nullptr, nullptr, nullptr);
+                resolver, jni.query, jni.controllerUri, nullptr, nullptr, nullptr, nullptr);
             if (cursor == nullptr || env->ExceptionCheck()) break;
 
-            jclass cursorClass = env->FindClass("android/database/Cursor");
-            if (cursorClass == nullptr || env->ExceptionCheck()) break;
-            jmethodID moveToFirst = env->GetMethodID(cursorClass, "moveToFirst", "()Z");
-            jmethodID getColumnIndex = env->GetMethodID(
-                cursorClass, "getColumnIndexOrThrow", "(Ljava/lang/String;)I");
-            jmethodID getInt = env->GetMethodID(cursorClass, "getInt", "(I)I");
-            jmethodID getFloat = env->GetMethodID(cursorClass, "getFloat", "(I)F");
-            jmethodID getBlob = env->GetMethodID(cursorClass, "getBlob", "(I)[B");
-            jmethodID close = env->GetMethodID(cursorClass, "close", "()V");
-            if (moveToFirst == nullptr || getColumnIndex == nullptr ||
-                getInt == nullptr || getFloat == nullptr || getBlob == nullptr ||
-                close == nullptr || env->ExceptionCheck()) break;
-
-            const jboolean hasRow = env->CallBooleanMethod(cursor, moveToFirst);
+            const jboolean hasRow = env->CallBooleanMethod(cursor, jni.moveToFirst);
             if (env->ExceptionCheck() || hasRow != JNI_TRUE) {
                 if (env->ExceptionCheck()) env->ExceptionClear();
-                env->CallVoidMethod(cursor, close);
+                env->CallVoidMethod(cursor, jni.close);
+                instance->cursorColumnsCached = false;
                 break;
             }
 
-            auto readInt = [&](const char* name, jint* value) -> bool {
-                jstring columnName = env->NewStringUTF(name);
-                if (columnName == nullptr || env->ExceptionCheck()) return false;
-                const jint index = env->CallIntMethod(cursor, getColumnIndex, columnName);
-                if (env->ExceptionCheck()) return false;
-                *value = env->CallIntMethod(cursor, getInt, index);
+            static constexpr std::array<const char*, 40> kInputColumnNames{{
+                "stale", "left_active", "left_trigger", "left_grip", "left_stick_x",
+                "left_stick_y", "left_buttons", "right_active", "right_trigger", "right_grip",
+                "right_stick_x", "right_stick_y", "right_buttons", "head_orientation_active",
+                "head_orientation_stale", "head_orientation_x", "head_orientation_y",
+                "head_orientation_z", "head_orientation_w", "hand_pose_stale",
+                "left_pose_active", "left_pose_x", "left_pose_y", "left_pose_z",
+                "left_pose_qx", "left_pose_qy", "left_pose_qz", "left_pose_qw",
+                "right_pose_active", "right_pose_x", "right_pose_y", "right_pose_z",
+                "right_pose_qx", "right_pose_qy", "right_pose_qz", "right_pose_qw",
+                "left_joints_active", "left_joints", "right_joints_active", "right_joints"
+            }};
+            if (!instance->cursorColumnsCached) {
+                bool cachedOk = true;
+                for (std::size_t col = 0; col < kInputColumnNames.size(); ++col) {
+                    jstring columnName = env->NewStringUTF(kInputColumnNames[col]);
+                    if (columnName == nullptr || env->ExceptionCheck()) {
+                        cachedOk = false;
+                        break;
+                    }
+                    const jint idx = env->CallIntMethod(cursor, jni.getColumnIndex, columnName);
+                    env->DeleteLocalRef(columnName);
+                    if (env->ExceptionCheck() || idx < 0) {
+                        cachedOk = false;
+                        break;
+                    }
+                    instance->cursorColumnIndices[col] = idx;
+                }
+                if (!cachedOk) {
+                    if (env->ExceptionCheck()) env->ExceptionClear();
+                    env->CallVoidMethod(cursor, jni.close);
+                    break;
+                }
+                instance->cursorColumnsCached = true;
+            }
+
+            auto readIntAt = [&](std::size_t col, jint* value) -> bool {
+                *value = env->CallIntMethod(cursor, jni.getInt, instance->cursorColumnIndices[col]);
                 return !env->ExceptionCheck();
             };
-            auto readFloat = [&](const char* name, jfloat* value) -> bool {
-                jstring columnName = env->NewStringUTF(name);
-                if (columnName == nullptr || env->ExceptionCheck()) return false;
-                const jint index = env->CallIntMethod(cursor, getColumnIndex, columnName);
-                if (env->ExceptionCheck()) return false;
-                *value = env->CallFloatMethod(cursor, getFloat, index);
+            auto readFloatAt = [&](std::size_t col, jfloat* value) -> bool {
+                *value = env->CallFloatMethod(cursor, jni.getFloat, instance->cursorColumnIndices[col]);
                 return !env->ExceptionCheck();
             };
-            auto readJointBlob = [&](const char* name,
+            auto readJointBlobAt = [&](std::size_t col,
                 std::array<float, XR_HAND_JOINT_COUNT_EXT * 8>* values) -> bool {
                 if (values == nullptr) return false;
-                jstring columnName = env->NewStringUTF(name);
-                if (columnName == nullptr || env->ExceptionCheck()) return false;
-                const jint index = env->CallIntMethod(cursor, getColumnIndex, columnName);
-                if (env->ExceptionCheck()) return false;
                 auto blob = reinterpret_cast<jbyteArray>(
-                    env->CallObjectMethod(cursor, getBlob, index));
+                    env->CallObjectMethod(cursor, jni.getBlob, instance->cursorColumnIndices[col]));
                 if (blob == nullptr || env->ExceptionCheck()) return false;
                 const jsize byteCount = env->GetArrayLength(blob);
                 if (byteCount != static_cast<jsize>(values->size() * sizeof(float))) {
@@ -1998,48 +2262,49 @@ bool refreshExternalControllerInputImpl(XrInstance_T* instance) {
             jfloat rightPoseX = 0, rightPoseY = 0, rightPoseZ = 0;
             jfloat rightPoseQx = 0, rightPoseQy = 0, rightPoseQz = 0, rightPoseQw = 1;
             const bool columnsRead =
-                readInt("stale", &stale) &&
-                readInt("left_active", &leftActive) &&
-                readFloat("left_trigger", &leftTrigger) &&
-                readFloat("left_grip", &leftGrip) &&
-                readFloat("left_stick_x", &leftStickX) &&
-                readFloat("left_stick_y", &leftStickY) &&
-                readInt("left_buttons", &leftButtons) &&
-                readInt("right_active", &rightActive) &&
-                readFloat("right_trigger", &rightTrigger) &&
-                readFloat("right_grip", &rightGrip) &&
-                readFloat("right_stick_x", &rightStickX) &&
-                readFloat("right_stick_y", &rightStickY) &&
-                readInt("right_buttons", &rightButtons) &&
-                readInt("head_orientation_active", &headActive) &&
-                readInt("head_orientation_stale", &headStale) &&
-                readFloat("head_orientation_x", &headX) &&
-                readFloat("head_orientation_y", &headY) &&
-                readFloat("head_orientation_z", &headZ) &&
-                readFloat("head_orientation_w", &headW) &&
-                readInt("hand_pose_stale", &handPoseStale) &&
-                readInt("left_pose_active", &leftPoseActive) &&
-                readFloat("left_pose_x", &leftPoseX) &&
-                readFloat("left_pose_y", &leftPoseY) &&
-                readFloat("left_pose_z", &leftPoseZ) &&
-                readFloat("left_pose_qx", &leftPoseQx) &&
-                readFloat("left_pose_qy", &leftPoseQy) &&
-                readFloat("left_pose_qz", &leftPoseQz) &&
-                readFloat("left_pose_qw", &leftPoseQw) &&
-                readInt("right_pose_active", &rightPoseActive) &&
-                readFloat("right_pose_x", &rightPoseX) &&
-                readFloat("right_pose_y", &rightPoseY) &&
-                readFloat("right_pose_z", &rightPoseZ) &&
-                readFloat("right_pose_qx", &rightPoseQx) &&
-                readFloat("right_pose_qy", &rightPoseQy) &&
-                readFloat("right_pose_qz", &rightPoseQz) &&
-                readFloat("right_pose_qw", &rightPoseQw) &&
-                readInt("left_joints_active", &leftJointsActive) &&
-                readJointBlob("left_joints", &leftJoints) &&
-                readInt("right_joints_active", &rightJointsActive) &&
-                readJointBlob("right_joints", &rightJoints);
+                readIntAt(0, &stale) &&
+                readIntAt(1, &leftActive) &&
+                readFloatAt(2, &leftTrigger) &&
+                readFloatAt(3, &leftGrip) &&
+                readFloatAt(4, &leftStickX) &&
+                readFloatAt(5, &leftStickY) &&
+                readIntAt(6, &leftButtons) &&
+                readIntAt(7, &rightActive) &&
+                readFloatAt(8, &rightTrigger) &&
+                readFloatAt(9, &rightGrip) &&
+                readFloatAt(10, &rightStickX) &&
+                readFloatAt(11, &rightStickY) &&
+                readIntAt(12, &rightButtons) &&
+                readIntAt(13, &headActive) &&
+                readIntAt(14, &headStale) &&
+                readFloatAt(15, &headX) &&
+                readFloatAt(16, &headY) &&
+                readFloatAt(17, &headZ) &&
+                readFloatAt(18, &headW) &&
+                readIntAt(19, &handPoseStale) &&
+                readIntAt(20, &leftPoseActive) &&
+                readFloatAt(21, &leftPoseX) &&
+                readFloatAt(22, &leftPoseY) &&
+                readFloatAt(23, &leftPoseZ) &&
+                readFloatAt(24, &leftPoseQx) &&
+                readFloatAt(25, &leftPoseQy) &&
+                readFloatAt(26, &leftPoseQz) &&
+                readFloatAt(27, &leftPoseQw) &&
+                readIntAt(28, &rightPoseActive) &&
+                readFloatAt(29, &rightPoseX) &&
+                readFloatAt(30, &rightPoseY) &&
+                readFloatAt(31, &rightPoseZ) &&
+                readFloatAt(32, &rightPoseQx) &&
+                readFloatAt(33, &rightPoseQy) &&
+                readFloatAt(34, &rightPoseQz) &&
+                readFloatAt(35, &rightPoseQw) &&
+                readIntAt(36, &leftJointsActive) &&
+                readJointBlobAt(37, &leftJoints) &&
+                readIntAt(38, &rightJointsActive) &&
+                readJointBlobAt(39, &rightJoints);
+            if (!columnsRead) instance->cursorColumnsCached = false;
             if (env->ExceptionCheck()) env->ExceptionClear();
-            env->CallVoidMethod(cursor, close);
+            env->CallVoidMethod(cursor, jni.close);
             if (env->ExceptionCheck()) {
                 env->ExceptionClear();
                 break;
@@ -2512,12 +2777,19 @@ bool locateEstimatedHandPoseImpl(
     if (!resolved.active) return false;
 
     XrPosef pose = composePose(resolved.pose, object->poseInReferenceSpace);
-    if (base->type == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+    const bool isFloorBase =
+        base->type == XR_REFERENCE_SPACE_TYPE_STAGE ||
+        base->type == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+    if (base->type == XR_REFERENCE_SPACE_TYPE_LOCAL || isFloorBase) {
         XrQuaternionf headOrientation{};
         if (!readFreshHeadOrientation(&headOrientation)) return false;
         XrPosef headPose{};
         headPose.orientation = headOrientation;
-        headPose.position = {0.0f, 0.0f, 0.0f};
+        headPose.position = {
+            0.0f,
+            isFloorBase ? kDefaultStageEyeHeightMeters : 0.0f,
+            0.0f
+        };
         pose = composePose(headPose, pose);
     } else if (base->type != XR_REFERENCE_SPACE_TYPE_VIEW) {
         return false;
@@ -2686,11 +2958,11 @@ void enqueueRuntimeTelemetry(
                 queue.pop_front();
             }
         }
-        queue.push_back(PendingRuntimeTelemetry{
-            eventName,
-            sessionId,
-            frameCount
-        });
+        PendingRuntimeTelemetry telemetry{};
+        telemetry.eventName = eventName;
+        telemetry.sessionId = sessionId;
+        telemetry.frameCount = frameCount;
+        queue.push_back(std::move(telemetry));
     }
     instance->externalInputWake.notify_one();
 }
@@ -3711,15 +3983,18 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateHandJointsEXT(
     if (base == nullptr || base->owner != tracker->owner || base->isActionSpace) {
         return XR_ERROR_HANDLE_INVALID;
     }
-    if (base->type != XR_REFERENCE_SPACE_TYPE_LOCAL &&
-        base->type != XR_REFERENCE_SPACE_TYPE_VIEW) {
+    const bool isFloorBase =
+        base->type == XR_REFERENCE_SPACE_TYPE_STAGE ||
+        base->type == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+    const bool worldSpaceBase = base->type == XR_REFERENCE_SPACE_TYPE_LOCAL || isFloorBase;
+    if (base->type != XR_REFERENCE_SPACE_TYPE_VIEW && !worldSpaceBase) {
         return XR_ERROR_REFERENCE_SPACE_UNSUPPORTED;
     }
 
     const int handIndex = tracker->hand == XR_HAND_LEFT_EXT ? 0 : 1;
     const EndXrHandTrackingSample sample = readFreshHandTrackingInput(handIndex);
     XrQuaternionf headOrientation{};
-    if (sample.active && base->type == XR_REFERENCE_SPACE_TYPE_LOCAL &&
+    if (sample.active && worldSpaceBase &&
         !readFreshHeadOrientation(&headOrientation)) {
         locations->isActive = XR_FALSE;
     } else {
@@ -3744,10 +4019,14 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateHandJointsEXT(
             sample.joints[offset + 6], sample.joints[offset + 7]
         });
         XrPosef locatedPose = composePose(sample.palmPose, localJointPose);
-        if (base->type == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+        if (worldSpaceBase) {
             XrPosef headPose{};
             headPose.orientation = headOrientation;
-            headPose.position = {0.0f, 0.0f, 0.0f};
+            headPose.position = {
+                0.0f,
+                isFloorBase ? kDefaultStageEyeHeightMeters : 0.0f,
+                0.0f
+            };
             locatedPose = composePose(headPose, locatedPose);
         }
         locatedPose = composePose(inversePose(base->poseInReferenceSpace), locatedPose);
@@ -3847,7 +4126,7 @@ void recordOpenXrTrace(
 #endif
 }
 
-XrResult XRAPI_CALL endxrCreateInstance(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstance(
     const XrInstanceCreateInfo* createInfo, XrInstance* instance
 ) {
     const auto startedAt = std::chrono::steady_clock::now();
@@ -3889,7 +4168,7 @@ XrResult XRAPI_CALL endxrCreateInstance(
     return result;
 }
 
-XrResult XRAPI_CALL endxrGetSystem(
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystem(
     XrInstance instance, const XrSystemGetInfo* getInfo, XrSystemId* systemId
 ) {
     XrInstance_T* owner = getInstance(instance);
@@ -3903,7 +4182,7 @@ XrResult XRAPI_CALL endxrGetSystem(
     return result;
 }
 
-XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
     XrInstance instance, XrSystemId systemId,
     XrGraphicsRequirementsOpenGLESKHR* requirements
 ) {
@@ -3925,7 +4204,7 @@ XrResult XRAPI_CALL endxrGetOpenGLESGraphicsRequirementsKHR(
     return result;
 }
 
-XrResult XRAPI_CALL endxrCreateSession(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSession(
     XrInstance instance, const XrSessionCreateInfo* createInfo, XrSession* session
 ) {
     XrInstance_T* owner = getInstance(instance);
@@ -3953,7 +4232,7 @@ XrResult XRAPI_CALL endxrCreateSession(
     return result;
 }
 
-XrResult XRAPI_CALL endxrBeginSession(
+XRAPI_ATTR XrResult XRAPI_CALL endxrBeginSession(
     XrSession session, const XrSessionBeginInfo* beginInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -3967,7 +4246,7 @@ XrResult XRAPI_CALL endxrBeginSession(
     return result;
 }
 
-XrResult XRAPI_CALL endxrEndSession(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrEndSession(XrSession session) {
     XrSession_T* object = getSession(session);
     XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
     const auto startedAt = std::chrono::steady_clock::now();
@@ -3978,7 +4257,7 @@ XrResult XRAPI_CALL endxrEndSession(XrSession session) {
     return result;
 }
 
-XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
     XrSession_T* object = getSession(session);
     XrInstance_T* owner = object == nullptr ? nullptr : getInstance(object->owner);
     const std::uint64_t sessionId = object == nullptr ? 0 : object->telemetryId;
@@ -3991,7 +4270,7 @@ XrResult XRAPI_CALL endxrDestroySession(XrSession session) {
     return result;
 }
 
-XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
+XRAPI_ATTR XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
     XrInstance_T* owner = getInstance(instance);
     const auto startedAt = std::chrono::steady_clock::now();
     const XrResult result = endxrDestroyInstanceImpl(instance);
@@ -4005,7 +4284,7 @@ XrResult XRAPI_CALL endxrDestroyInstance(XrInstance instance) {
     return result;
 }
 
-XrResult XRAPI_CALL endxrWaitFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrame(
     XrSession session, const XrFrameWaitInfo* waitInfo, XrFrameState* frameState
 ) {
     XrSession_T* object = getSession(session);
@@ -4031,7 +4310,7 @@ XrResult XRAPI_CALL endxrWaitFrame(
     return result;
 }
 
-XrResult XRAPI_CALL endxrBeginFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrBeginFrame(
     XrSession session, const XrFrameBeginInfo* beginInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -4049,7 +4328,7 @@ XrResult XRAPI_CALL endxrBeginFrame(
     return result;
 }
 
-XrResult XRAPI_CALL endxrEndFrame(
+XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrame(
     XrSession session, const XrFrameEndInfo* endInfo
 ) {
     XrSession_T* object = getSession(session);
@@ -4058,7 +4337,7 @@ XrResult XRAPI_CALL endxrEndFrame(
     const XrResult result = endxrEndFrameImpl(session, endInfo);
     const std::uint64_t compositedFrames =
         object == nullptr ? 0 : object->telemetryFrameCount;
-    const bool hasProjection = endInfo != nullptr && endInfo->layerCount == 1;
+    const bool hasProjection = endInfo != nullptr && endInfo->layerCount >= 1;
     const bool sampleSuccess = result == XR_SUCCESS && hasProjection &&
         compositedFrames > 0 && compositedFrames % 30 == 0;
     if (result != XR_SUCCESS || sampleSuccess) {
@@ -4072,7 +4351,7 @@ XrResult XRAPI_CALL endxrEndFrame(
     return result;
 }
 
-XrResult XRAPI_CALL endxrCreateSwapchain(
+XRAPI_ATTR XrResult XRAPI_CALL endxrCreateSwapchain(
     XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain
 ) {
     XrSession_T* object = getSession(session);
@@ -4091,7 +4370,7 @@ XrResult XRAPI_CALL endxrCreateSwapchain(
     return result;
 }
 
-XrResult XRAPI_CALL endxrAcquireSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrAcquireSwapchainImage(
     XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo,
     std::uint32_t* index
 ) {
@@ -4111,7 +4390,7 @@ XrResult XRAPI_CALL endxrAcquireSwapchainImage(
     return result;
 }
 
-XrResult XRAPI_CALL endxrWaitSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrWaitSwapchainImage(
     XrSwapchain swapchain, const XrSwapchainImageWaitInfo* waitInfo
 ) {
     XrSwapchain_T* chain = getSwapchain(swapchain);
@@ -4130,7 +4409,7 @@ XrResult XRAPI_CALL endxrWaitSwapchainImage(
     return result;
 }
 
-XrResult XRAPI_CALL endxrReleaseSwapchainImage(
+XRAPI_ATTR XrResult XRAPI_CALL endxrReleaseSwapchainImage(
     XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo
 ) {
     XrSwapchain_T* chain = getSwapchain(swapchain);
@@ -4149,7 +4428,7 @@ XrResult XRAPI_CALL endxrReleaseSwapchainImage(
     return result;
 }
 
-XrResult XRAPI_CALL endxrLocateViews(
+XRAPI_ATTR XrResult XRAPI_CALL endxrLocateViews(
     XrSession session, const XrViewLocateInfo* locateInfo, XrViewState* viewState,
     std::uint32_t capacity, std::uint32_t* count, XrView* views
 ) {
@@ -4169,9 +4448,227 @@ XrResult XRAPI_CALL endxrLocateViews(
     return result;
 }
 
+XRAPI_ATTR XrResult XRAPI_CALL endxrLocateSpaces(
+    XrSession session, const XrSpacesLocateInfo* locateInfo, XrSpaceLocations* spaceLocations
+) {
+    if (getSession(session) == nullptr) return XR_ERROR_HANDLE_INVALID;
+    if (locateInfo == nullptr || locateInfo->type != XR_TYPE_SPACES_LOCATE_INFO ||
+        spaceLocations == nullptr || spaceLocations->type != XR_TYPE_SPACE_LOCATIONS) {
+        return XR_ERROR_VALIDATION_FAILURE;
+    }
+    XrSpace_T* base = getSpace(locateInfo->baseSpace);
+    if (base == nullptr || base->owner != session) return XR_ERROR_HANDLE_INVALID;
+    if (locateInfo->time <= 0) return XR_ERROR_TIME_INVALID;
+    if (locateInfo->spaceCount > 0 &&
+        (locateInfo->spaces == nullptr || spaceLocations->locations == nullptr ||
+         spaceLocations->locationCount < locateInfo->spaceCount)) {
+        return XR_ERROR_VALIDATION_FAILURE;
+    }
+    for (std::uint32_t i = 0; i < locateInfo->spaceCount; ++i) {
+        XrSpaceLocation single{};
+        single.type = XR_TYPE_SPACE_LOCATION;
+        const XrResult result = endxrLocateSpace(
+            locateInfo->spaces[i], locateInfo->baseSpace, locateInfo->time, &single);
+        if (XR_FAILED(result)) return result;
+        spaceLocations->locations[i].locationFlags = single.locationFlags;
+        spaceLocations->locations[i].pose = single.pose;
+    }
+    spaceLocations->locationCount = locateInfo->spaceCount;
+    return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrSetAndroidApplicationThreadKHR(
+    XrSession session, XrAndroidThreadTypeKHR threadType, std::uint32_t threadId
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->androidThreadSettingsExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    switch (threadType) {
+        case XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR:
+        case XR_ANDROID_THREAD_TYPE_APPLICATION_WORKER_KHR:
+        case XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR:
+        case XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR:
+            break;
+        default:
+            return XR_ERROR_VALIDATION_FAILURE;
+    }
+    if (threadId == 0) return XR_ERROR_ANDROID_THREAD_SETTINGS_ID_INVALID_KHR;
+#if defined(__ANDROID__)
+    const int niceValue =
+        (threadType == XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR ||
+         threadType == XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR)
+            ? -4 : 0;
+    (void)setpriority(PRIO_PROCESS, static_cast<id_t>(threadId), niceValue);
+#else
+    (void)threadId;
+#endif
+    return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrConvertTimespecTimeToTimeKHR(
+    XrInstance instance, const struct timespec* timespecTime, XrTime* time
+) {
+    XrInstance_T* owner = getInstance(instance);
+    if (owner == nullptr) return XR_ERROR_HANDLE_INVALID;
+    if (!owner->convertTimespecTimeExtensionEnabled) return XR_ERROR_EXTENSION_NOT_PRESENT;
+    if (timespecTime == nullptr || time == nullptr ||
+        timespecTime->tv_sec < 0 || timespecTime->tv_nsec < 0 ||
+        timespecTime->tv_nsec >= 1000000000L) {
+        return XR_ERROR_VALIDATION_FAILURE;
+    }
+    *time = static_cast<XrTime>(timespecTime->tv_sec) * 1000000000LL +
+        static_cast<XrTime>(timespecTime->tv_nsec);
+    return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrConvertTimeToTimespecTimeKHR(
+    XrInstance instance, XrTime time, struct timespec* timespecTime
+) {
+    XrInstance_T* owner = getInstance(instance);
+    if (owner == nullptr) return XR_ERROR_HANDLE_INVALID;
+    if (!owner->convertTimespecTimeExtensionEnabled) return XR_ERROR_EXTENSION_NOT_PRESENT;
+    if (timespecTime == nullptr || time <= 0) return XR_ERROR_VALIDATION_FAILURE;
+    timespecTime->tv_sec = static_cast<decltype(timespecTime->tv_sec)>(time / 1000000000LL);
+    timespecTime->tv_nsec = static_cast<decltype(timespecTime->tv_nsec)>(time % 1000000000LL);
+    return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrPerfSettingsSetPerformanceLevelEXT(
+    XrSession session, XrPerfSettingsDomainEXT domain, XrPerfSettingsLevelEXT level
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->performanceSettingsExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    if (domain != XR_PERF_SETTINGS_DOMAIN_CPU_EXT &&
+        domain != XR_PERF_SETTINGS_DOMAIN_GPU_EXT) {
+        return XR_ERROR_VALIDATION_FAILURE;
+    }
+    switch (level) {
+        case XR_PERF_SETTINGS_LEVEL_POWER_SAVINGS_EXT:
+        case XR_PERF_SETTINGS_LEVEL_SUSTAINED_LOW_EXT:
+        case XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT:
+        case XR_PERF_SETTINGS_LEVEL_BOOST_EXT:
+            return XR_SUCCESS;
+        default:
+            return XR_ERROR_VALIDATION_FAILURE;
+    }
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateDisplayRefreshRatesFB(
+    XrSession session, std::uint32_t capacity, std::uint32_t* count, float* rates
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->displayRefreshRateExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    if (count == nullptr) return XR_ERROR_VALIDATION_FAILURE;
+    *count = static_cast<std::uint32_t>(kSupportedRefreshRatesHz.size());
+    if (capacity == 0) return XR_SUCCESS;
+    if (rates == nullptr) return XR_ERROR_VALIDATION_FAILURE;
+    const std::uint32_t fillCount = std::min(capacity, *count);
+    for (std::uint32_t i = 0; i < fillCount; ++i) {
+        rates[i] = kSupportedRefreshRatesHz[i];
+    }
+    return capacity < *count ? XR_ERROR_SIZE_INSUFFICIENT : XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrGetDisplayRefreshRateFB(
+    XrSession session, float* displayRefreshRate
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->displayRefreshRateExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    if (displayRefreshRate == nullptr) return XR_ERROR_VALIDATION_FAILURE;
+    *displayRefreshRate = object->displayRefreshRateHz;
+    return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrRequestDisplayRefreshRateFB(
+    XrSession session, float displayRefreshRate
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->displayRefreshRateExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    float target = displayRefreshRate;
+    if (target == 0.0f) {
+        target = 60.0f;
+    } else {
+        bool supported = false;
+        for (float rate : kSupportedRefreshRatesHz) {
+            if (std::abs(rate - target) < 0.5f) {
+                target = rate;
+                supported = true;
+                break;
+            }
+        }
+        if (!supported) return XR_ERROR_DISPLAY_REFRESH_RATE_UNSUPPORTED_FB;
+    }
+    const float previous = object->displayRefreshRateHz;
+    if (std::abs(previous - target) >= 0.5f) {
+        object->displayRefreshRateHz = target;
+        XrEventDataDisplayRefreshRateChangedFB changed{};
+        changed.type = XR_TYPE_EVENT_DATA_DISPLAY_REFRESH_RATE_CHANGED_FB;
+        changed.fromDisplayRefreshRate = previous;
+        changed.toDisplayRefreshRate = target;
+        queueInstanceEvent(owner, changed);
+    }
+    return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateColorSpacesFB(
+    XrSession session, std::uint32_t capacity, std::uint32_t* count, XrColorSpaceFB* colorSpaces
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->colorSpaceExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    if (count == nullptr) return XR_ERROR_VALIDATION_FAILURE;
+    *count = static_cast<std::uint32_t>(kSupportedColorSpacesFB.size());
+    if (capacity == 0) return XR_SUCCESS;
+    if (colorSpaces == nullptr) return XR_ERROR_VALIDATION_FAILURE;
+    const std::uint32_t fillCount = std::min(capacity, *count);
+    for (std::uint32_t i = 0; i < fillCount; ++i) {
+        colorSpaces[i] = kSupportedColorSpacesFB[i];
+    }
+    return capacity < *count ? XR_ERROR_SIZE_INSUFFICIENT : XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL endxrSetColorSpaceFB(
+    XrSession session, const XrColorSpaceFB colorSpace
+) {
+    XrSession_T* object = getSession(session);
+    if (object == nullptr) return XR_ERROR_HANDLE_INVALID;
+    XrInstance_T* owner = getInstance(object->owner);
+    if (owner == nullptr || !owner->colorSpaceExtensionEnabled) {
+        return XR_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    if (std::find(kSupportedColorSpacesFB.begin(), kSupportedColorSpacesFB.end(), colorSpace) ==
+        kSupportedColorSpacesFB.end()) {
+        return XR_ERROR_COLOR_SPACE_UNSUPPORTED_FB;
+    }
+    object->colorSpace = colorSpace;
+    return XR_SUCCESS;
+}
+
 #define ENDXR_PROC(name, fn) {name, reinterpret_cast<PFN_xrVoidFunction>(fn)}
 struct ProcEntry { const char* name; PFN_xrVoidFunction function; };
-const std::array<ProcEntry, 58> kProcTable{{
+const std::array<ProcEntry, 69> kProcTable{{
     ENDXR_PROC("xrGetInstanceProcAddr", endxrGetInstanceProcAddr),
     ENDXR_PROC("xrEnumerateApiLayerProperties", endxrEnumerateApiLayerProperties),
     ENDXR_PROC("xrEnumerateInstanceExtensionProperties", endxrEnumerateInstanceExtensionProperties),
@@ -4232,7 +4729,18 @@ const std::array<ProcEntry, 58> kProcTable{{
     ENDXR_PROC("xrStopHapticFeedback", endxrStopHapticFeedback),
     ENDXR_PROC("xrCreateHandTrackerEXT", endxrCreateHandTrackerEXT),
     ENDXR_PROC("xrDestroyHandTrackerEXT", endxrDestroyHandTrackerEXT),
-    ENDXR_PROC("xrLocateHandJointsEXT", endxrLocateHandJointsEXT)
+    ENDXR_PROC("xrLocateHandJointsEXT", endxrLocateHandJointsEXT),
+    ENDXR_PROC("xrLocateSpaces", endxrLocateSpaces),
+    ENDXR_PROC("xrLocateSpacesKHR", endxrLocateSpaces),
+    ENDXR_PROC("xrSetAndroidApplicationThreadKHR", endxrSetAndroidApplicationThreadKHR),
+    ENDXR_PROC("xrConvertTimespecTimeToTimeKHR", endxrConvertTimespecTimeToTimeKHR),
+    ENDXR_PROC("xrConvertTimeToTimespecTimeKHR", endxrConvertTimeToTimespecTimeKHR),
+    ENDXR_PROC("xrPerfSettingsSetPerformanceLevelEXT", endxrPerfSettingsSetPerformanceLevelEXT),
+    ENDXR_PROC("xrEnumerateDisplayRefreshRatesFB", endxrEnumerateDisplayRefreshRatesFB),
+    ENDXR_PROC("xrGetDisplayRefreshRateFB", endxrGetDisplayRefreshRateFB),
+    ENDXR_PROC("xrRequestDisplayRefreshRateFB", endxrRequestDisplayRefreshRateFB),
+    ENDXR_PROC("xrEnumerateColorSpacesFB", endxrEnumerateColorSpacesFB),
+    ENDXR_PROC("xrSetColorSpaceFB", endxrSetColorSpaceFB)
 }};
 #undef ENDXR_PROC
 
@@ -4275,6 +4783,52 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetInstanceProcAddr(
                     ? XR_ERROR_HANDLE_INVALID
                     : XR_ERROR_FUNCTION_UNSUPPORTED;
             }
+            if (std::strcmp(name, "xrLocateSpaces") == 0 &&
+                (owner == nullptr || owner->requestedApiVersion < XR_MAKE_VERSION(1, 1, 0))) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
+            if (std::strcmp(name, "xrLocateSpacesKHR") == 0 &&
+                (owner == nullptr || !owner->locateSpacesExtensionEnabled)) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
+            if (std::strcmp(name, "xrSetAndroidApplicationThreadKHR") == 0 &&
+                (owner == nullptr || !owner->androidThreadSettingsExtensionEnabled)) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
+            if ((std::strcmp(name, "xrConvertTimespecTimeToTimeKHR") == 0 ||
+                 std::strcmp(name, "xrConvertTimeToTimespecTimeKHR") == 0) &&
+                (owner == nullptr || !owner->convertTimespecTimeExtensionEnabled)) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
+            if (std::strcmp(name, "xrPerfSettingsSetPerformanceLevelEXT") == 0 &&
+                (owner == nullptr || !owner->performanceSettingsExtensionEnabled)) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
+            if ((std::strcmp(name, "xrEnumerateDisplayRefreshRatesFB") == 0 ||
+                 std::strcmp(name, "xrGetDisplayRefreshRateFB") == 0 ||
+                 std::strcmp(name, "xrRequestDisplayRefreshRateFB") == 0) &&
+                (owner == nullptr || !owner->displayRefreshRateExtensionEnabled)) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
+            if ((std::strcmp(name, "xrEnumerateColorSpacesFB") == 0 ||
+                 std::strcmp(name, "xrSetColorSpaceFB") == 0) &&
+                (owner == nullptr || !owner->colorSpaceExtensionEnabled)) {
+                return owner == nullptr
+                    ? XR_ERROR_HANDLE_INVALID
+                    : XR_ERROR_FUNCTION_UNSUPPORTED;
+            }
             *function = entry.function;
             return XR_SUCCESS;
         }
@@ -4306,11 +4860,15 @@ xrNegotiateLoaderRuntimeInterfaceImpl(
         return XR_ERROR_INITIALIZATION_FAILED;
     }
     if (loaderInfo->minApiVersion > kEndXrApiVersion ||
-        loaderInfo->maxApiVersion < kEndXrApiVersion) {
+        loaderInfo->maxApiVersion < kMinEndXrApiVersion) {
         return XR_ERROR_API_VERSION_UNSUPPORTED;
     }
+    const XrVersion negotiatedApiVersion = std::max(
+        kMinEndXrApiVersion,
+        std::min(loaderInfo->maxApiVersion, kEndXrApiVersion)
+    );
     runtimeRequest->runtimeInterfaceVersion = XR_CURRENT_LOADER_RUNTIME_VERSION;
-    runtimeRequest->runtimeApiVersion = kEndXrApiVersion;
+    runtimeRequest->runtimeApiVersion = negotiatedApiVersion;
     runtimeRequest->getInstanceProcAddr = endxrGetInstanceProcAddr;
     return XR_SUCCESS;
 }

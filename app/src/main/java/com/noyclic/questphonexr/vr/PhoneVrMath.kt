@@ -73,6 +73,65 @@ internal object PhoneVrMath {
         return FloatArray(4) { index -> (quaternion[index] * inverseNorm).toFloat() }
     }
 
+    /**
+     * Converts a row-major 3x3 rotation matrix into a unit quaternion [x, y, z, w]
+     * without heap allocations on the sensor hot path.
+     */
+    fun rotationMatrixToQuaternion(rotationMatrix: FloatArray, destination: FloatArray): Boolean {
+        if (rotationMatrix.size < MATRIX_SIZE || destination.size < 4) return false
+        val m00 = rotationMatrix[0]
+        val m01 = rotationMatrix[1]
+        val m02 = rotationMatrix[2]
+        val m10 = rotationMatrix[3]
+        val m11 = rotationMatrix[4]
+        val m12 = rotationMatrix[5]
+        val m20 = rotationMatrix[6]
+        val m21 = rotationMatrix[7]
+        val m22 = rotationMatrix[8]
+        val trace = m00 + m11 + m22
+        val qx: Float
+        val qy: Float
+        val qz: Float
+        val qw: Float
+        if (trace > 0f) {
+            val s = kotlin.math.sqrt((trace + 1f).toDouble()).toFloat() * 2f
+            if (!s.isFinite() || s <= QUATERNION_EPSILON) return false
+            qw = 0.25f * s
+            qx = (m21 - m12) / s
+            qy = (m02 - m20) / s
+            qz = (m10 - m01) / s
+        } else if (m00 > m11 && m00 > m22) {
+            val s = kotlin.math.sqrt((1f + m00 - m11 - m22).toDouble()).toFloat() * 2f
+            if (!s.isFinite() || s <= QUATERNION_EPSILON) return false
+            qw = (m21 - m12) / s
+            qx = 0.25f * s
+            qy = (m01 + m10) / s
+            qz = (m02 + m20) / s
+        } else if (m11 > m22) {
+            val s = kotlin.math.sqrt((1f + m11 - m00 - m22).toDouble()).toFloat() * 2f
+            if (!s.isFinite() || s <= QUATERNION_EPSILON) return false
+            qw = (m02 - m20) / s
+            qx = (m01 + m10) / s
+            qy = 0.25f * s
+            qz = (m12 + m21) / s
+        } else {
+            val s = kotlin.math.sqrt((1f + m22 - m00 - m11).toDouble()).toFloat() * 2f
+            if (!s.isFinite() || s <= QUATERNION_EPSILON) return false
+            qw = (m10 - m01) / s
+            qx = (m02 + m20) / s
+            qy = (m12 + m21) / s
+            qz = 0.25f * s
+        }
+        val normSq = qx * qx + qy * qy + qz * qz + qw * qw
+        if (!normSq.isFinite() || normSq <= QUATERNION_EPSILON) return false
+        val invNorm = (1.0 / kotlin.math.sqrt(normSq.toDouble())).toFloat()
+        destination[0] = qx * invNorm
+        destination[1] = qy * invNorm
+        destination[2] = qz * invNorm
+        destination[3] = qw * invNorm
+        return true
+    }
+
     private fun quaternionDot(a: FloatArray, b: FloatArray): Float =
         a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 

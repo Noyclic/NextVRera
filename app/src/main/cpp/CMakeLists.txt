@@ -29,6 +29,10 @@ endif()
 
 target_compile_features(questphonexr_native PRIVATE cxx_std_17)
 target_compile_definitions(questphonexr_native PRIVATE VK_USE_PLATFORM_ANDROID_KHR=1)
+target_compile_options(questphonexr_native PRIVATE
+    $<$<CONFIG:Debug>:-O2>
+    $<$<NOT:$<CONFIG:Debug>>:-O3>
+)
 target_link_libraries(
     questphonexr_native
     PRIVATE
@@ -50,7 +54,11 @@ target_include_directories(endxr_openxr PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openxr/include
 )
 target_compile_features(endxr_openxr PRIVATE cxx_std_17)
-target_compile_options(endxr_openxr PRIVATE -Wall -Wextra -Werror)
+target_compile_options(endxr_openxr PRIVATE
+    -Wall -Wextra -Werror
+    $<$<CONFIG:Debug>:-O2>
+    $<$<NOT:$<CONFIG:Debug>>:-O3>
+)
 target_link_libraries(endxr_openxr PRIVATE ${egl-lib} ${gles-lib} ${android-log-lib})
 target_link_libraries(questphonexr_native PRIVATE endxr_openxr)
 set_target_properties(endxr_openxr PROPERTIES
