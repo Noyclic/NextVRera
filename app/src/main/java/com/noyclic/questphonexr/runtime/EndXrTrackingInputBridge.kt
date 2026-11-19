@@ -6,6 +6,7 @@ import com.noyclic.questphonexr.tracking.TrackingProviderAvailability
 import com.noyclic.questphonexr.tracking.TrackingProviderId
 import com.noyclic.questphonexr.tracking.TrackingProviderManager
 import com.noyclic.questphonexr.tracking.TrackingProviderManagerSnapshot
+import com.noyclic.questphonexr.tracking.TrackingHealthTracker
 
 /**
  * Common entrance from every tracking implementation into the existing EndXR input path.
@@ -16,7 +17,6 @@ import com.noyclic.questphonexr.tracking.TrackingProviderManagerSnapshot
 internal object EndXrTrackingInputBridge {
     private val providerManager = TrackingProviderManager()
     private val healthTracker = TrackingHealthTracker()
-    private val healthTracker = com.noyclic.questphonexr.tracking.TrackingHealthTracker()
 
     @Synchronized
     fun publish(
@@ -75,7 +75,10 @@ internal object EndXrTrackingInputBridge {
         availability: TrackingProviderAvailability
     ): Boolean {
         val updated = providerManager.updateAvailability(providerId, availability)
-        if (updated) clearInputSnapshot()
+        if (updated) {
+            clearInputSnapshot()
+            healthTracker.reset()
+        }
         return updated
     }
 
