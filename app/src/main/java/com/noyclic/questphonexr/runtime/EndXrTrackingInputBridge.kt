@@ -15,6 +15,7 @@ import com.noyclic.questphonexr.tracking.TrackingProviderManagerSnapshot
  */
 internal object EndXrTrackingInputBridge {
     private val providerManager = TrackingProviderManager()
+    private val healthTracker = com.noyclic.questphonexr.tracking.TrackingHealthTracker()
 
     fun publish(
         providerId: TrackingProviderId,
@@ -31,6 +32,7 @@ internal object EndXrTrackingInputBridge {
             receivedAtUptimeMs = now
         ) ?: return false
 
+        healthTracker.onFrameAccepted(now)
         EndXrHandTrackingDiagnostics.onFrame(selected.frame, selected.providerId.wireId)
         val encoded = EndXrHandInputEncoder.encode(selected.frame)
         EndXrHandTrackingDiagnostics.updateNaturalGestures(
@@ -50,13 +52,17 @@ internal object EndXrTrackingInputBridge {
 
     fun selectProvider(providerId: TrackingProviderId): Boolean {
         val selected = providerManager.selectProvider(providerId)
-        if (selected) EndXrInputSnapshotStore.clear()
+        if (selected) {
+            EndXrInputSnapshotStore.clear()
+            healthTracker.reset()
+        }
         return selected
     }
 
     fun setAutoMode() {
         providerManager.setAutoMode()
         EndXrInputSnapshotStore.clear()
+        healthTracker.reset()
     }
 
     fun updateProviderAvailability(
@@ -68,7 +74,24 @@ internal object EndXrTrackingInputBridge {
         return updated
     }
 
-    fun clearFrames() = providerManager.clearFrames()
+    /** Advances freshness state; returns true when stale input was cleared on this tick. */
+    fun tick(nowUptimeMs: Long = SystemClock.uptimeMillis()): Boolean {
+        if (!healthTracker.tick(nowUptimeMs)) return false
+        EndXrInputSnapshotStore.clear()
+        healthTracker.onInputCleared(nowUptimeMs)
+        providerManager.clearFrames()
+        return true
+    }
+
+    fun healthSnapshot(): com.noyclic.questphonexr.tracking.TrackingHealthTracker.Snapshot =
+        healthTracker.snapshot()
+
+    fun clearFrames() {
+        providerManager.clearFrames()
+        val now = runCatching { SystemClock.uptimeMillis() }.getOrDefault(0L)
+        EndXrInputSnapshotStore.clear()
+        healthTracker.onInputCleared(now)
+    }
 
     fun diagnosticSnapshot(): TrackingProviderManagerSnapshot {
         // Android's mocked SystemClock throws in local JVM tests. Diagnostics must
