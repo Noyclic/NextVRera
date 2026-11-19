@@ -298,7 +298,7 @@ bool isSupportedApiVersion(XrVersion requested) {
     return XR_VERSION_MAJOR(requested) == 1 && XR_VERSION_MINOR(requested) <= 1;
 }
 constexpr float kDefaultStageEyeHeightMeters = 1.65f;
-constexpr std::uint32_t kMaxSupportedLayers = 16;
+constexpr std::uint32_t kMaxSupportedLayers = 1;
 constexpr std::array<float, 4> kSupportedRefreshRatesHz{{60.0f, 72.0f, 90.0f, 120.0f}};
 constexpr std::array<XrColorSpaceFB, 3> kSupportedColorSpacesFB{{
     XR_COLOR_SPACE_REC709_FB,
@@ -306,10 +306,11 @@ constexpr std::array<XrColorSpaceFB, 3> kSupportedColorSpacesFB{{
     XR_COLOR_SPACE_REC2020_FB
 }};
 
-XrDuration sessionFramePeriodNs(const XrSession_T* session) {
-    const float hz = (session != nullptr && session->displayRefreshRateHz > 1.0f)
-        ? session->displayRefreshRateHz : 60.0f;
-    return static_cast<XrDuration>(1000000000.0 / static_cast<double>(hz) + 0.5);
+constexpr XrDuration kFramePeriod = 33333333;
+XrDuration sessionFramePeriodNs() {
+    // Until Android display-mode switching is wired to the host compositor,
+    // keep the runtime's prediction conservative and honest at 30 Hz.
+    return kFramePeriod;
 }
 
 bool isColorSwapchainFormat(std::int64_t format) {
@@ -825,33 +826,25 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEnumerateInstanceExtensionProperties(
     if (layerName != nullptr && layerName[0] != '\0') {
         return XR_ERROR_API_LAYER_NOT_PRESENT;
     }
-    constexpr std::array<const char*, 12> names{{
+    constexpr std::array<const char*, 8> names{{
         kAndroidExtension,
         kGlesExtension,
         XR_EXT_HAND_TRACKING_EXTENSION_NAME,
         XR_EXT_HAND_INTERACTION_EXTENSION_NAME,
         ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,
-        XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME,
         ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME,
         XR_KHR_LOCATE_SPACES_EXTENSION_NAME,
-        XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,
-        XR_EXT_LOCAL_FLOOR_EXTENSION_NAME,
-        XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,
-        XR_FB_COLOR_SPACE_EXTENSION_NAME
+        XR_EXT_LOCAL_FLOOR_EXTENSION_NAME
     }};
-    constexpr std::array<std::uint32_t, 12> versions{{
+    constexpr std::array<std::uint32_t, 8> versions{{
         ENDXR_KHR_ANDROID_CREATE_INSTANCE_SPEC_VERSION,
         ENDXR_KHR_OPENGL_ES_ENABLE_SPEC_VERSION,
         XR_EXT_hand_tracking_SPEC_VERSION,
         XR_EXT_hand_interaction_SPEC_VERSION,
         ENDXR_KHR_ANDROID_THREAD_SETTINGS_SPEC_VERSION,
-        XR_KHR_composition_layer_depth_SPEC_VERSION,
         ENDXR_KHR_CONVERT_TIMESPEC_TIME_SPEC_VERSION,
         XR_KHR_locate_spaces_SPEC_VERSION,
-        XR_EXT_performance_settings_SPEC_VERSION,
-        XR_EXT_local_floor_SPEC_VERSION,
-        XR_FB_display_refresh_rate_SPEC_VERSION,
-        XR_FB_color_space_SPEC_VERSION
+        XR_EXT_local_floor_SPEC_VERSION
     }};
     *count = static_cast<std::uint32_t>(names.size());
     if (capacity == 0) return XR_SUCCESS;
@@ -910,27 +903,15 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
         } else if (std::strcmp(name, ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME) == 0) {
             if (androidThreadSettingsEnabled) return XR_ERROR_NAME_DUPLICATED;
             androidThreadSettingsEnabled = true;
-        } else if (std::strcmp(name, XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) == 0) {
-            if (compositionLayerDepthEnabled) return XR_ERROR_NAME_DUPLICATED;
-            compositionLayerDepthEnabled = true;
         } else if (std::strcmp(name, ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME) == 0) {
             if (convertTimespecTimeEnabled) return XR_ERROR_NAME_DUPLICATED;
             convertTimespecTimeEnabled = true;
         } else if (std::strcmp(name, XR_KHR_LOCATE_SPACES_EXTENSION_NAME) == 0) {
             if (locateSpacesEnabled) return XR_ERROR_NAME_DUPLICATED;
             locateSpacesEnabled = true;
-        } else if (std::strcmp(name, XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME) == 0) {
-            if (performanceSettingsEnabled) return XR_ERROR_NAME_DUPLICATED;
-            performanceSettingsEnabled = true;
         } else if (std::strcmp(name, XR_EXT_LOCAL_FLOOR_EXTENSION_NAME) == 0) {
             if (localFloorEnabled) return XR_ERROR_NAME_DUPLICATED;
             localFloorEnabled = true;
-        } else if (std::strcmp(name, XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME) == 0) {
-            if (displayRefreshRateEnabled) return XR_ERROR_NAME_DUPLICATED;
-            displayRefreshRateEnabled = true;
-        } else if (std::strcmp(name, XR_FB_COLOR_SPACE_EXTENSION_NAME) == 0) {
-            if (colorSpaceEnabled) return XR_ERROR_NAME_DUPLICATED;
-            colorSpaceEnabled = true;
         } else {
             return XR_ERROR_EXTENSION_NOT_PRESENT;
         }
@@ -962,13 +943,9 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrCreateInstanceImpl(
     created->handTrackingExtensionEnabled = handTrackingEnabled;
     created->handInteractionExtensionEnabled = handInteractionEnabled;
     created->androidThreadSettingsExtensionEnabled = androidThreadSettingsEnabled;
-    created->compositionLayerDepthExtensionEnabled = compositionLayerDepthEnabled;
     created->convertTimespecTimeExtensionEnabled = convertTimespecTimeEnabled;
     created->locateSpacesExtensionEnabled = locateSpacesEnabled;
-    created->performanceSettingsExtensionEnabled = performanceSettingsEnabled;
     created->localFloorExtensionEnabled = localFloorEnabled;
-    created->displayRefreshRateExtensionEnabled = displayRefreshRateEnabled;
-    created->colorSpaceExtensionEnabled = colorSpaceEnabled;
     if (androidInfo != nullptr) {
 #if defined(__ANDROID__)
         created->applicationVm = reinterpret_cast<JavaVM*>(androidInfo->applicationVM);
@@ -1130,9 +1107,8 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrGetSystemProperties(
     std::snprintf(properties->systemName, sizeof(properties->systemName), "%s", kSystemName);
     properties->graphicsProperties.maxSwapchainImageWidth = kMaximumEyeWidth;
     properties->graphicsProperties.maxSwapchainImageHeight = kMaximumEyeHeight;
-    // The current phone compositor accepts one projection layer. Report the
-    // implemented limit rather than claiming the OpenXR minimum of 16 while
-    // xrEndFrame would reject multiple layers.
+    // Only one stereo projection layer is composited. Additional quad/cylinder
+    // layers are not rendered yet, so do not advertise them as supported.
     properties->graphicsProperties.maxLayerCount = kMaxSupportedLayers;
     properties->trackingProperties.orientationTracking = XR_TRUE;
     properties->trackingProperties.positionTracking = XR_FALSE;
@@ -1420,7 +1396,7 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrWaitFrameImpl(
     if (!object->running) return XR_ERROR_SESSION_NOT_RUNNING;
     if (object->frameWaited || object->frameBegun) return XR_ERROR_CALL_ORDER_INVALID;
     const XrTime now = monotonicTimeNow();
-    const XrDuration period = sessionFramePeriodNs(object);
+    const XrDuration period = sessionFramePeriodNs();
     const XrTime next = object->hasPredictedTime
         ? std::max(now + period, object->predictedDisplayTime + 1)
         : now + period;
@@ -1471,25 +1447,18 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrameImpl(
         return XR_ERROR_LAYER_INVALID;
     }
     const XrCompositionLayerProjection* primaryProjection = nullptr;
-    for (std::uint32_t i = 0; i < endInfo->layerCount; ++i) {
-        const XrCompositionLayerBaseHeader* layer = endInfo->layers[i];
-        if (layer == nullptr) {
+    if (endInfo->layerCount == 1) {
+        const XrCompositionLayerBaseHeader* layer = endInfo->layers[0];
+        if (layer == nullptr || layer->type != XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
             return XR_ERROR_LAYER_INVALID;
         }
-        if (layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION && primaryProjection == nullptr) {
-            primaryProjection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
-        }
-    }
-    if (primaryProjection != nullptr) {
+        primaryProjection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
         XrResult composeError = XR_SUCCESS;
         if (!compositeProjectionLayer(object, primaryProjection, &composeError)) {
             object->frameWaited = false;
             object->frameBegun = false;
             return composeError;
         }
-    } else if (endInfo->layerCount > 0) {
-        // An application submitted only non-projection layers (for example a Quad UI layer)
-        // without a stereo projection base. Accept gracefully without failing the frame loop.
     }
     object->frameWaited = false;
     object->frameBegun = false;
@@ -4494,6 +4463,9 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateSpaces(
         return XR_ERROR_VALIDATION_FAILURE;
     }
     for (std::uint32_t i = 0; i < locateInfo->spaceCount; ++i) {
+        if (spaceLocations->locations[i].type != XR_TYPE_SPACE_LOCATION) {
+            return XR_ERROR_VALIDATION_FAILURE;
+        }
         XrSpaceLocation single{};
         single.type = XR_TYPE_SPACE_LOCATION;
         const XrResult result = endxrLocateSpace(
