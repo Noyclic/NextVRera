@@ -2958,11 +2958,11 @@ void enqueueRuntimeTelemetry(
                 queue.pop_front();
             }
         }
-        queue.push_back(PendingRuntimeTelemetry{
-            eventName,
-            sessionId,
-            frameCount
-        });
+        PendingRuntimeTelemetry telemetry{};
+        telemetry.eventName = eventName;
+        telemetry.sessionId = sessionId;
+        telemetry.frameCount = frameCount;
+        queue.push_back(std::move(telemetry));
     }
     instance->externalInputWake.notify_one();
 }
