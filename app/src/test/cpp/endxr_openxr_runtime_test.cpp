@@ -155,12 +155,12 @@ void testExtensionEnumerationAndInstance() {
                                      "xrEnumerateInstanceExtensionProperties");
     auto enumerate = reinterpret_cast<PFN_xrEnumerateInstanceExtensionProperties>(raw);
     std::uint32_t count = 0;
-    expect(enumerate(nullptr, 0, &count, nullptr) == XR_SUCCESS && count == 12,
-           "report all 12 supported OpenXR extensions");
-    XrExtensionProperties extensions[12]{};
+    expect(enumerate(nullptr, 0, &count, nullptr) == XR_SUCCESS && count == 8,
+           "report all 8 supported OpenXR extensions");
+    XrExtensionProperties extensions[8]{};
     for (auto& ext : extensions) ext.type = XR_TYPE_EXTENSION_PROPERTIES;
-    expect(enumerate(nullptr, 12, &count, extensions) == XR_SUCCESS,
-           "fill all 12 extension properties");
+    expect(enumerate(nullptr, 8, &count, extensions) == XR_SUCCESS,
+           "fill all 8 extension properties");
     expect(std::strcmp(extensions[0].extensionName,
                        ENDXR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME) == 0,
            "publish android-create extension");
@@ -179,35 +179,19 @@ void testExtensionEnumerationAndInstance() {
     expect(std::strcmp(extensions[4].extensionName,
                        ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME) == 0 &&
                extensions[4].extensionVersion == ENDXR_KHR_ANDROID_THREAD_SETTINGS_SPEC_VERSION,
-           "publish XR_KHR_android_thread_settings extension");
+           "publish best-effort XR_KHR_android_thread_settings extension");
     expect(std::strcmp(extensions[5].extensionName,
-                       XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) == 0 &&
-               extensions[5].extensionVersion == XR_KHR_composition_layer_depth_SPEC_VERSION,
-           "publish XR_KHR_composition_layer_depth extension");
-    expect(std::strcmp(extensions[6].extensionName,
                        ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME) == 0 &&
-               extensions[6].extensionVersion == ENDXR_KHR_CONVERT_TIMESPEC_TIME_SPEC_VERSION,
+               extensions[5].extensionVersion == ENDXR_KHR_CONVERT_TIMESPEC_TIME_SPEC_VERSION,
            "publish XR_KHR_convert_timespec_time extension");
-    expect(std::strcmp(extensions[7].extensionName,
+    expect(std::strcmp(extensions[6].extensionName,
                        XR_KHR_LOCATE_SPACES_EXTENSION_NAME) == 0 &&
-               extensions[7].extensionVersion == XR_KHR_locate_spaces_SPEC_VERSION,
+               extensions[6].extensionVersion == XR_KHR_locate_spaces_SPEC_VERSION,
            "publish XR_KHR_locate_spaces extension");
-    expect(std::strcmp(extensions[8].extensionName,
-                       XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME) == 0 &&
-               extensions[8].extensionVersion == XR_EXT_performance_settings_SPEC_VERSION,
-           "publish XR_EXT_performance_settings extension");
-    expect(std::strcmp(extensions[9].extensionName,
+    expect(std::strcmp(extensions[7].extensionName,
                        XR_EXT_LOCAL_FLOOR_EXTENSION_NAME) == 0 &&
-               extensions[9].extensionVersion == XR_EXT_local_floor_SPEC_VERSION,
-           "publish XR_EXT_local_floor extension");
-    expect(std::strcmp(extensions[10].extensionName,
-                       XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME) == 0 &&
-               extensions[10].extensionVersion == XR_FB_display_refresh_rate_SPEC_VERSION,
-           "publish XR_FB_display_refresh_rate extension");
-    expect(std::strcmp(extensions[11].extensionName,
-                       XR_FB_COLOR_SPACE_EXTENSION_NAME) == 0 &&
-               extensions[11].extensionVersion == XR_FB_color_space_SPEC_VERSION,
-           "publish XR_FB_color_space extension");
+               extensions[7].extensionVersion == XR_EXT_local_floor_SPEC_VERSION,
+           "publish estimated XR_EXT_local_floor extension");
     expect(enumerate(nullptr, 2, &count, extensions) == XR_ERROR_SIZE_INSUFFICIENT,
            "report insufficient extension enumeration capacity");
 
@@ -1905,6 +1889,7 @@ void testReferenceSpacesFloorHeightAndLocateSpaces() {
 
     const XrSpace targetSpaces[3] = {viewSpace, stageSpace, floorSpace};
     XrSpaceLocationData locationData[3]{};
+    for (auto& location : locationData) location.type = XR_TYPE_SPACE_LOCATION;
     XrSpaceLocations batchOutput{XR_TYPE_SPACE_LOCATIONS, nullptr, 3, locationData};
     XrSpacesLocateInfo batchInfo{XR_TYPE_SPACES_LOCATE_INFO, nullptr, localSpace, 1, 3, targetSpaces};
     expect(locateSpaces(session, &batchInfo, &batchOutput) == XR_SUCCESS &&
@@ -1915,6 +1900,7 @@ void testReferenceSpacesFloorHeightAndLocateSpaces() {
            "batch locate VIEW, STAGE, and LOCAL_FLOOR via OpenXR 1.1 xrLocateSpaces");
 
     XrSpaceLocationData khrData[2]{};
+    for (auto& location : khrData) location.type = XR_TYPE_SPACE_LOCATION;
     XrSpaceLocationsKHR khrOutput{XR_TYPE_SPACE_LOCATIONS_KHR, nullptr, 2, khrData};
     XrSpacesLocateInfoKHR khrInfo{XR_TYPE_SPACES_LOCATE_INFO_KHR, nullptr, floorSpace, 1, 2, targetSpaces};
     expect(locateSpacesKhr(session, &khrInfo, &khrOutput) == XR_SUCCESS &&
@@ -1941,16 +1927,13 @@ void testReferenceSpacesFloorHeightAndLocateSpaces() {
            "destroy 1.1 reference-space test instance");
 }
 
-void testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame() {
+void testSwapchainFormatsMultiviewDepthAndSingleProjectionLayer() {
     XrNegotiateLoaderInfo loader{};
     XrNegotiateRuntimeRequest request{};
     setup(loader, request);
     expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
-           "negotiate before swapchain format and multi-layer test");
-    const char* extraExts[] = {XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME};
-    XrInstance instance = createInstance(
-        request.getInstanceProcAddr, false, true, false, false,
-        XR_MAKE_VERSION(1, 0, 0), extraExts, 1);
+           "negotiate before swapchain format and multiview test");
+    XrInstance instance = createInstance(request.getInstanceProcAddr, false, true);
 
     auto getSystem = reinterpret_cast<PFN_xrGetSystem>(
         resolve(request.getInstanceProcAddr, instance, "xrGetSystem"));
@@ -1982,7 +1965,7 @@ void testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame() {
                formats[2] == 0x88F0 && // GL_DEPTH24_STENCIL8
                formats[3] == 0x81A6 && // GL_DEPTH_COMPONENT24
                formats[4] == 0x81A5,   // GL_DEPTH_COMPONENT16
-           "enumerate sRGB, RGBA8, and 3 depth GLES swapchain formats");
+           "enumerate sRGB, RGBA8, and depth GLES swapchain formats");
 
     auto createSwap = reinterpret_cast<PFN_xrCreateSwapchain>(
         resolve(request.getInstanceProcAddr, instance, "xrCreateSwapchain"));
@@ -2014,24 +1997,15 @@ void testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame() {
     expect(createSwap(session, &depthInfo, &depthSwap) == XR_SUCCESS,
            "create GL_DEPTH24_STENCIL8 depth swapchain");
 
-    XrSwapchainCreateInfo quadInfo{
-        XR_TYPE_SWAPCHAIN_CREATE_INFO, nullptr, 0,
-        XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT,
-        0x8058, 1, 512, 512, 1, 1, 1
-    };
-    XrSwapchain quadSwap = XR_NULL_HANDLE;
-    expect(createSwap(session, &quadInfo, &quadSwap) == XR_SUCCESS,
-           "create RGBA8 quad UI overlay swapchain");
-
     XrSwapchainImageAcquireInfo acqInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO, nullptr};
     XrSwapchainImageWaitInfo waitInfo{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, nullptr, XR_INFINITE_DURATION};
     XrSwapchainImageReleaseInfo relInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO, nullptr};
     std::uint32_t idx = 0;
-    for (XrSwapchain s : {mvSwap, depthSwap, quadSwap}) {
-        expect(acquire(s, &acqInfo, &idx) == XR_SUCCESS &&
-                   wait(s, &waitInfo) == XR_SUCCESS &&
-                   release(s, &relInfo) == XR_SUCCESS,
-               "acquire/wait/release swapchain image");
+    for (XrSwapchain swapchain : {mvSwap, depthSwap}) {
+        expect(acquire(swapchain, &acqInfo, &idx) == XR_SUCCESS &&
+                   wait(swapchain, &waitInfo) == XR_SUCCESS &&
+                   release(swapchain, &relInfo) == XR_SUCCESS,
+               "acquire/wait/release multiview or depth swapchain image");
     }
 
     auto beginSess = reinterpret_cast<PFN_xrBeginSession>(
@@ -2051,7 +2025,7 @@ void testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame() {
     XrFrameBeginInfo beginFrameInfo{XR_TYPE_FRAME_BEGIN_INFO, nullptr};
     expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
                beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
-           "wait and begin multi-layer frame");
+           "wait and begin multiview frame");
 
     XrCompositionLayerProjectionView mvViews[2]{};
     for (std::uint32_t eye = 0; eye < 2; ++eye) {
@@ -2063,73 +2037,47 @@ void testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame() {
     XrCompositionLayerProjection projection{
         XR_TYPE_COMPOSITION_LAYER_PROJECTION, nullptr, 0, XR_NULL_HANDLE, 2, mvViews
     };
-    XrCompositionLayerQuad quadLayer{};
-    quadLayer.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
-    quadLayer.subImage.swapchain = quadSwap;
-    quadLayer.subImage.imageRect.extent = {512, 512};
-    quadLayer.pose.orientation.w = 1.0f;
-    quadLayer.size = {1.0f, 1.0f};
-    const XrCompositionLayerBaseHeader* multiLayers[] = {
-        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection),
-        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quadLayer)
+    const XrCompositionLayerBaseHeader* projectionOnlyLayers[] = {
+        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection)
     };
     XrFrameEndInfo endInfo{
         XR_TYPE_FRAME_END_INFO, nullptr, frameState.predictedDisplayTime,
-        XR_ENVIRONMENT_BLEND_MODE_OPAQUE, 2, multiLayers
+        XR_ENVIRONMENT_BLEND_MODE_OPAQUE, 1, projectionOnlyLayers
     };
     expect(endFrame(session, &endInfo) == XR_SUCCESS,
-           "accept multiview projection layer plus companion Quad layer");
+           "composite one stereo projection layer from a two-slice array swapchain");
 
-    // Quad-only frame (no projection layer) must succeed cleanly
     expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
                beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
-           "begin quad-only frame");
-    const XrCompositionLayerBaseHeader* quadOnlyLayers[] = {
-        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quadLayer)
-    };
-    endInfo.displayTime = frameState.predictedDisplayTime;
-    endInfo.layerCount = 1;
-    endInfo.layers = quadOnlyLayers;
-    expect(endFrame(session, &endInfo) == XR_SUCCESS,
-           "accept quad-only frame submission gracefully");
-
-    // Depth swapchain mistakenly bound as projection color target must fail with XR_ERROR_LAYER_INVALID
-    expect(waitFrame(session, &waitFrameInfo, &frameState) == XR_SUCCESS &&
-               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
-           "begin invalid depth-color projection frame");
+           "begin invalid depth-as-color frame");
     mvViews[0].subImage.swapchain = depthSwap;
     endInfo.displayTime = frameState.predictedDisplayTime;
-    endInfo.layerCount = 1;
-    endInfo.layers = multiLayers;
     expect(endFrame(session, &endInfo) == XR_ERROR_LAYER_INVALID,
-           "reject depth swapchain passed as projection color layer");
+           "reject a depth swapchain used as a projection color target");
 
     auto requestExit = reinterpret_cast<PFN_xrRequestExitSession>(
         resolve(request.getInstanceProcAddr, instance, "xrRequestExitSession"));
     auto endSess = reinterpret_cast<PFN_xrEndSession>(
         resolve(request.getInstanceProcAddr, instance, "xrEndSession"));
     expect(requestExit(session) == XR_SUCCESS && endSess(session) == XR_SUCCESS,
-           "end swapchain format test session");
-    expect(destroySwap(mvSwap) == XR_SUCCESS &&
-               destroySwap(depthSwap) == XR_SUCCESS &&
-               destroySwap(quadSwap) == XR_SUCCESS,
-           "destroy multiview, depth, and quad swapchains");
+           "end multiview swapchain test session");
+    expect(destroySwap(mvSwap) == XR_SUCCESS && destroySwap(depthSwap) == XR_SUCCESS,
+           "destroy multiview and depth swapchains");
     auto destroySess = reinterpret_cast<PFN_xrDestroySession>(
         resolve(request.getInstanceProcAddr, instance, "xrDestroySession"));
     auto destroyInst = reinterpret_cast<PFN_xrDestroyInstance>(
         resolve(request.getInstanceProcAddr, instance, "xrDestroyInstance"));
     expect(destroySess(session) == XR_SUCCESS && destroyInst(instance) == XR_SUCCESS,
-           "destroy swapchain format test instance");
+           "destroy multiview swapchain test session");
 }
 
-void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
+void testAndroidThreadAndTimespecExtensions() {
     XrNegotiateLoaderInfo loader{};
     XrNegotiateRuntimeRequest request{};
     setup(loader, request);
     expect(xrNegotiateLoaderRuntimeInterface(&loader, &request) == XR_SUCCESS,
-           "negotiate before Android/FB/EXT extension tests");
+           "negotiate before Android thread and timespec tests");
 
-    // Verify disabled GIPA checks first
     XrInstance bare = createInstance(request.getInstanceProcAddr, false, true);
     PFN_xrVoidFunction fn = nullptr;
     for (const char* gatedName : {
@@ -2146,7 +2094,7 @@ void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
         fn = reinterpret_cast<PFN_xrVoidFunction>(static_cast<std::uintptr_t>(1));
         expect(request.getInstanceProcAddr(bare, gatedName, &fn) ==
                    XR_ERROR_FUNCTION_UNSUPPORTED && fn == nullptr,
-               "hide extension entrypoint when extension is disabled");
+               "hide extension entrypoint when extension is disabled or not advertised");
     }
     auto destroyBare = reinterpret_cast<PFN_xrDestroyInstance>(
         resolve(request.getInstanceProcAddr, bare, "xrDestroyInstance"));
@@ -2154,14 +2102,11 @@ void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
 
     const char* extraExts[] = {
         ENDXR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,
-        ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME,
-        XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,
-        XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,
-        XR_FB_COLOR_SPACE_EXTENSION_NAME
+        ENDXR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME
     };
     XrInstance instance = createInstance(
         request.getInstanceProcAddr, false, true, false, false,
-        XR_MAKE_VERSION(1, 0, 0), extraExts, 5);
+        XR_MAKE_VERSION(1, 0, 0), extraExts, 2);
 
     auto timespecToTime = reinterpret_cast<PFN_xrConvertTimespecTimeToTimeKHR>(
         resolve(request.getInstanceProcAddr, instance, "xrConvertTimespecTimeToTimeKHR"));
@@ -2191,7 +2136,6 @@ void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
         resolve(request.getInstanceProcAddr, instance, "xrGetOpenGLESGraphicsRequirementsKHR"));
     XrGraphicsRequirementsOpenGLESKHR reqs{XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR, nullptr, 0, 0};
     expect(getReqs(instance, systemId, &reqs) == XR_SUCCESS, "query GLES requirements");
-
     XrGraphicsBindingOpenGLESAndroidKHR binding{
         XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR, nullptr,
         reinterpret_cast<void*>(0x1000), reinterpret_cast<void*>(0x2000), reinterpret_cast<void*>(0x3000)
@@ -2202,60 +2146,13 @@ void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
     XrSession session = XR_NULL_HANDLE;
     expect(createSess(instance, &sessInfo, &session) == XR_SUCCESS, "create session");
 
-    auto pollEvent = reinterpret_cast<PFN_xrPollEvent>(
-        resolve(request.getInstanceProcAddr, instance, "xrPollEvent"));
-    XrEventDataBuffer ev{XR_TYPE_EVENT_DATA_BUFFER, nullptr, {}};
-    expect(pollEvent(instance, &ev) == XR_SUCCESS, "drain initial READY event");
-
     auto setThread = reinterpret_cast<PFN_xrSetAndroidApplicationThreadKHR>(
         resolve(request.getInstanceProcAddr, instance, "xrSetAndroidApplicationThreadKHR"));
     expect(setThread(session, XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR, 4242) == XR_SUCCESS,
-           "accept valid Android renderer thread priority hint");
+           "accept best-effort renderer thread priority hint");
     expect(setThread(session, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR, 0) ==
                XR_ERROR_ANDROID_THREAD_SETTINGS_ID_INVALID_KHR,
            "reject zero thread id in xrSetAndroidApplicationThreadKHR");
-
-    auto setPerf = reinterpret_cast<PFN_xrPerfSettingsSetPerformanceLevelEXT>(
-        resolve(request.getInstanceProcAddr, instance, "xrPerfSettingsSetPerformanceLevelEXT"));
-    expect(setPerf(session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT,
-                   XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT) == XR_SUCCESS &&
-               setPerf(session, XR_PERF_SETTINGS_DOMAIN_GPU_EXT,
-                       XR_PERF_SETTINGS_LEVEL_BOOST_EXT) == XR_SUCCESS,
-           "accept CPU/GPU performance level hints");
-    expect(setPerf(session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT,
-                   static_cast<XrPerfSettingsLevelEXT>(999)) == XR_ERROR_VALIDATION_FAILURE,
-           "reject invalid performance level enum");
-
-    auto enumRates = reinterpret_cast<PFN_xrEnumerateDisplayRefreshRatesFB>(
-        resolve(request.getInstanceProcAddr, instance, "xrEnumerateDisplayRefreshRatesFB"));
-    auto getRate = reinterpret_cast<PFN_xrGetDisplayRefreshRateFB>(
-        resolve(request.getInstanceProcAddr, instance, "xrGetDisplayRefreshRateFB"));
-    auto reqRate = reinterpret_cast<PFN_xrRequestDisplayRefreshRateFB>(
-        resolve(request.getInstanceProcAddr, instance, "xrRequestDisplayRefreshRateFB"));
-
-    std::uint32_t rateCount = 0;
-    float rates[8]{};
-    expect(enumRates(session, 8, &rateCount, rates) == XR_SUCCESS && rateCount == 4 &&
-               std::abs(rates[0] - 60.0f) < 0.1f && std::abs(rates[2] - 90.0f) < 0.1f,
-           "enumerate supported 60/72/90/120 Hz display refresh rates");
-    float currentHz = 0.0f;
-    expect(getRate(session, &currentHz) == XR_SUCCESS && std::abs(currentHz - 60.0f) < 0.1f,
-           "report default 60 Hz refresh rate");
-    expect(reqRate(session, 144.0f) == XR_ERROR_DISPLAY_REFRESH_RATE_UNSUPPORTED_FB,
-           "reject unsupported 144 Hz refresh rate");
-    expect(reqRate(session, 90.0f) == XR_SUCCESS, "switch display refresh rate to 90 Hz");
-    expect(getRate(session, &currentHz) == XR_SUCCESS && std::abs(currentHz - 90.0f) < 0.1f,
-           "observe updated 90 Hz refresh rate");
-
-    ev = {XR_TYPE_EVENT_DATA_BUFFER, nullptr, {}};
-    expect(pollEvent(instance, &ev) == XR_SUCCESS &&
-               ev.type == XR_TYPE_EVENT_DATA_DISPLAY_REFRESH_RATE_CHANGED_FB,
-           "queue XrEventDataDisplayRefreshRateChangedFB upon refresh rate change");
-    const auto* rateChanged =
-        reinterpret_cast<const XrEventDataDisplayRefreshRateChangedFB*>(&ev);
-    expect(std::abs(rateChanged->fromDisplayRefreshRate - 60.0f) < 0.1f &&
-               std::abs(rateChanged->toDisplayRefreshRate - 90.0f) < 0.1f,
-           "report old and new refresh rates in event payload");
 
     auto beginSess = reinterpret_cast<PFN_xrBeginSession>(
         resolve(request.getInstanceProcAddr, instance, "xrBeginSession"));
@@ -2263,53 +2160,35 @@ void testAndroidThreadTimespecPerfRefreshRateAndColorSpace() {
     expect(beginSess(session, &beginInfo) == XR_SUCCESS, "begin session");
     auto waitFrame = reinterpret_cast<PFN_xrWaitFrame>(
         resolve(request.getInstanceProcAddr, instance, "xrWaitFrame"));
-    XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO, nullptr};
-    XrFrameState frameState{XR_TYPE_FRAME_STATE, nullptr, 0, 0, XR_FALSE};
-    expect(waitFrame(session, &waitInfo, &frameState) == XR_SUCCESS &&
-               std::abs(static_cast<double>(frameState.predictedDisplayPeriod) - 11111111.0) < 5.0,
-           "reflect active 90 Hz period in xrWaitFrame predictedDisplayPeriod");
     auto beginFrame = reinterpret_cast<PFN_xrBeginFrame>(
         resolve(request.getInstanceProcAddr, instance, "xrBeginFrame"));
     auto endFrame = reinterpret_cast<PFN_xrEndFrame>(
         resolve(request.getInstanceProcAddr, instance, "xrEndFrame"));
+    XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO, nullptr};
+    XrFrameState frameState{XR_TYPE_FRAME_STATE, nullptr, 0, 0, XR_FALSE};
     XrFrameBeginInfo beginFrameInfo{XR_TYPE_FRAME_BEGIN_INFO, nullptr};
-    XrFrameEndInfo endFrameInfo{
+    expect(waitFrame(session, &waitInfo, &frameState) == XR_SUCCESS &&
+               frameState.predictedDisplayPeriod == 33333333 &&
+               beginFrame(session, &beginFrameInfo) == XR_SUCCESS,
+           "use conservative fixed 30 Hz prediction until display mode switching is implemented");
+    XrFrameEndInfo endInfo{
         XR_TYPE_FRAME_END_INFO, nullptr, frameState.predictedDisplayTime,
         XR_ENVIRONMENT_BLEND_MODE_OPAQUE, 0, nullptr
     };
-    expect(beginFrame(session, &beginFrameInfo) == XR_SUCCESS &&
-               endFrame(session, &endFrameInfo) == XR_SUCCESS,
-           "complete 90 Hz frame cleanly before ending session");
-
-    auto enumColor = reinterpret_cast<PFN_xrEnumerateColorSpacesFB>(
-        resolve(request.getInstanceProcAddr, instance, "xrEnumerateColorSpacesFB"));
-    auto setColor = reinterpret_cast<PFN_xrSetColorSpaceFB>(
-        resolve(request.getInstanceProcAddr, instance, "xrSetColorSpaceFB"));
-    std::uint32_t colorCount = 0;
-    XrColorSpaceFB colorSpaces[4]{};
-    expect(enumColor(session, 4, &colorCount, colorSpaces) == XR_SUCCESS && colorCount == 3 &&
-               colorSpaces[0] == XR_COLOR_SPACE_REC709_FB &&
-               colorSpaces[1] == XR_COLOR_SPACE_QUEST_FB &&
-               colorSpaces[2] == XR_COLOR_SPACE_REC2020_FB,
-           "enumerate REC709, QUEST, and REC2020 color spaces");
-    expect(setColor(session, XR_COLOR_SPACE_QUEST_FB) == XR_SUCCESS,
-           "accept XR_COLOR_SPACE_QUEST_FB selection");
-    expect(setColor(session, XR_COLOR_SPACE_ADOBE_RGB_FB) == XR_ERROR_COLOR_SPACE_UNSUPPORTED_FB,
-           "reject unsupported color space");
+    expect(endFrame(session, &endInfo) == XR_SUCCESS, "complete empty frame");
 
     auto requestExit = reinterpret_cast<PFN_xrRequestExitSession>(
         resolve(request.getInstanceProcAddr, instance, "xrRequestExitSession"));
     auto endSess = reinterpret_cast<PFN_xrEndSession>(
         resolve(request.getInstanceProcAddr, instance, "xrEndSession"));
     expect(requestExit(session) == XR_SUCCESS && endSess(session) == XR_SUCCESS,
-           "end extension test session");
+           "end thread/timespec extension test session");
     auto destroySess = reinterpret_cast<PFN_xrDestroySession>(
         resolve(request.getInstanceProcAddr, instance, "xrDestroySession"));
     auto destroyInst = reinterpret_cast<PFN_xrDestroyInstance>(
         resolve(request.getInstanceProcAddr, instance, "xrDestroyInstance"));
     expect(destroySess(session) == XR_SUCCESS && destroyInst(instance) == XR_SUCCESS,
-           "clean up extension test session and instance");
-}
+           "clean up thread/timespec extension test session");
 }
 int main() {
     testNegotiation();
@@ -2321,8 +2200,8 @@ int main() {
     testHandInteractionProfileMapsCameraGesturesAndJointPoses();
     testGetInstanceProcAddrConformance();
     testReferenceSpacesFloorHeightAndLocateSpaces();
-    testSwapchainFormatsMultiviewDepthAndMultiLayerEndFrame();
-    testAndroidThreadTimespecPerfRefreshRateAndColorSpace();
+    testSwapchainFormatsMultiviewDepthAndSingleProjectionLayer();
+    testAndroidThreadAndTimespecExtensions();
     std::cout << "EndXR OpenXR GLES session and swapchain tests: all passed.\n";
     return 0;
 }
