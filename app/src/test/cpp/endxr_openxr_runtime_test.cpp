@@ -2190,6 +2190,8 @@ void testAndroidThreadAndTimespecExtensions() {
     expect(destroySess(session) == XR_SUCCESS && destroyInst(instance) == XR_SUCCESS,
            "clean up thread/timespec extension test session");
 }
+} // namespace
+
 int main() {
     testNegotiation();
     testInstanceApiVersionCompatibility();
