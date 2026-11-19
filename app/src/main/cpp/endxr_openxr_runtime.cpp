@@ -4465,9 +4465,6 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrLocateSpaces(
         return XR_ERROR_VALIDATION_FAILURE;
     }
     for (std::uint32_t i = 0; i < locateInfo->spaceCount; ++i) {
-        if (spaceLocations->locations[i].type != XR_TYPE_SPACE_LOCATION) {
-            return XR_ERROR_VALIDATION_FAILURE;
-        }
         XrSpaceLocation single{};
         single.type = XR_TYPE_SPACE_LOCATION;
         const XrResult result = endxrLocateSpace(
