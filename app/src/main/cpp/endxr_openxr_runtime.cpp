@@ -1435,16 +1435,23 @@ XRAPI_ATTR XrResult XRAPI_CALL endxrEndFrameImpl(
     if (endInfo->environmentBlendMode != XR_ENVIRONMENT_BLEND_MODE_OPAQUE) {
         return XR_ERROR_ENVIRONMENT_BLEND_MODE_UNSUPPORTED;
     }
+    const auto finishFrame = [object]() {
+        object->frameWaited = false;
+        object->frameBegun = false;
+    };
     if (endInfo->layerCount > kMaxSupportedLayers) {
+        finishFrame();
         return XR_ERROR_LAYER_LIMIT_EXCEEDED;
     }
     if (endInfo->layerCount > 0 && endInfo->layers == nullptr) {
+        finishFrame();
         return XR_ERROR_LAYER_INVALID;
     }
     const XrCompositionLayerProjection* primaryProjection = nullptr;
     if (endInfo->layerCount == 1) {
         const XrCompositionLayerBaseHeader* layer = endInfo->layers[0];
         if (layer == nullptr || layer->type != XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
+            finishFrame();
             return XR_ERROR_LAYER_INVALID;
         }
         primaryProjection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
