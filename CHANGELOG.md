@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-21
+
+### NextVRera tracking / EndXR
+- Added a copy-ready tracking health diagnostic formatter with explicit IDLE/HEALTHY/DEGRADED/STALE/RECOVERED verdicts.
+- Kept the diagnostic contract monotonic and evidence-based: it reports accepted frames, gaps, stale transitions, recoveries and clear timestamps without fabricating poses.
+- Added regression coverage for grace, stale and reacquisition verdicts so Sandbox/EndXR reports can consume one stable health contract.
+
+
 ## 2026-11-19
 
 ### NextVRera tracking / EndXR
