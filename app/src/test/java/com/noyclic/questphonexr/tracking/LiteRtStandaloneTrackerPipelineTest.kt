@@ -104,7 +104,7 @@ class LiteRtStandaloneTrackerPipelineTest {
     @Test
     fun detectorRefreshUpdatesAnExistingTrackWithoutChangingItsIdentity() {
         val detector = SequencePalmDetector(
-            listOf(listOf(region(0.25f, HandSide.LEFT)), listOf(region(0.55f, HandSide.LEFT)))
+            listOf(listOf(region(0.25f, HandSide.LEFT)), listOf(region(0.32f, HandSide.LEFT)))
         )
         val observed = mutableListOf<Pair<Long, Float>>()
         val landmarker = LiteRtHandLandmarkEstimator { frame, roi ->
@@ -120,7 +120,7 @@ class LiteRtStandaloneTrackerPipelineTest {
 
         assertEquals(1, first.hands.size)
         assertEquals(first.hands.single().trackingId, later.hands.single().trackingId)
-        assertTrue(observed.any { (timestamp, centerX) -> timestamp == 140L && centerX in 0.54f..0.56f })
+        assertTrue(observed.any { (timestamp, centerX) -> timestamp == 140L && centerX in 0.31f..0.33f })
     }
 
     @Test
