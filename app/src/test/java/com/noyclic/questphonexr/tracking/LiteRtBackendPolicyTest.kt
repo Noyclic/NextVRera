@@ -70,7 +70,7 @@ class LiteRtBackendPolicyTest {
         assertNull(selected.backend)
     }
     @Test
-    fun prefersDspBeforeHtpWhenBothAreVerified() {
+    fun prefersHtpForNeuralInferenceWhenBothQnnTargetsAreVerified() {
         val selected = LiteRtBackendPolicy.select(
             listOf(
                 LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_HTP, true),
@@ -78,7 +78,23 @@ class LiteRtBackendPolicyTest {
                 LiteRtBackendProbe(LiteRtExecutionBackend.GPU, true)
             )
         )
-        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, selected.backend)
+        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_HTP, selected.backend)
+    }
+
+    @Test
+    fun strictHtpSelectionDoesNotFallBackToGenericDspGpuOrCpu() {
+        val selection = LiteRtBackendPolicy.selectStrict(
+            listOf(
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_HTP, false, "HTP unavailable"),
+                LiteRtBackendProbe(LiteRtExecutionBackend.QUALCOMM_QNN_DSP, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.GPU, true),
+                LiteRtBackendProbe(LiteRtExecutionBackend.CPU_XNNPACK, true)
+            ),
+            LiteRtExecutionBackend.QUALCOMM_QNN_HTP
+        )
+        assertNull(selection.backend)
+        assertEquals(1, selection.attempts.size)
+        assertEquals(LiteRtExecutionBackend.QUALCOMM_QNN_HTP, selection.attempts.single().backend)
     }
 
     @Test
