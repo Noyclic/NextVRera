@@ -128,3 +128,21 @@ refresh/reacquisition, pinch state and conversion to HandTrackingFrame. It remai
 concrete model adapters, real backend probes and device validation are connected. QNN HTP is the primary candidate for Qualcomm hand-model inference (the published Qualcomm profile
 uses HTP with FP16). QNN DSP is a distinct backend and is not treated as HTP. Both are probed
 separately per model; strict HTP/DSP diagnostics never count another backend's success as a pass.
+
+
+### Pinned standalone model assets
+
+The initial standalone model pair is pinned to Qualcomm's immutable Hugging Face revision
+5699e8b7740034d58235fe95ae61a1606ea448e2:
+- HandDetector.tflite: 7,072,880 bytes, SHA-256
+  7fed965f73757224de6c7f9251781b924f242e753b1246c708525b015c6dc371
+- HandLandmarkDetector.tflite: 8,070,980 bytes, SHA-256
+  628856ec43b60e828c86d9ffac562f076484d1763242060e4cf16be08d36fb29
+
+Both are downloaded only after an explicit install request, stored in app-private no-backup storage,
+and verified before use. The detector produces raw box/keypoint regressions plus confidence scores;
+its anchor decode and NMS must be implemented. The landmark component produces hand-presence,
+handedness and 21 three-dimensional landmark values. These are model candidates, not a claim of
+verified QNN execution on Snapdragon 685. Qualcomm's current published HTP profile uses
+LiteRT 1.4.2 / QAIRT 2.51 and FP16 HTP; the pinned older files must be checked against the
+delegate/runtime combination actually shipped by NextVRera.
