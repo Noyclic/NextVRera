@@ -26,6 +26,7 @@ class LiteRtStandaloneDiagnosticsActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var installButton: Button
     private lateinit var probeButton: Button
+    private var modelsVerified = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +89,7 @@ class LiteRtStandaloneDiagnosticsActivity : ComponentActivity() {
 
     private fun refreshInstalledState() {
         val installed = runCatching { LiteRtStandaloneModelStore.areInstalled(this) }.getOrDefault(false)
+        modelsVerified = installed
         probeButton.isEnabled = installed
         if (installed) {
             status.text = "Обе модели установлены и прошли проверку размера + SHA-256.\n" +
@@ -113,6 +115,7 @@ class LiteRtStandaloneDiagnosticsActivity : ComponentActivity() {
                         "${files.handLandmark.name}: ${files.handLandmark.length()} bytes\n\n" +
                         "Следующий шаг: строгая проверка QNN HTP."
                 )
+                modelsVerified = true
                 runOnUiThread { if (!isFinishing && !isDestroyed) probeButton.isEnabled = true }
             } catch (error: Throwable) {
                 setStatus("ОШИБКА УСТАНОВКИ\n${error.javaClass.simpleName}: ${error.message}")
@@ -181,8 +184,7 @@ class LiteRtStandaloneDiagnosticsActivity : ComponentActivity() {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) {
                 installButton.isEnabled = !value
-                probeButton.isEnabled = !value &&
-                    runCatching { LiteRtStandaloneModelStore.areInstalled(this) }.getOrDefault(false)
+                probeButton.isEnabled = !value && modelsVerified
             }
         }
     }

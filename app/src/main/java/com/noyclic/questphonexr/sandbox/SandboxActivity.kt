@@ -65,7 +65,6 @@ import com.noyclic.questphonexr.tracking.HandTrackingDelegatePreference
 import com.noyclic.questphonexr.tracking.HandTrackingPresetStore
 import com.noyclic.questphonexr.tracking.RtmposeModelStore
 import com.noyclic.questphonexr.tracking.RtmposeLiteRtRunner
-import com.noyclic.questphonexr.sandbox.LiteRtStandaloneDiagnosticsActivity
 import com.noyclic.questphonexr.input.PhysicalControllerSnapshot
 import com.noyclic.questphonexr.input.XrTrackingUdpSender
 import com.noyclic.questphonexr.vr.ViewerProfile

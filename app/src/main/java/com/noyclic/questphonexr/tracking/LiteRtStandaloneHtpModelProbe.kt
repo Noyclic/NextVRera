@@ -55,8 +55,15 @@ class LiteRtStandaloneHtpModelProbe(
     fun inspectAndWarmup(benchmarkIterations: Int = DEFAULT_BENCHMARK_ITERATIONS): LiteRtQnnModelProbeResult {
         check(!closed.get()) { "HTP model probe is closed." }
         require(benchmarkIterations in 1..100) { "Benchmark iterations must be between 1 and 100." }
-        check(modelFile.isFile && modelFile.length() > 0L) {
-            "LiteRT model file is missing or empty: ${modelFile.name}"
+        val installed = checkNotNull(LiteRtStandaloneModelStore.installedFiles(appContext)) {
+            "The pinned standalone model pair is missing or failed SHA-256 verification."
+        }
+        val canonicalModel = modelFile.canonicalFile
+        check(
+            canonicalModel == installed.palmDetector.canonicalFile ||
+                canonicalModel == installed.handLandmark.canonicalFile
+        ) {
+            "Only the two integrity-pinned standalone models may be probed."
         }
 
         val modelBytes = modelFile.readBytes()
