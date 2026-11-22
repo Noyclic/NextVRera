@@ -26,7 +26,7 @@ class LiteRtStandaloneDiagnosticsActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var installButton: Button
     private lateinit var probeButton: Button
-    private var modelsVerified = false
+    @Volatile private var modelsVerified = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -133,6 +133,7 @@ class LiteRtStandaloneDiagnosticsActivity : ComponentActivity() {
         worker.execute {
             val files = LiteRtStandaloneModelStore.installedFiles(this)
             if (files == null) {
+                modelsVerified = false
                 setStatus("ОШИБКА: модели отсутствуют или не прошли SHA-256 проверку.")
                 busy.set(false)
                 setBusy(false)
