@@ -146,3 +146,22 @@ handedness and 21 three-dimensional landmark values. These are model candidates,
 verified QNN execution on Snapdragon 685. Qualcomm's current published HTP profile uses
 LiteRT 1.4.2 / QAIRT 2.51 and FP16 HTP; the pinned older files must be checked against the
 delegate/runtime combination actually shipped by NextVRera.
+
+
+### Strict QNN HTP model inspection
+
+`LiteRtStandaloneHtpModelProbe` opens one verified model at a time through the Qualcomm
+QNN LiteRT Interpreter delegate using `HTP_BACKEND`. NNAPI and XNNPACK are explicitly disabled.
+The probe reports the actual input/output tensor names, shapes, data types, warm-up time, median
+and p95 inference time. It does not publish hand frames and does not substitute another backend.
+
+A successful HTP delegate warm-up is not proof that every graph operator ran on HTP. The
+`operatorPlacement` field therefore remains `NOT_VERIFIED` until the device reports QNN
+partition/operator placement. The model tensor contracts are discovered at runtime rather
+than assumed from a different export.
+
+The Qualcomm AI Hub profile currently documents LiteRT 1.4.2 / QAIRT 2.51 / QNN delegate
+2.51 with HTP FP16 for this model family. The current Android integration still uses the
+2.34.0 QNN delegate as an initial compatibility probe; it must be updated only after the
+2.51 runtime is checked against the APK dependency graph. Qualcomm's published hand-model
+profiles do not list Snapdragon 685, so HTP support on the Redmi Note 13 4G remains unverified.
