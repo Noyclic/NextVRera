@@ -107,6 +107,11 @@
             android:exported="false"
             android:screenOrientation="landscape" />
         <activity
+            android:name=".sandbox.LiteRtStandaloneDiagnosticsActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|uiMode|density"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
             android:name=".sandbox.SandboxActivity"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|uiMode|density"
             android:exported="false"

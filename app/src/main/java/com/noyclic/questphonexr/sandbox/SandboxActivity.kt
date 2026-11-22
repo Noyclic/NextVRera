@@ -65,6 +65,7 @@ import com.noyclic.questphonexr.tracking.HandTrackingDelegatePreference
 import com.noyclic.questphonexr.tracking.HandTrackingPresetStore
 import com.noyclic.questphonexr.tracking.RtmposeModelStore
 import com.noyclic.questphonexr.tracking.RtmposeLiteRtRunner
+import com.noyclic.questphonexr.sandbox.LiteRtStandaloneDiagnosticsActivity
 import com.noyclic.questphonexr.input.PhysicalControllerSnapshot
 import com.noyclic.questphonexr.input.XrTrackingUdpSender
 import com.noyclic.questphonexr.vr.ViewerProfile
@@ -950,6 +951,15 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             }
             addView(
                 frontCameraSwitch,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                controlButton("LiteRT Standalone · модели и QNN HTP тест") {
+                    startActivity(Intent(this@SandboxActivity, LiteRtStandaloneDiagnosticsActivity::class.java))
+                },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
