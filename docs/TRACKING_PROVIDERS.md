@@ -125,5 +125,6 @@ LITERT_STANDALONE is separate from LITERT_CUSTOM, which remains the MediaPipe + 
 The standalone provider must use its own LiteRT palm detector and 21-point landmark adapters and
 must never consume MediaPipe observations. LiteRtStandaloneTracker owns two-hand identity, ROI
 refresh/reacquisition, pinch state and conversion to HandTrackingFrame. It remains PLANNED until
-concrete model adapters, real backend probes and device validation are connected. QNN DSP, QNN HTP,
-GPU and CPU/XNNPACK are probed per model; strict DSP diagnostics never count GPU/CPU success as DSP.
+concrete model adapters, real backend probes and device validation are connected. QNN HTP is the primary candidate for Qualcomm hand-model inference (the published Qualcomm profile
+uses HTP with FP16). QNN DSP is a distinct backend and is not treated as HTP. Both are probed
+separately per model; strict HTP/DSP diagnostics never count another backend's success as a pass.
