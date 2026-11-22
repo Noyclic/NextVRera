@@ -1672,7 +1672,7 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             TrackingSelectionMode.MANUAL -> "Ручной выбор"
         }
         val activeLabel = snapshot.activeProvider?.wireId ?: "пока нет свежих кадров"
-        // Keep the choice dialog compact so the four provider rows remain visible on
+        // Keep the choice dialog compact so the five provider rows remain visible on
         // small screens and Android UIAutomator can select them without relying on
         // private AlertDialog ListView implementation details. Full per-provider health
         // counters, age, latency, quality and FPS remain available in EndXR diagnostics.
@@ -1685,6 +1685,9 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
         val liteRtAvailable =
             snapshot.statusByProvider[TrackingProviderId.LITERT_CUSTOM]
                 ?.canPublishFrames == true
+        val standaloneLiteRtAvailable =
+            snapshot.statusByProvider[TrackingProviderId.LITERT_STANDALONE]
+                ?.canPublishFrames == true
         val choices = arrayOf(
             "AUTO — выбирать по качеству и задержке",
             "MediaPipe — подключён",
@@ -1692,6 +1695,11 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 "MediaPipe + LiteRT — экспериментально"
             } else {
                 "MediaPipe + LiteRT — выключен"
+            },
+            if (standaloneLiteRtAvailable) {
+                "LiteRT Standalone — экспериментально"
+            } else {
+                "LiteRT Standalone — пока не подключён"
             },
             "GVXRS Dock Station — пока не подключён"
         )
@@ -1731,7 +1739,25 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                         }
                         updateStatus()
                     }
-                    3 -> Toast.makeText(
+                    3 -> {
+                        if (standaloneLiteRtAvailable &&
+                            EndXrTrackingInputBridge.selectProvider(TrackingProviderId.LITERT_STANDALONE)
+                        ) {
+                            Toast.makeText(
+                                this,
+                                "Выбран отдельный LiteRT-трекер.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "LiteRT Standalone пока не подключён: сначала нужны модели и проверенный backend.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        updateStatus()
+                    }
+                    4 -> Toast.makeText(
                         this,
                         "GVXRS Dock: пока есть протокол пакетов, но нет живого подключения.",
                         Toast.LENGTH_LONG
