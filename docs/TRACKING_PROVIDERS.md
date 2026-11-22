@@ -117,3 +117,13 @@ default until its quality and sustained performance beat or complement the Media
 
 No alternative tracker is claimed to be operational until its adapter is registered as READY and
 tested on physical hardware.
+
+
+## Independent LiteRT Standalone provider
+
+LITERT_STANDALONE is separate from LITERT_CUSTOM, which remains the MediaPipe + RTMPose hybrid.
+The standalone provider must use its own LiteRT palm detector and 21-point landmark adapters and
+must never consume MediaPipe observations. LiteRtStandaloneTracker owns two-hand identity, ROI
+refresh/reacquisition, pinch state and conversion to HandTrackingFrame. It remains PLANNED until
+concrete model adapters, real backend probes and device validation are connected. QNN DSP, QNN HTP,
+GPU and CPU/XNNPACK are probed per model; strict DSP diagnostics never count GPU/CPU success as DSP.
