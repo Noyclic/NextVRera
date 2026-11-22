@@ -24,13 +24,15 @@ data class LiteRtBackendSelection(
 )
 
 /**
- * QNN DSP -> QNN HTP -> GPU -> CPU fallback policy. Call once per model because the palm detector and
+ * QNN HTP -> QNN DSP -> GPU -> CPU fallback policy. Call once per model because the palm detector and
  * landmark model may support different operations and therefore different accelerators.
  */
 object LiteRtBackendPolicy {
     val preferenceOrder: List<LiteRtExecutionBackend> = listOf(
-        LiteRtExecutionBackend.QUALCOMM_QNN_DSP,
+        // The Qualcomm hand models are profiled with HTP (Hexagon Tensor Processor).
+        // Generic DSP_BACKEND is a distinct QNN target and is not treated as HTP.
         LiteRtExecutionBackend.QUALCOMM_QNN_HTP,
+        LiteRtExecutionBackend.QUALCOMM_QNN_DSP,
         LiteRtExecutionBackend.GPU,
         LiteRtExecutionBackend.CPU_XNNPACK
     )
