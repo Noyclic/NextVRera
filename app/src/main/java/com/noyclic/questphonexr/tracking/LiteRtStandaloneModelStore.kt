@@ -159,9 +159,11 @@ object LiteRtStandaloneModelStore {
                     StandardCopyOption.ATOMIC_MOVE
                 )
             } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-                check(temporary.renameTo(destination)) {
-                    "Could not install the verified LiteRT ${asset.id} model."
-                }
+                Files.move(
+                    temporary.toPath(),
+                    destination.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
             }
             check(verify(destination, asset.expectedBytes, asset.expectedSha256)) {
                 "LiteRT ${asset.id} failed post-install integrity verification."
