@@ -165,3 +165,20 @@ The Qualcomm AI Hub profile currently documents LiteRT 1.4.2 / QAIRT 2.51 / QNN 
 2.34.0 QNN delegate as an initial compatibility probe; it must be updated only after the
 2.51 runtime is checked against the APK dependency graph. Qualcomm's published hand-model
 profiles do not list Snapdragon 685, so HTP support on the Redmi Note 13 4G remains unverified.
+
+
+## Isolated Qualcomm HTP probe APK
+
+The QNN Interpreter delegate is isolated in the separate `:litert-htp-probe` Android application.
+The main NextVRera app uses Google Play services LiteRT 17.0.0 for its existing CompiledModel
+GPU path. That runtime removed the legacy `org.tensorflow.lite.Delegate` APIs required by
+Qualcomm's QNN Interpreter delegate. Mixing both runtimes in the same app variant is not valid.
+
+The standalone probe APK bundles the legacy LiteRT Interpreter + Qualcomm QNN delegate without
+Google Play services LiteRT. It downloads the same two immutable Qualcomm model assets, verifies
+their SHA-256 hashes, disables NNAPI and XNNPACK, and performs strict HTP-only warm-up and
+benchmark attempts. The probe APK is for hardware compatibility evidence only; it does not
+activate or replace the production tracker. A successful warm-up still does not prove complete
+operator placement on HTP.
+
+The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.

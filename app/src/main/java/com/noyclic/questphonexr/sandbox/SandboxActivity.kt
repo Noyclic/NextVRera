@@ -956,15 +956,6 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 )
             )
             addView(
-                controlButton("LiteRT Standalone · модели и QNN HTP тест") {
-                    startActivity(Intent(this@SandboxActivity, LiteRtStandaloneDiagnosticsActivity::class.java))
-                },
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
-            addView(
                 controlButton("Источник трекинга · AUTO / ручной") { showTrackingProviderDialog() },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,

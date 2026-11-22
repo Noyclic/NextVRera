@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "NextVRera"
-include(":app", ":runtime-client-probe", ":endvr-client")
+include(":app", ":runtime-client-probe", ":endvr-client", ":litert-htp-probe")
