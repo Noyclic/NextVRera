@@ -117,3 +117,68 @@ default until its quality and sustained performance beat or complement the Media
 
 No alternative tracker is claimed to be operational until its adapter is registered as READY and
 tested on physical hardware.
+
+
+## Independent LiteRT Standalone provider
+
+LITERT_STANDALONE is separate from LITERT_CUSTOM, which remains the MediaPipe + RTMPose hybrid.
+The standalone provider must use its own LiteRT palm detector and 21-point landmark adapters and
+must never consume MediaPipe observations. LiteRtStandaloneTracker owns two-hand identity, ROI
+refresh/reacquisition, pinch state and conversion to HandTrackingFrame. It remains PLANNED until
+concrete model adapters, real backend probes and device validation are connected. QNN HTP is the primary candidate for Qualcomm hand-model inference (the published Qualcomm profile
+uses HTP with FP16). QNN DSP is a distinct backend and is not treated as HTP. Both are probed
+separately per model; strict HTP/DSP diagnostics never count another backend's success as a pass.
+
+
+### Pinned standalone model assets
+
+The initial standalone model pair is pinned to Qualcomm's immutable Hugging Face revision
+5699e8b7740034d58235fe95ae61a1606ea448e2:
+- HandDetector.tflite: 7,072,880 bytes, SHA-256
+  7fed965f73757224de6c7f9251781b924f242e753b1246c708525b015c6dc371
+- HandLandmarkDetector.tflite: 8,070,980 bytes, SHA-256
+  628856ec43b60e828c86d9ffac562f076484d1763242060e4cf16be08d36fb29
+
+Both are downloaded only after an explicit install request, stored in app-private no-backup storage,
+and verified before use. The detector produces raw box/keypoint regressions plus confidence scores;
+its anchor decode and NMS must be implemented. The landmark component produces hand-presence,
+handedness and 21 three-dimensional landmark values. These are model candidates, not a claim of
+verified QNN execution on Snapdragon 685. Qualcomm's current published HTP profile uses
+LiteRT 1.4.2 / QAIRT 2.51 and FP16 HTP; the pinned older files must be checked against the
+delegate/runtime combination actually shipped by NextVRera.
+
+
+### Strict QNN HTP model inspection
+
+`LiteRtStandaloneHtpModelProbe` opens one verified model at a time through the Qualcomm
+QNN LiteRT Interpreter delegate using `HTP_BACKEND`. NNAPI and XNNPACK are explicitly disabled.
+The probe reports the actual input/output tensor names, shapes, data types, warm-up time, median
+and p95 inference time. It does not publish hand frames and does not substitute another backend.
+
+A successful HTP delegate warm-up is not proof that every graph operator ran on HTP. The
+`operatorPlacement` field therefore remains `NOT_VERIFIED` until the device reports QNN
+partition/operator placement. The model tensor contracts are discovered at runtime rather
+than assumed from a different export.
+
+The Qualcomm AI Hub profile currently documents LiteRT 1.4.2 / QAIRT 2.51 / QNN delegate
+2.51 with HTP FP16 for this model family. The current Android integration still uses the
+2.34.0 QNN delegate as an initial compatibility probe; it must be updated only after the
+2.51 runtime is checked against the APK dependency graph. Qualcomm's published hand-model
+profiles do not list Snapdragon 685, so HTP support on the Redmi Note 13 4G remains unverified.
+
+
+## Isolated Qualcomm HTP probe APK
+
+The QNN Interpreter delegate is isolated in the separate `:litert-htp-probe` Android application.
+The main NextVRera app uses Google Play services LiteRT 17.0.0 for its existing CompiledModel
+GPU path. That runtime removed the legacy `org.tensorflow.lite.Delegate` APIs required by
+Qualcomm's QNN Interpreter delegate. Mixing both runtimes in the same app variant is not valid.
+
+The standalone probe APK bundles the legacy LiteRT Interpreter + Qualcomm QNN delegate without
+Google Play services LiteRT. It downloads the same two immutable Qualcomm model assets, verifies
+their SHA-256 hashes, disables NNAPI and XNNPACK, and performs strict HTP-only warm-up and
+benchmark attempts. The probe APK is for hardware compatibility evidence only; it does not
+activate or replace the production tracker. A successful warm-up still does not prove complete
+operator placement on HTP.
+
+The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.

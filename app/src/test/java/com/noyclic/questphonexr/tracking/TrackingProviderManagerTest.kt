@@ -15,8 +15,27 @@ class TrackingProviderManagerTest {
         val states = manager.snapshot(100L).statusByProvider
 
         assertEquals(TrackingProviderAvailability.READY, states[TrackingProviderId.MEDIAPIPE])
+        assertEquals(TrackingProviderAvailability.PLANNED, states[TrackingProviderId.LITERT_STANDALONE])
         assertEquals(TrackingProviderAvailability.PLANNED, states[TrackingProviderId.LITERT_CUSTOM])
         assertEquals(TrackingProviderAvailability.PLANNED, states[TrackingProviderId.GVXRS_DOCK])
+    }
+
+    @Test
+    fun standaloneLiteRtCanBeEnabledWithoutChangingTheHybridProvider() {
+        val manager = TrackingProviderManager()
+        assertFalse(manager.selectProvider(TrackingProviderId.LITERT_STANDALONE))
+        assertTrue(
+            manager.updateAvailability(
+                TrackingProviderId.LITERT_STANDALONE,
+                TrackingProviderAvailability.EXPERIMENTAL
+            )
+        )
+        assertTrue(manager.selectProvider(TrackingProviderId.LITERT_STANDALONE))
+        assertEquals(TrackingProviderId.LITERT_STANDALONE, manager.snapshot(100L).requestedProvider)
+        assertEquals(
+            TrackingProviderAvailability.PLANNED,
+            manager.snapshot(100L).statusByProvider[TrackingProviderId.LITERT_CUSTOM]
+        )
     }
 
     @Test

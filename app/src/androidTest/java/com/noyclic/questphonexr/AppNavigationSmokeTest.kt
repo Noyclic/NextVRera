@@ -301,6 +301,10 @@ class AppNavigationSmokeTest {
             device.wait(Until.hasObject(By.text("MediaPipe + LiteRT — выключен")), 5_000)
         )
         assertTrue(
+            "Standalone LiteRT is not clearly marked as unavailable until its model adapters are connected",
+            device.wait(Until.hasObject(By.text("LiteRT Standalone — пока не подключён")), 5_000)
+        )
+        assertTrue(
             "GVXRS Dock is not clearly marked as unavailable",
             device.wait(Until.hasObject(By.text("GVXRS Dock Station — пока не подключён")), 5_000)
         )

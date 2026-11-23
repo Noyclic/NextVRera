@@ -85,6 +85,9 @@ jobs:
       - name: Build external runtime client probe APK
         run: gradle --no-daemon :runtime-client-probe:assembleDebug
 
+      - name: Build isolated Qualcomm LiteRT HTP probe APK
+        run: gradle --no-daemon :litert-htp-probe:assembleDebug
+
       - name: Validate APK package and required payload
         run: |
           set -euo pipefail
@@ -146,6 +149,15 @@ jobs:
         with:
           name: QuestPhoneXR-external-client-probe-apk
           path: runtime-client-probe/build/outputs/apk/debug/runtime-client-probe-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload isolated Qualcomm LiteRT HTP probe APK
+        if: always() && !cancelled() && hashFiles('litert-htp-probe/build/outputs/apk/debug/litert-htp-probe-debug.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextVRera-LiteRT-HTP-probe-apk
+          path: litert-htp-probe/build/outputs/apk/debug/litert-htp-probe-debug.apk
           if-no-files-found: warn
           retention-days: 14
 
