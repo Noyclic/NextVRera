@@ -87,6 +87,7 @@ import com.noyclic.questphonexr.runtime.EndXrTrackingInputBridge
 import com.noyclic.questphonexr.tracking.TrackingProviderId
 import com.noyclic.questphonexr.tracking.TrackingSelectionMode
 import com.noyclic.questphonexr.runtime.EndXrRuntimeState
+import com.noyclic.questphonexr.tracking.TrackingHealthDiagnostics
 
 /** Phone-first 3D sandbox for testing stereo viewing, Joy-Con input and object grabbing. */
 class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.InputDeviceListener {
@@ -749,6 +750,37 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             .show()
     }
 
+    private fun copyTrackingHealthDiagnostic() {
+        val serviceRunning = EndXrHandTrackingService.isRunning()
+        val trackingHealthReport = if (serviceRunning) EndXrHandTrackingService.diagnosticReport() else ""
+        val trackingHealthVerdict = trackingHealthReport.lineSequence().firstOrNull { it.startsWith("tracking_health_verdict=") }?.substringAfter("=") ?: "local_sandbox"
+        val report = buildString {
+            appendLine("nextvrera_tracking_diagnostic_version=1")
+            appendLine("sandbox_timestamp_uptime_ms=${SystemClock.uptimeMillis()}")
+            appendLine("sandbox_camera_front_opt_in=${HandCameraPreference.isFrontCameraEnabled(this@SandboxActivity)}")
+            appendLine("sandbox_tracking_service_running=$serviceRunning")
+            if (serviceRunning) {
+                append(EndXrHandTrackingService.diagnosticReport())
+            } else {
+                appendLine("tracking_health_state=LOCAL_SANDBOX")
+                appendLine("tracking_health_verdict=local_sandbox")
+                appendLine("tracking_health_accepted_frames=${latestSandboxTrackingMetrics?.completedFrames ?: 0L}")
+                appendLine("tracking_health_gap_count=0")
+                appendLine("tracking_health_stale_transitions=0")
+                appendLine("tracking_health_recoveries=0")
+                appendLine("tracking_health_last_accepted_ms=${latestHandFrameReceivedAtMs}")
+                appendLine("tracking_health_last_cleared_ms=0")
+                appendLine("sandbox_camera_status=${cameraStatusMessage.replace('\n', ' ').replace('\r', ' ')}")
+                appendLine("sandbox_camera_source=$cameraSourceSizeLabel")
+                appendLine("sandbox_model_input=$mediaPipeInputSizeLabel")
+                appendLine("sandbox_pipeline_latency_ms=$latestHandPipelineLatencyMs")
+                appendLine("sandbox_preprocessing_latency_ms=$latestPreprocessingLatencyMs")
+            }
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("NextVRera tracking diagnostics", report))
+        Toast.makeText(this, "Диагностика трекинга скопирована", Toast.LENGTH_SHORT).show()
+    }
     private fun copyEndXrOpenXrDiagnostic() {
         val report = endXrOpenXrDiagnosticReport
         if (report.isBlank()) {
@@ -1121,6 +1153,26 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
         )
 
         // This action stays available even when the settings panel is hidden.
+        val trackingDiagnosticsButton = controlButton("Диагностика трекинга") {
+            copyTrackingHealthDiagnostic()
+        }.apply {
+            textSize = 13f
+            contentDescription = "Скопировать полную диагностику здоровья трекинга"
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            minHeight = dp(40)
+            elevation = dp(6).toFloat()
+        }
+        root.addView(
+            trackingDiagnosticsButton,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.START
+            ).apply {
+                bottomMargin = dp(110)
+                marginStart = dp(12)
+            }
+        )
         val diagnosticsButton = controlButton("Диагностика EndXR") {
             copyEndXrOpenXrDiagnostic()
         }.apply {
@@ -2516,6 +2568,9 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 .append(inferenceRateLabel)
             append('\n')
             append(cameraStatusMessage).append(" · рук: ").append(diagnosticHandFrame.handCount)
+            append('\n')
+            append("Health: ").append(trackingHealthVerdict.uppercase(Locale.US))
+            append(" · stale/recovery смотрите в диагностике")
             append('\n')
             append("Pinch L: ").append(pinchDiagnostic(leftTrackedHand))
             append(" · R: ").append(pinchDiagnostic(rightTrackedHand))
