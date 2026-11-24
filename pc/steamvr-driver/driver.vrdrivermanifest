@@ -1,7 +1,0 @@
-{
-  "alwaysActivate": false,
-  "name": "endvr",
-  "directory": "",
-  "resourceOnly": false,
-  "hmd_presence": ["*.*"]
-}
