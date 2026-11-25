@@ -2546,6 +2546,12 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             "—"
         }
         val inferenceIntervalMs = adaptivePerformanceState.minimumInferenceIntervalMs
+        val healthVerdictLabel = EndXrHandTrackingService.diagnosticReport()
+            .lineSequence()
+            .firstOrNull { it.startsWith("tracking_health_verdict=") }
+            ?.substringAfter("=")
+            ?.uppercase(Locale.US)
+            ?: "LOCAL_SANDBOX"
         val inferenceRateLabel = if (inferenceIntervalMs == 0L) {
             "без искусственного ограничения"
         } else {
@@ -2569,7 +2575,7 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
             append('\n')
             append(cameraStatusMessage).append(" · рук: ").append(diagnosticHandFrame.handCount)
             append('\n')
-            append("Health: ").append(trackingHealthVerdict.uppercase(Locale.US))
+            append("Health: ").append(healthVerdictLabel)
             append(" · stale/recovery смотрите в диагностике")
             append('\n')
             append("Pinch L: ").append(pinchDiagnostic(leftTrackedHand))
