@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-24
+
+### NextVRera tracking / Sandbox
+- Added an always-visible Sandbox action to copy a complete tracking-health report, including service/provider state, monotonic freshness counters, camera policy and latency fields.
+- Surfaced the current tracking health verdict in the live Sandbox status without enabling the front camera or changing the user camera switch.
+- Kept local Sandbox and persistent EndXR service diagnostics on one stable key/value contract for easier Redmi device debugging.
+
+
 ## 2026-11-21
 
 ### NextVRera tracking / EndXR
