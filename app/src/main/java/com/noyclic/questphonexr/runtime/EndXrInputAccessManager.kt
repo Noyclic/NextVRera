@@ -31,6 +31,10 @@ class EndXrInputAccessManager(context: Context) {
     private val packageManager = appContext.packageManager
     private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
+    init {
+        migrateLegacyTraceConsent()
+    }
+
     fun installedLaunchableClient(packageName: String): EndXrInputClient? {
         if (!EndXrInputGrantCodec.isValidPackageName(packageName)) return null
         val resolveInfo = queryLauncherActivities(packageName).firstOrNull() ?: return null
@@ -284,6 +288,14 @@ class EndXrInputAccessManager(context: Context) {
         return true
     }
 
+    private fun migrateLegacyTraceConsent() {
+        synchronized(GRANT_STATE_LOCK) {
+            if (preferences.getInt(KEY_TRACE_CONSENT_VERSION, 0) >= TRACE_CONSENT_VERSION) return
+            writeRecords(EndXrInputGrantCodec.clearRuntimeTraceConsent(readRecords()))
+            preferences.edit().putInt(KEY_TRACE_CONSENT_VERSION, TRACE_CONSENT_VERSION).apply()
+        }
+    }
+
     private fun readRecords(): List<EndXrInputGrantRecord> =
         EndXrInputGrantCodec.decode(preferences.getStringSet(KEY_GRANTS, null))
 
@@ -369,6 +381,8 @@ class EndXrInputAccessManager(context: Context) {
         }
         private const val PREFERENCES_NAME = "endxr_input_access"
         private const val KEY_GRANTS = "approved_package_signers"
+        private const val KEY_TRACE_CONSENT_VERSION = "runtime_trace_consent_version"
+        private const val TRACE_CONSENT_VERSION = 1
         private val INPUT_URI: Uri = Uri.parse(EndXrInputContentProvider.CONTENT_URI)
         private val RUNTIME_EVENT_URI: Uri =
             Uri.parse(EndXrRuntimeEventContentProvider.CONTENT_URI)
@@ -394,6 +408,11 @@ internal object EndXrInputGrantCodec {
     fun matches(record: EndXrInputGrantRecord, client: EndXrInputClient): Boolean =
         record.packageName == client.packageName &&
             record.signingCertificateSha256 == client.signingCertificateSha256
+
+    /** Old combined approvals are reset once so detailed tracing must be explicitly re-confirmed. */
+    fun clearRuntimeTraceConsent(
+        records: Collection<EndXrInputGrantRecord>
+    ): List<EndXrInputGrantRecord> = records.map { it.copy(runtimeTraceGranted = false) }
 
     /** Updates only the detailed-trace scope; a matching lifecycle grant is mandatory. */
     fun withRuntimeTraceConsent(

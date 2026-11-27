@@ -106,6 +106,22 @@ class EndXrInputAccessPolicyTest {
     }
 
     @Test
+    fun legacyTraceApprovalsAreClearedWithoutRemovingLifecycleConsent() {
+        val legacyFullConsent = listOf(
+            EndXrInputGrantRecord(
+                "com.example.vrgame",
+                fingerprint,
+                runtimeTelemetryGranted = true,
+                runtimeTraceGranted = true
+            )
+        )
+        val migrated = EndXrInputGrantCodec.clearRuntimeTraceConsent(legacyFullConsent).single()
+        assertTrue(migrated.runtimeTelemetryGranted)
+        assertFalse(migrated.runtimeTraceGranted)
+        assertEquals("com.example.vrgame", migrated.packageName)
+    }
+
+    @Test
     fun traceConsentCanBeEnabledOnlyForTheMatchingLifecycleGrant() {
         val client = EndXrInputClient(
             packageName = "com.example.vrgame",
