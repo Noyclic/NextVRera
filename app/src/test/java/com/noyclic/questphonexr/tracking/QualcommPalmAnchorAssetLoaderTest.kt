@@ -132,9 +132,8 @@ class QualcommPalmAnchorAssetLoaderTest {
             "app/src/main/assets/qualcomm/anchors_palm.npy.base64"
         )
         val file = relativePaths
-            .asSequence()
-            .map(::java.io.File)
-            .firstOrNull(java.io.File::isFile)
+            .map { java.io.File(it) }
+            .firstOrNull { it.isFile }
         assertTrue("Bundled Qualcomm anchor asset was not found.", file != null)
 
         val anchors = QualcommPalmAnchorAssetLoader.parseBase64(file!!.readText())
