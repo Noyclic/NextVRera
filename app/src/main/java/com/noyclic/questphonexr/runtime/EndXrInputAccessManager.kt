@@ -289,10 +289,14 @@ class EndXrInputAccessManager(context: Context) {
     }
 
     private fun migrateLegacyTraceConsent() {
+        if (traceConsentMigrationCompleted) return
         synchronized(GRANT_STATE_LOCK) {
-            if (preferences.getInt(KEY_TRACE_CONSENT_VERSION, 0) >= TRACE_CONSENT_VERSION) return
-            writeRecords(EndXrInputGrantCodec.clearRuntimeTraceConsent(readRecords()))
-            preferences.edit().putInt(KEY_TRACE_CONSENT_VERSION, TRACE_CONSENT_VERSION).apply()
+            if (traceConsentMigrationCompleted) return
+            if (preferences.getInt(KEY_TRACE_CONSENT_VERSION, 0) < TRACE_CONSENT_VERSION) {
+                writeRecords(EndXrInputGrantCodec.clearRuntimeTraceConsent(readRecords()))
+                preferences.edit().putInt(KEY_TRACE_CONSENT_VERSION, TRACE_CONSENT_VERSION).apply()
+            }
+            traceConsentMigrationCompleted = true
         }
     }
 
@@ -374,6 +378,7 @@ class EndXrInputAccessManager(context: Context) {
         )
 
         private val GRANT_STATE_LOCK = Any()
+        @Volatile private var traceConsentMigrationCompleted = false
         private val CALLER_ACCESS_CACHE = ConcurrentHashMap<String, CachedCallerAuthorization>()
 
         internal fun invalidateAuthorizationCache() {
