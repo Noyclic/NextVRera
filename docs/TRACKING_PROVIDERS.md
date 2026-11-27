@@ -223,8 +223,30 @@ The numerical contract is grounded in Qualcomm AI Hub Models revision
 revision above. The anchor asset is distributed under Apache-2.0; its license and provenance
 are recorded in `third_party/licenses/`.
 
-This still remains a set of tested model-boundary components, not a finished standalone hand
-tracker: LiteRT model adapters, real QNN DSP/HTP backend attempts, landmark ROI extraction and
-inference, camera-service registration, and physical Redmi Note 13 validation remain separate
-integration work. `LITERT_STANDALONE` therefore remains PLANNED, and no DSP/HTP execution is
-claimed by the decoder or preprocessor.
+### Oriented landmark ROI and 21-point hand output
+
+The Qualcomm hand-landmark stage now has its own affine crop boundary:
+
+- `QualcommHandRoiTransform.fromPalmRegion` builds the three source points used by Qualcomm's
+  reference crop: top-left, bottom-left and top-right. Those map to the corresponding three
+  corners of the 256x256 landmark input.
+- `QualcommHandRoiPreprocessor` samples that oriented crop into reusable NHWC or NCHW RGB
+  float buffers in [0,1], with bilinear interpolation and a black border outside the source
+  frame. Raw CameraX right-angle orientation is handled without a temporary Bitmap.
+- `QualcommHandLandmarkOutputDecoder` validates the named `scores`, `lr` and `landmarks`
+  outputs, requires a 21x3 landmark tensor, maps normalized x/y through the inverse affine
+  transform and preserves model-local z. Handedness uses a dead-zone; absent, malformed,
+  non-finite or out-of-frame results are rejected.
+- The resulting `LiteRtHandLandmarkPrediction` is compatible with the existing isolated
+  `LiteRtStandaloneTracker` contract. This model does not provide metric world landmarks,
+  so the decoder does not fabricate them.
+
+The full palm-to-landmark preprocessing/post-processing chain now has independent JVM tests for
+letterbox geometry, actual pinned anchors, NPY validation, NMS, rotated ROI sampling, RGB tensor
+layouts, landmark output decoding, handedness and rejection paths.
+
+This is still a collection of tested model-boundary components, not a finished standalone hand
+tracker: LiteRT detector/landmark model adapters, QNN DSP/HTP backend execution, real output
+tensor readback, camera-service registration and physical Redmi Note 13 validation remain
+separate integration work. `LITERT_STANDALONE` therefore remains PLANNED. No successful DSP or
+HTP inference is claimed by these components.
