@@ -264,7 +264,9 @@ class GameLibraryActivity : ComponentActivity() {
                             "Ввод и события жизненного цикла EndXR разрешены для " + client.label,
                             Toast.LENGTH_LONG
                         ).show()
-                        confirmGrantRuntimeTraceAccess(manager, client)
+                        window.decorView.post {
+                            confirmGrantRuntimeTraceAccess(manager, client)
+                        }
                     }
                     .onFailure { error ->
                         Toast.makeText(
