@@ -81,11 +81,11 @@ internal object EndXrRuntimeTraceJournal {
     /** Keeps only entries attributed to the selected Android package. */
     fun filterByCallerPackage(jsonLines: String?, packageName: String): String {
         if (packageName.isBlank()) return ""
-        val marker = "\\\"caller_package\\\":\\\"$packageName\\\""
+        val marker = "\"caller_package\":\"$packageName\""
         return jsonLines.orEmpty().lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.contains(marker) }
-            .joinToString("\\n")
+            .joinToString("\n")
     }
 
     fun asJsonArray(jsonLines: String?): String =

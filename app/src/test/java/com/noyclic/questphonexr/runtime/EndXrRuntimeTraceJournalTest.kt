@@ -48,7 +48,7 @@ class EndXrRuntimeTraceJournalTest {
         val selected = event(1).toJson()
         val other = event(2).copy(callerPackage = "org.example.other").toJson()
         val filtered = EndXrRuntimeTraceJournal.filterByCallerPackage(
-            listOf(selected, other).joinToString("\\n"),
+            listOf(selected, other).joinToString("\n"),
             "com.example.game"
         )
 
