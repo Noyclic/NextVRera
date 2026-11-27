@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-27
+
+### NextVRera EndXR readiness
+- Added an evidence-based external-runtime readiness verdict to the existing RuntimeBroker diagnostic flow.
+- The report now distinguishes Android service metadata, broker-selected runtime/library, and the real GLES/OpenXR self-test as separate gates.
+- Added explicit READY/DEGRADED/BLOCKED states with copy-ready blocker and warning lines; this remains a readiness assessment, not a claim of arbitrary Quest APK compatibility.
+
 ## 2026-11-24
 
 ### NextVRera tracking / Sandbox
