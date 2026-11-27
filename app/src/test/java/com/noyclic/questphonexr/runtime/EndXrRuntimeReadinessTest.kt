@@ -49,4 +49,66 @@ class EndXrRuntimeReadinessTest {
         assertTrue(warnings.single().contains("Android gamepad capture"))
         assertTrue(warnings.single().contains("haptics"))
     }
+
+    private fun evidence(
+        brokerVisible: Boolean = true,
+        brokerCompleted: Boolean = true,
+        selectedPackage: String? = "com.noyclic.questphonexr",
+        selectedLibraryExists: Boolean = true,
+        probePass: Boolean = true,
+        probeFail: Boolean = false,
+        serviceFound: Boolean = true,
+        serviceExported: Boolean = true,
+        majorVersion: Int? = 1,
+        soFilename: Boolean = true,
+        libraryExists: Boolean = true,
+    ) = EndXrExternalRuntimeReadinessEvidence(
+        ownServiceFound = serviceFound,
+        ownServiceExported = serviceExported,
+        majorVersion = majorVersion,
+        expectedMajorVersion = 1,
+        soFilenamePresent = soFilename,
+        nativeLibraryExists = libraryExists,
+        brokerProviderVisible = brokerVisible,
+        brokerQueryCompleted = brokerCompleted,
+        brokerSelectedRuntimePackage = selectedPackage,
+        brokerSelectedRuntimeLibraryExists = selectedLibraryExists,
+        ownPackageName = "com.noyclic.questphonexr",
+        openXrProbePass = probePass,
+        openXrProbeFail = probeFail,
+    )
+
+    @Test
+    fun fullyVerifiedExternalPathIsReady() {
+        val readiness = EndXrExternalRuntimeReadiness.evaluate(evidence())
+        assertEquals(EndXrExternalRuntimeReadinessVerdict.READY, readiness.verdict)
+        assertTrue(readiness.metadataReady)
+        assertTrue(readiness.brokerSelectionReady)
+        assertTrue(readiness.nativeProbeReady)
+    }
+
+    @Test
+    fun missingBrokerIsDegradedNotReady() {
+        val readiness = EndXrExternalRuntimeReadiness.evaluate(evidence(brokerVisible = false))
+        assertEquals(EndXrExternalRuntimeReadinessVerdict.DEGRADED, readiness.verdict)
+        assertTrue(readiness.warnings.any { it.contains("RuntimeBroker") })
+    }
+
+    @Test
+    fun wrongSelectedRuntimeBlocks() {
+        val readiness = EndXrExternalRuntimeReadiness.evaluate(
+            evidence(selectedPackage = "org.other.runtime")
+        )
+        assertEquals(EndXrExternalRuntimeReadinessVerdict.BLOCKED, readiness.verdict)
+        assertTrue(readiness.blockers.any { it.contains("different runtime package") })
+    }
+
+    @Test
+    fun failedNativeProbeIsDegradedWhenMetadataAndSelectionAreGood() {
+        val readiness = EndXrExternalRuntimeReadiness.evaluate(
+            evidence(probePass = false, probeFail = true)
+        )
+        assertEquals(EndXrExternalRuntimeReadinessVerdict.DEGRADED, readiness.verdict)
+        assertTrue(readiness.warnings.any { it.contains("self-test failed") })
+    }
 }
