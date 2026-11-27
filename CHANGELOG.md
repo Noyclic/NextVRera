@@ -4,9 +4,10 @@
 
 ### NextVRera tracking / Qualcomm LiteRT
 - Added a pure Kotlin Qualcomm MediaPipe-Hand palm-output decoder with anchor-relative box/keypoint decoding, clipped sigmoid scores, confidence filtering and non-maximum suppression.
-- Added model-space letterbox geometry and conversion back to source camera coordinates, plus Qualcomm's wrist/middle-finger oriented hand ROI transform.
-- Added regression tests for dynamic anchor counts, supported tensor ranks, anchor mismatches, score filtering, NMS and ROI geometry.
-- Kept the standalone LiteRT provider PLANNED: exact anchor asset loading, concrete model adapters, QNN backend execution and physical-device validation are still required.
+- Bundled the exact 2,944-row `anchors_palm.npy` from the recipe's pinned MediaPipePyTorch revision and added a validating NumPy parser with a one-time model-store load API.
+- Added the Qualcomm full-frame RGB preprocessor: normalized float [0,1], bilinear resize, floor-sized centered letterbox padding, NHWC/NCHW layouts and right-angle camera rotation.
+- Added tests for real bundled anchors, malformed NumPy metadata, preprocessing geometry, letterbox mapping, tensor ranks, dynamic anchors, NMS and palm ROI geometry.
+- Kept `LITERT_STANDALONE` PLANNED: LiteRT model adapters, QNN DSP/HTP execution, landmark ROI inference, service registration and physical-device validation remain outstanding.
 
 # Changelog
 
