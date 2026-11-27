@@ -38,8 +38,8 @@ class QualcommPalmOutputDecoderTest {
     fun acceptsBothSupportedCoordinateRanksAndScoreRanks() {
         val coordinates = floatArrayOf(
             0f, 0f, 40f, 60f,
-            110f, 130f, 120f, 120f, 130f, 110f,
-            128f, 150f, 135f, 150f, 140f, 150f, 145f, 160f
+            -18f, 2f, -8f, -8f, 2f, -18f,
+            0f, 22f, 7f, 22f, 12f, 22f, 17f, 32f
         )
         val result = QualcommPalmOutputDecoder.decode(
             outputs = QualcommPalmDetectorTensors(
