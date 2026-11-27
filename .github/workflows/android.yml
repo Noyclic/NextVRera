@@ -79,6 +79,9 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
 
+      - name: Run isolated QNN HTP tensor contract tests
+        run: gradle --no-daemon :litert-htp-probe:testDebugUnitTest
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
