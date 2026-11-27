@@ -3,24 +3,24 @@ package com.noyclic.questphonexr.tracking
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.exp
-import kotlin.math.roundToInt
+import kotlin.math.floor
 import kotlin.math.sqrt
 
 /**
- * One row from Qualcomm's `anchors_palm.npy`: normalized center followed by normalized X/Y
+ * One row from Qualcomm's `anchors_palm.npy`: normalized X/Y offset followed by X/Y
  * decode scales. Values are kept explicit so a caller must load the anchors belonging to the
  * exact palm model revision; the decoder never fabricates an anchor grid from N alone.
  */
 data class QualcommPalmAnchor(
-    val centerX: Float,
-    val centerY: Float,
+    val offsetX: Float,
+    val offsetY: Float,
     val scaleX: Float,
     val scaleY: Float
 ) {
     fun isValid(): Boolean =
-        centerX.isFinite() && centerY.isFinite() &&
+        offsetX.isFinite() && offsetY.isFinite() &&
             scaleX.isFinite() && scaleY.isFinite() &&
-            centerX in 0f..1f && centerY in 0f..1f &&
+            offsetX in 0f..1f && offsetY in 0f..1f &&
             scaleX > 0f && scaleY > 0f
 }
 
@@ -90,8 +90,8 @@ data class LiteRtPalmInputTransform(
                 inputWidthPx.toFloat() / sourceWidthPx,
                 inputHeightPx.toFloat() / sourceHeightPx
             )
-            val contentWidth = (sourceWidthPx * scale).roundToInt().coerceIn(1, inputWidthPx)
-            val contentHeight = (sourceHeightPx * scale).roundToInt().coerceIn(1, inputHeightPx)
+            val contentWidth = floor(sourceWidthPx * scale).toInt().coerceIn(1, inputWidthPx)
+            val contentHeight = floor(sourceHeightPx * scale).toInt().coerceIn(1, inputHeightPx)
             return LiteRtPalmInputTransform(
                 sourceWidthPx = sourceWidthPx,
                 sourceHeightPx = sourceHeightPx,
@@ -247,9 +247,9 @@ object QualcommPalmOutputDecoder {
             val offset = index * COORDINATES_PER_ANCHOR
             val anchor = anchors[index]
             val centerX = outputs.coordinates.values[offset] * anchor.scaleX +
-                anchor.centerX * inputWidth
+                anchor.offsetX * inputWidth
             val centerY = outputs.coordinates.values[offset + 1] * anchor.scaleY +
-                anchor.centerY * inputHeight
+                anchor.offsetY * inputHeight
             val boxWidth = outputs.coordinates.values[offset + 2] * anchor.scaleX
             val boxHeight = outputs.coordinates.values[offset + 3] * anchor.scaleY
             if (!boxWidth.isFinite() || !boxHeight.isFinite() ||
@@ -261,9 +261,9 @@ object QualcommPalmOutputDecoder {
             for (keypointIndex in 0 until KEYPOINT_COUNT) {
                 val keypointOffset = offset + 4 + keypointIndex * 2
                 val x = outputs.coordinates.values[keypointOffset] * anchor.scaleX +
-                    anchor.centerX * inputWidth
+                    anchor.offsetX * inputWidth
                 val y = outputs.coordinates.values[keypointOffset + 1] * anchor.scaleY +
-                    anchor.centerY * inputHeight
+                    anchor.offsetY * inputHeight
                 val source = inputTransform.toSourcePixel(x, y)
                 if (source == null || !inputTransform.containsSourcePixel(source.first, source.second)) {
                     validKeypoints = false
