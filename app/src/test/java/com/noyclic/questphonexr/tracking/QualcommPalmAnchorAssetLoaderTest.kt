@@ -124,6 +124,29 @@ class QualcommPalmAnchorAssetLoaderTest {
         }
     }
 
+
+    @Test
+    fun bundledAnchorAssetContainsThePinnedQualcommAnchorGrid() {
+        val relativePaths = listOf(
+            "src/main/assets/qualcomm/anchors_palm.npy.base64",
+            "app/src/main/assets/qualcomm/anchors_palm.npy.base64"
+        )
+        val file = relativePaths
+            .asSequence()
+            .map(::java.io.File)
+            .firstOrNull(java.io.File::isFile)
+        assertTrue("Bundled Qualcomm anchor asset was not found.", file != null)
+
+        val anchors = QualcommPalmAnchorAssetLoader.parseBase64(file!!.readText())
+        assertEquals(QualcommPalmAnchorAssetLoader.EXPECTED_ANCHOR_COUNT, anchors.size)
+        assertEquals(0.015625f, anchors.minOf { minOf(it.offsetX, it.offsetY) }, 0.000001f)
+        assertEquals(0.984375f, anchors.maxOf { maxOf(it.offsetX, it.offsetY) }, 0.000001f)
+        assertEquals(1f, anchors.minOf { it.scaleX }, 0f)
+        assertEquals(1f, anchors.maxOf { it.scaleX }, 0f)
+        assertEquals(1f, anchors.minOf { it.scaleY }, 0f)
+        assertEquals(1f, anchors.maxOf { it.scaleY }, 0f)
+    }
+
     private fun npyFixture(
         descriptor: String,
         values: DoubleArray,
