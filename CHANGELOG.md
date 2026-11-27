@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-27
+
+### NextVRera tracking / Qualcomm LiteRT
+- Added a pure Kotlin Qualcomm MediaPipe-Hand palm-output decoder with anchor-relative box/keypoint decoding, clipped sigmoid scores, confidence filtering and non-maximum suppression.
+- Bundled the exact 2,944-row `anchors_palm.npy` from the recipe's pinned MediaPipePyTorch revision and added a validating NumPy parser with a one-time model-store load API.
+- Added the Qualcomm full-frame RGB preprocessor: normalized float [0,1], bilinear resize, floor-sized centered letterbox padding, NHWC/NCHW layouts and right-angle camera rotation.
+- Added the rotated square hand ROI cropper using Qualcomm's three-point affine geometry, black out-of-frame border and reusable NHWC/NCHW buffers.
+- Added a 21-point landmark output decoder for presence, handedness and inverse-affine camera-coordinate mapping; no unsupported metric world pose is fabricated.
+- Added tests for real bundled anchors, malformed NumPy metadata, preprocessing geometry, tensor ranks, NMS, rotated ROI crops, landmark output, handedness and rejection paths.
+- Hardened the Sandbox emulator smoke test: locate the tracking-provider selector with bounded panel swipes instead of depending on UiAutomator's sometimes-missing `scrollable=true` accessibility flag; export hierarchy/screenshot evidence if the selector still cannot be revealed.
+- Kept `LITERT_STANDALONE` PLANNED: concrete LiteRT model adapters, QNN DSP/HTP execution, runtime tensor readback, service registration and physical-device validation remain outstanding.
+
 ## 2026-11-24
 
 ### NextVRera tracking / Sandbox
@@ -29,3 +41,4 @@
   on device.
 - Kept camera selection policy unchanged: the front camera remains opt-in and is never enabled
   automatically.
+

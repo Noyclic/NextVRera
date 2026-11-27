@@ -263,12 +263,27 @@ class AppNavigationSmokeTest {
         )
 
         val trackingSourceLabel = "Источник трекинга · AUTO / ручной"
-        val settingsList = UiScrollable(UiSelector().scrollable(true))
-            .setAsVerticalList()
-            .setMaxSearchSwipes(10)
+        val trackingSourceVisible = scrollSandboxSettingsToText(
+            device = device,
+            targetText = trackingSourceLabel,
+            maxSwipes = 12
+        )
+        if (!trackingSourceVisible) {
+            saveScreenshot(context, device, "sandbox-tracking-provider-scroll-failed.png")
+            val hierarchy = File(
+                requireNotNull(context.getExternalFilesDir(null)),
+                "ci-diagnostics/sandbox-tracking-provider-scroll-failed.xml"
+            )
+            hierarchy.parentFile?.mkdirs()
+            device.dumpWindowHierarchy(hierarchy)
+            if (hierarchy.isFile) {
+                publishCiArtifact(context, hierarchy, hierarchy.name, "application/xml")
+            }
+        }
         assertTrue(
-            "Could not scroll Sandbox settings to the tracking provider selector",
-            settingsList.scrollIntoView(UiSelector().text(trackingSourceLabel))
+            "Could not reveal Sandbox tracking provider selector after bounded vertical swipes; " +
+                "current package: ${device.currentPackageName}",
+            trackingSourceVisible
         )
         val trackingSourceButton = By.text(trackingSourceLabel)
         assertTrue(
@@ -424,6 +439,46 @@ class AppNavigationSmokeTest {
             "EndXR diagnostics action did not complete setPrimaryClip. Log:\n" + copyLog,
             copyLog.contains("Clipboard setPrimaryClip completed")
         )
+    }
+
+    /**
+     * Scroll the Sandbox settings panel using direct, bounded gestures.
+     *
+     * UiAutomator's scrollable(true) selector is not reliable for this custom,
+     * programmatically-built ScrollView on every emulator image. The panel is
+     * deliberately bounded to the upper 82% of the display, so a swipe in this
+     * region exercises the intended settings container without relying on its
+     * accessibility scroll flag.
+     */
+    private fun scrollSandboxSettingsToText(
+        device: UiDevice,
+        targetText: String,
+        maxSwipes: Int
+    ): Boolean {
+        val showSettings = By.text("Показать настройки")
+        if (device.wait(Until.hasObject(showSettings), 300)) {
+            device.findObject(showSettings)?.click()
+            device.wait(Until.hasObject(By.text("Скрыть настройки")), 1_500)
+        }
+
+        val target = By.text(targetText)
+        if (device.wait(Until.hasObject(target), 500)) return true
+
+        val width = device.displayWidth
+        val height = device.displayHeight
+        if (width < 3 || height < 3) return false
+
+        // Stay inside the Sandbox settings panel, not the bottom overlay controls.
+        val x = (width * 0.92f).toInt().coerceIn(1, width - 2)
+        val startY = (height * 0.74f).toInt().coerceIn(1, height - 2)
+        val endY = (height * 0.28f).toInt().coerceIn(1, height - 2)
+
+        repeat(maxSwipes.coerceIn(1, 20)) {
+            device.swipe(x, startY, x, endY, 350)
+            device.waitForIdle()
+            if (device.wait(Until.hasObject(target), 600)) return true
+        }
+        return false
     }
 
     private fun dismissSystemNotRespondingDialog(device: UiDevice) {

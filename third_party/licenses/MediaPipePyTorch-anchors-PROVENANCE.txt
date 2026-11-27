@@ -1,0 +1,15 @@
+Qualcomm MediaPipe-Hand palm anchors
+
+File: anchors_palm.npy (stored here as Base64 text to keep the repository contents API UTF-8-safe)
+Original repository: https://github.com/zmurez/MediaPipePyTorch
+Pinned source revision: 65f2549ba35cd61dfd29f402f6c21882a32fabb1
+Git blob SHA-1: 7923b7d236050a68b98cba5ffa86b2296e34af5f
+Original size: 94,336 bytes
+Expected NumPy shape: (2944, 4), dtype float64
+
+The Qualcomm AI Hub Models recipe pins this external repository revision in:
+https://github.com/qualcomm/ai-hub-models/blob/9b426b5942a45ae64d31ab275c290e1dcd467f9e/src/qai_hub_models/models/templates/mediapipe/manifest.yaml
+
+The anchors are distributed under the Apache License 2.0, as stated by the pinned
+MediaPipePyTorch repository LICENSE. See Apache-2.0-MediaPipe.txt alongside this file.
+The file is used only with the matching Qualcomm MediaPipe-Hand palm detector model.
