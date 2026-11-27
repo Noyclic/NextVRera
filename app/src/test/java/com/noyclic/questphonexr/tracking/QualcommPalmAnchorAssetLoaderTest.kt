@@ -153,7 +153,8 @@ class QualcommPalmAnchorAssetLoaderTest {
         fortranOrder: Boolean = false,
         version: Int = 1
     ): ByteArray {
-        val headerBase = "{'descr': '$descriptor', 'fortran_order': $fortranOrder, 'shape': $shape, }"
+        val fortranValue = if (fortranOrder) "True" else "False"
+        val headerBase = "{'descr': '$descriptor', 'fortran_order': $fortranValue, 'shape': $shape, }"
         val prefixSize = if (version == 1) 10 else 12
         val padding = (16 - ((prefixSize + headerBase.length + 1) % 16)) % 16
         val header = (headerBase + " ".repeat(padding) + "\n")
