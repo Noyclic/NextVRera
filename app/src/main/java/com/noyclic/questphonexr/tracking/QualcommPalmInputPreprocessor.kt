@@ -63,10 +63,10 @@ object QualcommPalmInputPreprocessor {
         }
         val requiredSource = rawWidth.toLong() * rawHeight
         val pixelCount = transform.inputWidthPx.toLong() * transform.inputHeightPx
+        if (pixelCount <= 0L || pixelCount > Int.MAX_VALUE / CHANNELS) return false
         val requiredDestination = pixelCount * CHANNELS
         if (requiredSource > sourceArgb.size.toLong() ||
-            requiredDestination > destination.size.toLong() ||
-            requiredDestination > Int.MAX_VALUE
+            requiredDestination > destination.size.toLong()
         ) return false
 
         val planeSize = pixelCount.toInt()
