@@ -74,6 +74,10 @@ object LiteRtStandaloneModelStore {
 
     fun areInstalled(context: Context): Boolean = installedFiles(context) != null
 
+    /** Loads the bundled, revision-pinned palm anchors once before creating the detector adapter. */
+    fun loadPalmAnchors(context: Context): List<QualcommPalmAnchor> =
+        QualcommPalmAnchorAssetLoader.load(context)
+
     /** Call on a worker thread after an explicit install request. */
     fun download(
         context: Context,
