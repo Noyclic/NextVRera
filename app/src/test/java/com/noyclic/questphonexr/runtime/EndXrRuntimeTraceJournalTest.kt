@@ -70,7 +70,7 @@ class EndXrRuntimeTraceJournalTest {
             resultCode = -2
         ).toJson()
         val selected = EndXrRuntimeTraceJournal.filterByCallerPackage(
-            listOf(selectedFailure, selectedSuccess, otherFailure).joinToString("\\n"),
+            listOf(selectedFailure, selectedSuccess, otherFailure).joinToString("\n"),
             "com.example.game"
         )
 
