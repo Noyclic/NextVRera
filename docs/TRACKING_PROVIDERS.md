@@ -184,28 +184,47 @@ operator placement on HTP.
 The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.
 
 
-### Qualcomm MediaPipe-Hand palm output decoding (experimental building block)
+### Qualcomm MediaPipe-Hand palm decoding and input preprocessing
 
-The standalone provider now has a pure Kotlin post-processing boundary for Qualcomm AI Hub's
-MediaPipe-Hand detector. It accepts already-dequantized LiteRT output tensors plus the matching
-model anchor array and performs:
+The standalone provider now has two pure Kotlin model-boundary components for Qualcomm
+AI Hub's MediaPipe-Hand pipeline.
 
-- shape/length checks for coordinate outputs `[1,N,18]` or `[1,N,9,2]` and score outputs
-  `[1,N]` or `[1,N,1]`;
-- anchor-relative center/size and seven-keypoint decoding, clipped-logit sigmoid, confidence
-  filtering and class-agnostic NMS;
-- letterbox-to-camera coordinate mapping, followed by wrist/middle-finder oriented ROI
+**Full-frame palm input**
+- RGB channel order and normalized float range [0,1].
+- Bilinear resize with `align_corners=false` pixel-center sampling.
+- Aspect-ratio preservation, integer floor dimensions and centered zero padding, matching
+  Qualcomm's `resize_pad` geometry.
+- Reusable NHWC and NCHW destinations; optional raw-camera right-angle rotation without
+  creating an intermediate Bitmap.
+- The exact same `LiteRtPalmInputTransform` instance is used by the output decoder so the
+  integer resized dimensions and padding remain consistent.
+
+**Palm output**
+- Shape/length checks for coordinate outputs `[1,N,18]` or `[1,N,9,2]` and score outputs
+  `[1,N]` or `[1,N,1]`.
+- Anchor-relative center/size and seven-keypoint decoding, clipped-logit sigmoid, confidence
+  filtering and class-agnostic NMS.
+- Letterbox-to-camera coordinate mapping, followed by wrist/middle-finder oriented ROI
   construction using the Qualcomm model's offset, rotation and 2.5x crop scale.
 
-The decoder deliberately does **not** hard-code an anchor count. It rejects a run unless the
-coordinate tensor, score tensor and supplied anchor array agree on the same non-zero N. The
-anchor array must be loaded from `anchors_palm.npy` belonging to the exact palm detector export;
-a generated or unrelated MediaPipe anchor grid is not interchangeable.
+**Pinned anchor asset**
+- The exact `anchors_palm.npy` from MediaPipePyTorch revision
+  `65f2549ba35cd61dfd29f402f6c21882a32fabb1` is bundled as
+  `app/src/main/assets/qualcomm/anchors_palm.npy.base64`.
+- The source file is 94,336 bytes, NumPy shape `(2944, 4)`, dtype `float64`; its Git blob SHA-1
+  is `7923b7d236050a68b98cba5ffa86b2296e34af5f`.
+- `QualcommPalmAnchorAssetLoader` validates the NPY header, dtype, endianness, C-order,
+  exact shape, payload size and every offset/scale before returning anchors.
+- `LiteRtStandaloneModelStore.loadPalmAnchors(context)` provides the one-time app-side load.
+  The caller should retain the parsed list for the lifetime of the detector adapter.
 
-The numerical contract is based on Qualcomm AI Hub Models source revision
-`9b426b5942a45ae64d31ab275c290e1dcd467f9e` and its pinned MediaPipePyTorch revision
-`65f2549ba35cd61dfd29f402f6c21882a32fabb1`. The current code is a tested post-processing
-component only: model asset pairing, anchor asset loading, image preprocessing, LiteRT model
-adapters, real QNN backend execution and physical-device tracking remain separate integration
-work. In particular, this does not change `LITERT_STANDALONE` from PLANNED and does not claim
-that the decoder itself makes inference run on DSP or HTP.
+The numerical contract is grounded in Qualcomm AI Hub Models revision
+`9b426b5942a45ae64d31ab275c290e1dcd467f9e` and the externally pinned MediaPipePyTorch
+revision above. The anchor asset is distributed under Apache-2.0; its license and provenance
+are recorded in `third_party/licenses/`.
+
+This still remains a set of tested model-boundary components, not a finished standalone hand
+tracker: LiteRT model adapters, real QNN DSP/HTP backend attempts, landmark ROI extraction and
+inference, camera-service registration, and physical Redmi Note 13 validation remain separate
+integration work. `LITERT_STANDALONE` therefore remains PLANNED, and no DSP/HTP execution is
+claimed by the decoder or preprocessor.
