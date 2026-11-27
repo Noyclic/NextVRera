@@ -120,6 +120,21 @@ class QualcommPalmInputPreprocessorTest {
     }
 
     @Test
+    fun decoderMappingUsesTheSameNominalResizeScaleAsQualcommResizePad() {
+        val transform = LiteRtPalmInputTransform.centeredLetterbox(
+            sourceWidthPx = 1_001,
+            sourceHeightPx = 333,
+            inputWidthPx = 256,
+            inputHeightPx = 256
+        )
+
+        val source = transform.toSourcePixel(128f, 128f)!!
+        val expectedScale = 256f / 1_001f
+        assertEquals((128f - transform.padLeftPx) / expectedScale, source.first, 0.0001f)
+        assertEquals((128f - transform.padTopPx) / expectedScale, source.second, 0.0001f)
+    }
+
+    @Test
     fun rejectsUnsupportedRotationAndShortBuffersWithoutModifyingOutput() {
         val transform = LiteRtPalmInputTransform.centeredLetterbox(2, 2, 2, 2)
         val output = FloatArray(12) { 7f }
