@@ -2,6 +2,7 @@ package com.noyclic.questphonexr.tracking
 
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Inverse affine mapping for one upright, square landmark-model crop. */
@@ -269,27 +270,22 @@ object QualcommHandRoiPreprocessor {
         val bottomLeft = pixelOrBlack(sourceArgb, sourceWidth, sourceHeight, x0, y1)
         val bottomRight = pixelOrBlack(sourceArgb, sourceWidth, sourceHeight, x1, y1)
 
-        val alpha = interpolate(
-            topLeft ushr 24 and 0xff, topRight ushr 24 and 0xff,
-            bottomLeft ushr 24 and 0xff, bottomRight ushr 24 and 0xff,
-            xWeight, yWeight
-        ).toInt().coerceIn(0, 255)
         val red = interpolate(
             topLeft ushr 16 and 0xff, topRight ushr 16 and 0xff,
             bottomLeft ushr 16 and 0xff, bottomRight ushr 16 and 0xff,
             xWeight, yWeight
-        ).toInt().coerceIn(0, 255)
+        ).roundToInt().coerceIn(0, 255)
         val green = interpolate(
             topLeft ushr 8 and 0xff, topRight ushr 8 and 0xff,
             bottomLeft ushr 8 and 0xff, bottomRight ushr 8 and 0xff,
             xWeight, yWeight
-        ).toInt().coerceIn(0, 255)
+        ).roundToInt().coerceIn(0, 255)
         val blue = interpolate(
             topLeft and 0xff, topRight and 0xff,
             bottomLeft and 0xff, bottomRight and 0xff,
             xWeight, yWeight
-        ).toInt().coerceIn(0, 255)
-        return (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+        ).roundToInt().coerceIn(0, 255)
+        return (0xff shl 24) or (red shl 16) or (green shl 8) or blue
     }
 
     private fun pixelOrBlack(
