@@ -263,17 +263,49 @@ class AppNavigationSmokeTest {
         )
 
         val trackingSourceLabel = "Источник трекинга · AUTO / ручной"
-        val settingsList = UiScrollable(UiSelector().scrollable(true))
-            .setAsVerticalList()
-            .setMaxSearchSwipes(10)
-        assertTrue(
-            "Could not scroll Sandbox settings to the tracking provider selector",
-            settingsList.scrollIntoView(UiSelector().text(trackingSourceLabel))
-        )
         val trackingSourceButton = By.text(trackingSourceLabel)
+
+        // The panel is normally open on first launch. Re-open it explicitly if a prior
+        // lifecycle change or immersive-mode transition left it hidden.
+        val showSettingsButton = By.text("Показать настройки")
+        if (device.wait(Until.hasObject(showSettingsButton), 750)) {
+            device.findObject(showSettingsButton).click()
+        }
         assertTrue(
-            "Tracking provider selector is missing from Sandbox settings",
-            device.wait(Until.hasObject(trackingSourceButton), 5_000)
+            "Sandbox settings panel did not become visible",
+            device.wait(Until.hasObject(By.text("Скрыть настройки")), 3_000)
+        )
+
+        // UiScrollable.scrollIntoView() first calls scrollToBeginning(), which throws
+        // UiObjectNotFoundException when Android does not expose this ScrollView as a
+        // SCROLLABLE accessibility node (for example when its content currently fits).
+        // Use actual upward gestures within the visible settings panel instead. This
+        // works whether the panel is already at the top or has a short/non-scrollable
+        // content layout, and keeps the assertion focused on the real provider button.
+        val displayWidth = device.displayWidth
+        val displayHeight = device.displayHeight
+        var trackingSourceVisible = false
+        for (attempt in 0 until 10) {
+            val node = device.findObject(trackingSourceButton)
+            if (node != null && !node.visibleBounds.isEmpty) {
+                trackingSourceVisible = true
+                break
+            }
+            device.swipe(
+                displayWidth / 2,
+                (displayHeight * 0.72f).toInt(),
+                displayWidth / 2,
+                (displayHeight * 0.25f).toInt(),
+                24
+            )
+            device.waitForIdle()
+        }
+        val finalTrackingSourceNode = device.findObject(trackingSourceButton)
+        trackingSourceVisible = trackingSourceVisible ||
+            (finalTrackingSourceNode != null && !finalTrackingSourceNode.visibleBounds.isEmpty)
+        assertTrue(
+            "Tracking provider selector is missing or could not be scrolled into view in Sandbox settings",
+            trackingSourceVisible
         )
         device.findObject(trackingSourceButton).click()
         assertTrue(
