@@ -69,18 +69,17 @@ class QualcommHandRoiPreprocessorTest {
             gray(3), gray(4),
             gray(5), gray(6)
         )
-        val transform = QualcommHandRoiTransform.fromPalmRegion(
-            region = LiteRtPalmRegion(
-                centerX = 0.5f,
-                centerY = 0.5f,
-                width = 1f,
-                height = 1f,
-                rotationRadians = 0f
-            ),
+        val transform = QualcommHandRoiTransform(
             sourceWidthPx = 3,
             sourceHeightPx = 2,
             inputWidthPx = 3,
-            inputHeightPx = 2
+            inputHeightPx = 2,
+            topLeftX = 0f,
+            topLeftY = 0f,
+            bottomLeftX = 0f,
+            bottomLeftY = 1f,
+            topRightX = 2f,
+            topRightY = 0f
         )
         val output = FloatArray(3 * 2 * 3)
 
@@ -136,18 +135,17 @@ class QualcommHandRoiPreprocessorTest {
             0xff804020.toInt(), 0xff102030.toInt(),
             0xff405060.toInt(), 0xff708090.toInt()
         )
-        val transform = QualcommHandRoiTransform.fromPalmRegion(
-            region = LiteRtPalmRegion(
-                centerX = 0.5f,
-                centerY = 0.5f,
-                width = 1f,
-                height = 1f,
-                rotationRadians = 0f
-            ),
+        val transform = QualcommHandRoiTransform(
             sourceWidthPx = 2,
             sourceHeightPx = 2,
             inputWidthPx = 2,
-            inputHeightPx = 2
+            inputHeightPx = 2,
+            topLeftX = 0f,
+            topLeftY = 0f,
+            bottomLeftX = 0f,
+            bottomLeftY = 1f,
+            topRightX = 1f,
+            topRightY = 0f
         )
         val output = FloatArray(2 * 2 * 3)
 
