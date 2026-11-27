@@ -653,7 +653,13 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
     private fun showRuntimeBrokerDiagnostic() {
         Toast.makeText(this, "Проверяем OpenXR RuntimeBroker…", Toast.LENGTH_SHORT).show()
         Thread({
-            val report = AndroidRuntimeBrokerProbe.inspect(this).toDisplayText()
+            val brokerReport = AndroidRuntimeBrokerProbe.inspect(this)
+            val readiness = EndXrExternalRuntimeReadiness.fromBrokerProbe(
+                report = brokerReport,
+                nativeProbeLabel = endXrOpenXrTestLabel,
+                ownPackageName = packageName
+            )
+            val report = brokerReport.toDisplayText() + "\\n\\n" + readiness.toDisplayText()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
