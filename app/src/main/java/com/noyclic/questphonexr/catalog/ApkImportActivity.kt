@@ -88,10 +88,7 @@ class ApkImportActivity : ComponentActivity() {
         val sessionSeen: Boolean,
         val sessionEverRunning: Boolean,
         val frameCount: Long,
-        val traceJsonLines: String,
-        val traceCount: Int,
-        val traceFirstFailureStage: String,
-        val traceLastSuccessfulStage: String
+        val traceJsonLines: String
     )
 
     private val endXrCameraPermission = registerForActivityResult(
@@ -1050,7 +1047,12 @@ class ApkImportActivity : ComponentActivity() {
                             0xFF8FE0B5.toInt()
                         )
                         requestCameraThenLaunch(
-                            PendingEndXrLaunch(info.id, brokerReport, inputIpcGranted = true),
+                            PendingEndXrLaunch(
+                                info.id,
+                                brokerReport,
+                                inputIpcGranted = true,
+                                runtimeTraceGranted = manager.isRuntimeTraceAuthorized(client)
+                            ),
                             launchIntent,
                             assessment
                         )
@@ -1480,10 +1482,7 @@ class ApkImportActivity : ComponentActivity() {
                     "session_seen",
                     "session_ever_running",
                     "frame_count",
-                    "trace_jsonl",
-                    "trace_count",
-                    "trace_first_failure_stage",
-                    "trace_last_successful_stage"
+                    "trace_jsonl"
                 ),
                 null,
                 null,
@@ -1505,10 +1504,7 @@ class ApkImportActivity : ComponentActivity() {
                     sessionSeen = cursor.getInt(11) != 0,
                     sessionEverRunning = cursor.getInt(12) != 0,
                     frameCount = cursor.getLong(13),
-                    traceJsonLines = cursor.getString(14).orEmpty(),
-                    traceCount = cursor.getInt(15),
-                    traceFirstFailureStage = cursor.getString(16).orEmpty(),
-                    traceLastSuccessfulStage = cursor.getString(17).orEmpty()
+                    traceJsonLines = cursor.getString(14).orEmpty()
                 )
             }
         }.getOrNull()
@@ -1541,14 +1537,12 @@ class ApkImportActivity : ComponentActivity() {
                     appendLine("Status: CONSENT ENABLED, BUT NO TRACE EVENTS FOR THIS GAME WERE RECEIVED.")
                 } else {
                     appendLine("Status: ENABLED · current game package only")
-                    val summaryMatchesPackage =
-                        packageTraceCount == telemetry.traceCount && telemetry.callerPackage == expectedPackage
                     append(EndXrRuntimeTraceJournal.formatText(
                         expectedPackage,
                         telemetry.runtimePid,
                         packageTraceCount,
-                        telemetry.traceFirstFailureStage.takeIf { summaryMatchesPackage && it.isNotBlank() },
-                        telemetry.traceLastSuccessfulStage.takeIf { summaryMatchesPackage && it.isNotBlank() },
+                        EndXrRuntimeTraceJournal.firstFailureStage(packageTrace),
+                        EndXrRuntimeTraceJournal.lastSuccessfulStage(packageTrace),
                         packageTrace
                     ))
                     appendLine()

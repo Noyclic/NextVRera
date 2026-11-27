@@ -58,6 +58,27 @@ class EndXrRuntimeTraceJournalTest {
     }
 
     @Test
+    fun packageScopedFailureSummaryUsesOnlySelectedGameEvents() {
+        val selectedFailure = event(1, "LOADER").copy(
+            result = "XR_ERROR_RUNTIME_UNAVAILABLE",
+            resultCode = -51
+        ).toJson()
+        val selectedSuccess = event(2, "SESSION").toJson()
+        val otherFailure = event(3, "SWAPCHAIN").copy(
+            callerPackage = "org.example.other",
+            result = "XR_ERROR_RUNTIME_FAILURE",
+            resultCode = -2
+        ).toJson()
+        val selected = EndXrRuntimeTraceJournal.filterByCallerPackage(
+            listOf(selectedFailure, selectedSuccess, otherFailure).joinToString("\\n"),
+            "com.example.game"
+        )
+
+        assertEquals("LOADER", EndXrRuntimeTraceJournal.firstFailureStage(selected))
+        assertEquals("SESSION", EndXrRuntimeTraceJournal.lastSuccessfulStage(selected))
+    }
+
+    @Test
     fun jsonArrayAndTextExportRetainFailureSummary() {
         val journal = EndXrRuntimeTraceJournal.append(null, event(1, "LOADER", "loader ok"))
         val jsonArray = EndXrRuntimeTraceJournal.asJsonArray(journal)

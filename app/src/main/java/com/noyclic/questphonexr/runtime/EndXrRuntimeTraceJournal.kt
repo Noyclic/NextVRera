@@ -88,6 +88,21 @@ internal object EndXrRuntimeTraceJournal {
             .joinToString("\n")
     }
 
+    fun firstFailureStage(jsonLines: String?): String? =
+        jsonLines.orEmpty().lineSequence().mapNotNull { line ->
+            val resultCode = RESULT_CODE_PATTERN.find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if (resultCode != null && resultCode < 0) STAGE_PATTERN.find(line)?.groupValues?.getOrNull(1) else null
+        }.firstOrNull()
+
+    fun lastSuccessfulStage(jsonLines: String?): String? =
+        jsonLines.orEmpty().lineSequence().mapNotNull { line ->
+            val resultCode = RESULT_CODE_PATTERN.find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if (resultCode != null && resultCode >= 0) STAGE_PATTERN.find(line)?.groupValues?.getOrNull(1) else null
+        }.lastOrNull()
+
+    private val STAGE_PATTERN = Regex("\\\"stage\\\":\\\"([A-Z][A-Z0-9_]*)\\\"")
+    private val RESULT_CODE_PATTERN = Regex("\\\"result_code\\\":(-?[0-9]+)")
+
     fun asJsonArray(jsonLines: String?): String =
         jsonLines.orEmpty().lineSequence()
             .map { it.trim() }
