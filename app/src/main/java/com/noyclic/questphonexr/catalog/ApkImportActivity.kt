@@ -1342,7 +1342,8 @@ class ApkImportActivity : ComponentActivity() {
                 launcherActivityFound = true,
                 inputIpcGranted = pending.inputIpcGranted,
                 launchError = error.message ?: error.javaClass.simpleName,
-                launchResult = "NextVRera preflight passed, but Android rejected startActivity."
+                launchResult = "NextVRera preflight passed, but Android rejected startActivity.",
+                runtimeTraceGranted = traceGranted
             ) + launchDetails
             statusView.text = "Не удалось запустить ${info.displayName}: ${error.message ?: error.javaClass.simpleName}"
             showLaunchDiagnostic("Ошибка NextVRera / EndXR запуска", report)
@@ -1538,8 +1539,8 @@ class ApkImportActivity : ComponentActivity() {
                     telemetry.callerPackage,
                     telemetry.runtimePid,
                     telemetry.traceCount,
-                    telemetry.traceFirstFailureStage.ifBlank { null },
-                    telemetry.traceLastSuccessfulStage.ifBlank { null },
+                    telemetry.traceFirstFailureStage.takeIf { it.isNotBlank() },
+                    telemetry.traceLastSuccessfulStage.takeIf { it.isNotBlank() },
                     telemetry.traceJsonLines
                 ))
                 appendLine()

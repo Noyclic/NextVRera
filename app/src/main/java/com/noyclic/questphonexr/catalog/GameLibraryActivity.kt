@@ -237,7 +237,6 @@ class GameLibraryActivity : ComponentActivity() {
         client: com.noyclic.questphonexr.runtime.EndXrInputClient
     ) {
         val inputAlreadyGranted = manager.isAuthorized(client)
-        val lifecycleAlreadyGranted = manager.isRuntimeTelemetryAuthorized(client)
         val message = buildString {
             append("Приложение: ").append(client.label).append('\n')
             append("Пакет: ").append(client.packageName).append("\n\n")
@@ -253,12 +252,7 @@ class GameLibraryActivity : ComponentActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle(
-                when {
-                    lifecycleAlreadyGranted && !traceAlreadyGranted ->
-                        "Разрешить подробную трассировку EndXR?"
-                    inputAlreadyGranted -> "Обновить разрешение EndXR?"
-                    else -> "Разрешить ввод и телеметрию EndXR?"
-                }
+                if (inputAlreadyGranted) "Обновить разрешение EndXR?" else "Разрешить ввод и телеметрию EndXR?"
             )
             .setMessage(message)
             .setNegativeButton("Отмена", null)
@@ -325,8 +319,8 @@ class GameLibraryActivity : ComponentActivity() {
         AlertDialog.Builder(this)
             .setTitle("Отозвать доступ EndXR?")
             .setMessage(
-                client.label + " (" + client.packageName + ") потеряет и read-only доступ к controller_state, " +
-                    "и write-only доступ к runtime_event."
+                client.label + " (" + client.packageName + ") имеет read-only доступ к controller_state и write-only доступ к runtime_event. " +
+                    "Можно отозвать только подробную трассировку, сохранив ввод и lifecycle-телеметрию, либо отозвать оба доступа."
             )
             .setNegativeButton("Оставить", null)
             .setNeutralButton("Отозвать только трассировку") { _, _ ->
