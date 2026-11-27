@@ -6,8 +6,10 @@
 - Added a pure Kotlin Qualcomm MediaPipe-Hand palm-output decoder with anchor-relative box/keypoint decoding, clipped sigmoid scores, confidence filtering and non-maximum suppression.
 - Bundled the exact 2,944-row `anchors_palm.npy` from the recipe's pinned MediaPipePyTorch revision and added a validating NumPy parser with a one-time model-store load API.
 - Added the Qualcomm full-frame RGB preprocessor: normalized float [0,1], bilinear resize, floor-sized centered letterbox padding, NHWC/NCHW layouts and right-angle camera rotation.
-- Added tests for real bundled anchors, malformed NumPy metadata, preprocessing geometry, letterbox mapping, tensor ranks, dynamic anchors, NMS and palm ROI geometry.
-- Kept `LITERT_STANDALONE` PLANNED: LiteRT model adapters, QNN DSP/HTP execution, landmark ROI inference, service registration and physical-device validation remain outstanding.
+- Added the rotated square hand ROI cropper using Qualcomm's three-point affine geometry, black out-of-frame border and reusable NHWC/NCHW buffers.
+- Added a 21-point landmark output decoder for presence, handedness and inverse-affine camera-coordinate mapping; no unsupported metric world pose is fabricated.
+- Added tests for real bundled anchors, malformed NumPy metadata, preprocessing geometry, tensor ranks, NMS, rotated ROI crops, landmark output, handedness and rejection paths.
+- Kept `LITERT_STANDALONE` PLANNED: concrete LiteRT model adapters, QNN DSP/HTP execution, runtime tensor readback, service registration and physical-device validation remain outstanding.
 
 ## 2026-11-24
 
