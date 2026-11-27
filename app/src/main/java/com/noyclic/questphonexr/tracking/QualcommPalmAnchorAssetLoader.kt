@@ -72,7 +72,7 @@ object QualcommPalmAnchorAssetLoader {
                 (npy[headerLengthOffset + index].toLong() and 0xffL) shl (8 * index)
             )
         }
-        require(headerLength in 1..65_536) { "Qualcomm palm anchor NPY header length is invalid." }
+        require(headerLength in 1L..65_536L) { "Qualcomm palm anchor NPY header length is invalid." }
 
         val headerStart = headerLengthOffset + lengthFieldBytes
         val dataOffsetLong = headerStart.toLong() + headerLength
