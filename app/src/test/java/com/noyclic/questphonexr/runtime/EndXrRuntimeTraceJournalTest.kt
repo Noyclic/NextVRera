@@ -44,6 +44,20 @@ class EndXrRuntimeTraceJournalTest {
     }
 
     @Test
+    fun packageFilterDoesNotMixTraceEventsFromDifferentGames() {
+        val selected = event(1).toJson()
+        val other = event(2).copy(callerPackage = "org.example.other").toJson()
+        val filtered = EndXrRuntimeTraceJournal.filterByCallerPackage(
+            listOf(selected, other).joinToString("\\n"),
+            "com.example.game"
+        )
+
+        assertEquals(selected, filtered)
+        assertEquals(1, EndXrRuntimeTraceJournal.count(filtered))
+        assertEquals("", EndXrRuntimeTraceJournal.filterByCallerPackage(other, ""))
+    }
+
+    @Test
     fun jsonArrayAndTextExportRetainFailureSummary() {
         val journal = EndXrRuntimeTraceJournal.append(null, event(1, "LOADER", "loader ok"))
         val jsonArray = EndXrRuntimeTraceJournal.asJsonArray(journal)

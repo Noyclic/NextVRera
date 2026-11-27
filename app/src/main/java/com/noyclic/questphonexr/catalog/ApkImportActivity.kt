@@ -1531,19 +1531,28 @@ class ApkImportActivity : ComponentActivity() {
             !traceConsentGranted -> appendLine("Status: NOT ENABLED — separate detailed-trace consent was not granted.")
             !matchesLaunch || telemetry == null ->
                 appendLine("Status: NO NEW TRACE — the game did not submit a confirmed EndXR instance event during this launch.")
-            telemetry.traceCount <= 0 || telemetry.traceJsonLines.isBlank() ->
-                appendLine("Status: CONSENT ENABLED, BUT NO LOW-LEVEL TRACE EVENTS WERE RECEIVED.")
             else -> {
-                appendLine("Status: ENABLED")
-                append(EndXrRuntimeTraceJournal.formatText(
-                    telemetry.callerPackage,
-                    telemetry.runtimePid,
-                    telemetry.traceCount,
-                    telemetry.traceFirstFailureStage.takeIf { it.isNotBlank() },
-                    telemetry.traceLastSuccessfulStage.takeIf { it.isNotBlank() },
-                    telemetry.traceJsonLines
-                ))
-                appendLine()
+                val packageTrace = EndXrRuntimeTraceJournal.filterByCallerPackage(
+                    telemetry.traceJsonLines,
+                    expectedPackage.orEmpty()
+                )
+                val packageTraceCount = EndXrRuntimeTraceJournal.count(packageTrace)
+                if (packageTraceCount <= 0) {
+                    appendLine("Status: CONSENT ENABLED, BUT NO TRACE EVENTS FOR THIS GAME WERE RECEIVED.")
+                } else {
+                    appendLine("Status: ENABLED · current game package only")
+                    val summaryMatchesPackage =
+                        packageTraceCount == telemetry.traceCount && telemetry.callerPackage == expectedPackage
+                    append(EndXrRuntimeTraceJournal.formatText(
+                        expectedPackage,
+                        telemetry.runtimePid,
+                        packageTraceCount,
+                        telemetry.traceFirstFailureStage.takeIf { summaryMatchesPackage && it.isNotBlank() },
+                        telemetry.traceLastSuccessfulStage.takeIf { summaryMatchesPackage && it.isNotBlank() },
+                        packageTrace
+                    ))
+                    appendLine()
+                }
             }
         }
         if (!matchesLaunch || telemetry == null) {

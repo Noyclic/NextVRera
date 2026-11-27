@@ -78,6 +78,16 @@ internal object EndXrRuntimeTraceJournal {
     fun count(jsonLines: String?): Int =
         jsonLines.orEmpty().lineSequence().count { it.isNotBlank() }
 
+    /** Keeps only entries attributed to the selected Android package. */
+    fun filterByCallerPackage(jsonLines: String?, packageName: String): String {
+        if (packageName.isBlank()) return ""
+        val marker = "\\\"caller_package\\\":\\\"$packageName\\\""
+        return jsonLines.orEmpty().lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.contains(marker) }
+            .joinToString("\\n")
+    }
+
     fun asJsonArray(jsonLines: String?): String =
         jsonLines.orEmpty().lineSequence()
             .map { it.trim() }
