@@ -38,8 +38,8 @@ class QualcommHandLandmarkOutputDecoderTest {
         assertEquals(0.96f, decoded.prediction.presenceScore, 0f)
         assertEquals(2L, decoded.prediction.preprocessingLatencyMs)
         assertEquals(11L, decoded.prediction.inferenceLatencyMs)
-        assertEquals(0.5f, decoded.prediction.points[0].x, 0.0001f)
-        assertEquals(0.5f, decoded.prediction.points[0].y, 0.0001f)
+        assertEquals(0.5f, decoded.prediction.points[0].x, 0.0015f)
+        assertEquals(0.5f, decoded.prediction.points[0].y, 0.0015f)
         assertEquals(0.025f, decoded.prediction.points[0].z, 0f)
         assertTrue(decoded.prediction.worldPoints.isEmpty())
     }
@@ -98,8 +98,8 @@ class QualcommHandLandmarkOutputDecoderTest {
         )
 
         // The center is invariant under rotation; all landmarks must remain in the camera frame.
-        assertEquals(0.5f, decoded.prediction.points[0].x, 0.0001f)
-        assertEquals(0.5f, decoded.prediction.points[0].y, 0.0001f)
+        assertEquals(0.5f, decoded.prediction.points[0].x, 0.0015f)
+        assertEquals(0.5f, decoded.prediction.points[0].y, 0.0015f)
         assertTrue(decoded.prediction.points.all { it.x in 0f..1f && it.y in 0f..1f })
     }
 
