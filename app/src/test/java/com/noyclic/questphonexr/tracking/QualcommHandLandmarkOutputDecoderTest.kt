@@ -235,7 +235,7 @@ class QualcommHandLandmarkOutputDecoderTest {
             outputs = tensors(
                 landmarks = FloatArray(63) { index ->
                     when (index % 3) {
-                        0 -> 0.5f
+                        0 -> 0f
                         1 -> 0.5f
                         else -> 0f
                     }
@@ -244,9 +244,10 @@ class QualcommHandLandmarkOutputDecoderTest {
             roiTransform = edgeRoi,
             frameTimestampMs = 2L
         )
-        // Center remains valid even for edge crops; the explicit rejection branch is exercised
-        // with a model point on the far corner of the crop instead.
-        assertTrue(outside is QualcommHandLandmarkDecodeResult.Success)
+        assertEquals(
+            QualcommHandLandmarkDecodeRejection.LANDMARK_OUTSIDE_SOURCE_FRAME,
+            assertRejected(outside).reason
+        )
     }
 
     private fun centerRoiTransform() = QualcommHandRoiTransform(
