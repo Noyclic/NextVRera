@@ -9,8 +9,6 @@
 - Added tests for real bundled anchors, malformed NumPy metadata, preprocessing geometry, letterbox mapping, tensor ranks, dynamic anchors, NMS and palm ROI geometry.
 - Kept `LITERT_STANDALONE` PLANNED: LiteRT model adapters, QNN DSP/HTP execution, landmark ROI inference, service registration and physical-device validation remain outstanding.
 
-# Changelog
-
 ## 2026-11-24
 
 ### NextVRera tracking / Sandbox
