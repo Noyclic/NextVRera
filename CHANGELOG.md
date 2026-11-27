@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-27
+
+### NextVRera / EndXR game diagnostics
+- Added a distinct, explicit consent step for detailed OpenXR runtime tracing; lifecycle telemetry and controller input no longer silently imply trace permission.
+- Added a trace-only revoke action that preserves controller and lifecycle access.
+- Included the current game's bounded low-level OpenXR trace journal in the post-launch diagnostic report, including first failure stage and last successful stage.
+- Corrected the EndXR runtime documentation: the loader negotiates up to OpenXR 1.1.65, while full OpenXR 1.1 conformance and third-party game compatibility remain unverified.
+
 ## 2026-11-24
 
 ### NextVRera tracking / Sandbox

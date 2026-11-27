@@ -220,10 +220,12 @@ class GameLibraryActivity : ComponentActivity() {
                 val inputGranted = manager.isAuthorized(selected)
                 val telemetryGranted = manager.isRuntimeTelemetryAuthorized(selected)
                 val traceGranted = manager.isRuntimeTraceAuthorized(selected)
-                if (inputGranted && telemetryGranted && traceGranted) {
-                    confirmRevokeInputAccess(manager, selected)
-                } else {
-                    confirmGrantInputAndTelemetryAccess(manager, selected)
+                when {
+                    inputGranted && telemetryGranted && traceGranted ->
+                        confirmRevokeInputAccess(manager, selected)
+                    inputGranted && telemetryGranted ->
+                        confirmGrantRuntimeTraceAccess(manager, selected)
+                    else -> confirmGrantInputAndTelemetryAccess(manager, selected)
                 }
             }
             .setPositiveButton("Готово", null)
@@ -236,20 +238,15 @@ class GameLibraryActivity : ComponentActivity() {
     ) {
         val inputAlreadyGranted = manager.isAuthorized(client)
         val lifecycleAlreadyGranted = manager.isRuntimeTelemetryAuthorized(client)
-        val traceAlreadyGranted = manager.isRuntimeTraceAuthorized(client)
         val message = buildString {
             append("Приложение: ").append(client.label).append('\n')
             append("Пакет: ").append(client.packageName).append("\n\n")
             append("NextVRera запросит доступы только для этого пакета и его текущей подписи:\n")
             append("• READ controller_state — кнопки/оси контроллеров, ориентация телефона и приблизительные позы ладоней.\n")
-            append("• WRITE runtime_event — события жизненного цикла и, после отдельного согласия, подробная трассировка реальных OpenXR-вызовов.\n\n")
-            append("Подробная трассировка содержит имена вызовов и расширений, XrResult/числовые коды ошибок, длительность, frame/instance/session ID, PID и thread ID, а также ограниченные параметры EGL/GLES/swapchain. ")
-            append("Журнал ограничен последними 192 событиями. Он не читает файлы игры, экран, игровые сохранения или содержимое игры.\n\n")
+            append("• WRITE runtime_event — только события жизненного цикла: xrCreateInstance, xrCreateSession, xrBeginSession и успешная композиция кадров.\n")
+            append("• Подробная трассировка OpenXR — отдельное необязательное разрешение, которое можно включить следующим отдельным подтверждением.\n\n")
             if (inputAlreadyGranted) {
                 append("Текущий доступ к чтению ввода сохранится. ")
-            }
-            if (lifecycleAlreadyGranted && !traceAlreadyGranted) {
-                append("Старое согласие WRITE покрывало только lifecycle-события; сейчас ты отдельно подтверждаешь более подробную trace-телеметрию.\n\n")
             }
             append("Обычные Android-кнопки в игру не внедряются: игра должна поддерживать OpenXR input или контракт EndXR. ")
             append("Разрешения привязаны к подписи приложения и могут быть отозваны здесь.")
@@ -270,14 +267,50 @@ class GameLibraryActivity : ComponentActivity() {
                     .onSuccess {
                         Toast.makeText(
                             this,
-                            "Ввод и телеметрия EndXR разрешены для " + client.label,
+                            "Ввод и события жизненного цикла EndXR разрешены для " + client.label,
+                            Toast.LENGTH_LONG
+                        ).show()
+                        confirmGrantRuntimeTraceAccess(manager, client)
+                    }
+                    .onFailure { error ->
+                        Toast.makeText(
+                            this,
+                            "Не удалось выдать доступ: " + (error.message ?: "ошибка Android"),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+            }
+            .show()
+    }
+
+    private fun confirmGrantRuntimeTraceAccess(
+        manager: EndXrInputAccessManager,
+        client: com.noyclic.questphonexr.runtime.EndXrInputClient
+    ) {
+        if (manager.isRuntimeTraceAuthorized(client)) return
+        AlertDialog.Builder(this)
+            .setTitle("Разрешить подробную трассировку EndXR?")
+            .setMessage(
+                "Отдельное необязательное разрешение для " + client.label + " (" + client.packageName + ").\n\n" +
+                    "EndXR сможет сохранять последние 192 записи реальных OpenXR-вызовов: стадии Loader/Instance/Session/Swapchain/Frame, " +
+                    "имена функций и расширений, XrResult и код ошибки, длительность, PID/thread ID, instance/session ID и ограниченные параметры EGL/GLES.\n\n" +
+                    "Трассировка не читает экран, файлы, сохранения или содержимое игры. Она нужна для поиска причин чёрного экрана и ошибок запуска. " +
+                    "Разрешение можно отозвать отдельно, не отключая ввод и lifecycle-телеметрию."
+            )
+            .setNegativeButton("Не сейчас", null)
+            .setPositiveButton("Разрешить трассировку") { _, _ ->
+                runCatching { manager.authorizeRuntimeTrace(client.packageName) }
+                    .onSuccess {
+                        Toast.makeText(
+                            this,
+                            "Подробная трассировка разрешена для " + client.label,
                             Toast.LENGTH_LONG
                         ).show()
                     }
                     .onFailure { error ->
                         Toast.makeText(
                             this,
-                            "Не удалось выдать доступ: " + (error.message ?: "ошибка Android"),
+                            "Не удалось разрешить трассировку: " + (error.message ?: "ошибка"),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -296,6 +329,23 @@ class GameLibraryActivity : ComponentActivity() {
                     "и write-only доступ к runtime_event."
             )
             .setNegativeButton("Оставить", null)
+            .setNeutralButton("Отозвать только трассировку") { _, _ ->
+                runCatching { manager.revokeRuntimeTrace(client.packageName) }
+                    .onSuccess {
+                        Toast.makeText(
+                            this,
+                            "Подробная трассировка отключена; ввод и lifecycle-телеметрия сохранены.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    .onFailure { error ->
+                        Toast.makeText(
+                            this,
+                            "Не удалось отключить трассировку: " + (error.message ?: "ошибка"),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+            }
             .setPositiveButton("Отозвать оба") { _, _ ->
                 runCatching { manager.revoke(client.packageName) }
                     .onSuccess {

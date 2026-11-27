@@ -106,6 +106,63 @@ class EndXrInputAccessPolicyTest {
     }
 
     @Test
+    fun traceConsentCanBeEnabledOnlyForTheMatchingLifecycleGrant() {
+        val client = EndXrInputClient(
+            packageName = "com.example.vrgame",
+            label = "VR Game",
+            signingCertificateSha256 = fingerprint
+        )
+        val lifecycleOnly = listOf(
+            EndXrInputGrantRecord(
+                client.packageName,
+                fingerprint,
+                runtimeTelemetryGranted = true
+            )
+        )
+        val enabled = EndXrInputGrantCodec.withRuntimeTraceConsent(
+            lifecycleOnly,
+            client,
+            enabled = true
+        ).single()
+        assertTrue(enabled.runtimeTelemetryGranted)
+        assertTrue(enabled.runtimeTraceGranted)
+
+        val wrongSigner = client.copy(signingCertificateSha256 = "abcdef12".repeat(8))
+        assertTrue(runCatching {
+            EndXrInputGrantCodec.withRuntimeTraceConsent(lifecycleOnly, wrongSigner, enabled = true)
+        }.isFailure)
+        val inputOnly = listOf(EndXrInputGrantRecord(client.packageName, fingerprint))
+        assertTrue(runCatching {
+            EndXrInputGrantCodec.withRuntimeTraceConsent(inputOnly, client, enabled = true)
+        }.isFailure)
+    }
+
+    @Test
+    fun traceConsentCanBeRevokedWithoutRemovingInputOrLifecycleAccess() {
+        val client = EndXrInputClient(
+            packageName = "com.example.vrgame",
+            label = "VR Game",
+            signingCertificateSha256 = fingerprint
+        )
+        val fullConsent = listOf(
+            EndXrInputGrantRecord(
+                client.packageName,
+                fingerprint,
+                runtimeTelemetryGranted = true,
+                runtimeTraceGranted = true
+            )
+        )
+        val revoked = EndXrInputGrantCodec.withRuntimeTraceConsent(
+            fullConsent,
+            client,
+            enabled = false
+        ).single()
+        assertTrue(EndXrInputGrantCodec.matches(revoked, client))
+        assertTrue(revoked.runtimeTelemetryGranted)
+        assertFalse(revoked.runtimeTraceGranted)
+    }
+
+    @Test
     fun malformedTelemetryConsentFlagIsIgnored() {
         val decoded = EndXrInputGrantCodec.decode(
             setOf("com.example.vrgame|$fingerprint|yes")
