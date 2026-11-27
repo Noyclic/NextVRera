@@ -11,7 +11,17 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.ceil
 
-data class TensorInfo(val index: Int, val name: String, val shape: List<Int>, val type: String, val bytes: Int)
+data class TensorInfo(
+    val index: Int,
+    val name: String,
+    val shape: List<Int>,
+    val shapeSignature: List<Int>,
+    val type: String,
+    val bytes: Int,
+    val elementCount: Int,
+    val quantizationScale: Float,
+    val quantizationZeroPoint: Int
+)
 data class HtpReport(
     val model: String,
     val input: TensorInfo,
@@ -95,8 +105,20 @@ class HtpModelProbe(context: Context, private val file: File) : Closeable {
         delegate = null
     }
 
-    private fun org.tensorflow.lite.Tensor.info(index: Int) =
-        TensorInfo(index, name(), shape().toList(), dataType().name, numBytes())
+    private fun org.tensorflow.lite.Tensor.info(index: Int): TensorInfo {
+        val quantization = quantizationParams()
+        return TensorInfo(
+            index = index,
+            name = name(),
+            shape = shape().toList(),
+            shapeSignature = shapeSignature().toList(),
+            type = dataType().name,
+            bytes = numBytes(),
+            elementCount = numElements(),
+            quantizationScale = quantization.scale,
+            quantizationZeroPoint = quantization.zeroPoint
+        )
+    }
 
     private fun percentile(sorted: List<Long>, fraction: Double): Double {
         val index = (ceil(fraction * sorted.size).toInt() - 1).coerceIn(0, sorted.lastIndex)

@@ -181,4 +181,18 @@ benchmark attempts. The probe APK is for hardware compatibility evidence only; i
 activate or replace the production tracker. A successful warm-up still does not prove complete
 operator placement on HTP.
 
+After a successful HTP warm-up the probe checks the public Qualcomm model-component tensor
+contract. The palm detector expects one 256×256 RGB FLOAT32 image input and two outputs:
+box/keypoint coordinates ([1,N,18] or [1,N,9,2]) and confidence scores ([1,N] or
+[1,N,1]) with the same non-zero anchor count. The hand-landmark component expects the same
+image input and three outputs in component order: presence score, handedness score and
+21×3 landmark coordinates. NCHW and NHWC image layouts are both recognized. The report includes
+runtime tensor names, shape and shape signature, data type, byte/element count, and quantization
+scale/zero point. Tensor names are reported for inspection but are not used to infer semantic roles.
+
+The checks validate model metadata, not numerical inference accuracy, palm-anchor decoding/NMS,
+palm-to-hand ROI rotation, complete HTP operator placement, two-hand association or live camera
+latency. LITERT_STANDALONE therefore remains PLANNED until its model adapters and complete
+ROI/reacquisition pipeline are implemented and validated on physical hardware.
+
 The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.
