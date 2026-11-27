@@ -40,11 +40,21 @@ data class QualcommHandRoiTransform(
         return point.first / sourceWidthPx to point.second / sourceHeightPx
     }
 
-    internal fun sourcePointAt(outputX: Int, outputY: Int): Pair<Float, Float> =
-        mapUnitSquare(
-            outputX.toFloat() / (inputWidthPx - 1),
-            outputY.toFloat() / (inputHeightPx - 1)
-        )
+    internal fun sourceXAt(outputX: Int, outputY: Int): Float {
+        val u = outputX.toFloat() / (inputWidthPx - 1)
+        val v = outputY.toFloat() / (inputHeightPx - 1)
+        return topLeftX +
+            u * (topRightX - topLeftX) +
+            v * (bottomLeftX - topLeftX)
+    }
+
+    internal fun sourceYAt(outputX: Int, outputY: Int): Float {
+        val u = outputX.toFloat() / (inputWidthPx - 1)
+        val v = outputY.toFloat() / (inputHeightPx - 1)
+        return topLeftY +
+            u * (topRightY - topLeftY) +
+            v * (bottomLeftY - topLeftY)
+    }
 
     private fun mapUnitSquare(u: Float, v: Float): Pair<Float, Float> {
         val bottomVectorX = bottomLeftX - topLeftX
@@ -177,20 +187,12 @@ object QualcommHandRoiPreprocessor {
 
         for (outputY in 0 until transform.inputHeightPx) {
             for (outputX in 0 until transform.inputWidthPx) {
-                val uprightPoint = transform.sourcePointAt(outputX, outputY)
-                val rawPoint = uprightToRaw(
-                    uprightPoint.first,
-                    uprightPoint.second,
-                    rawWidth,
-                    rawHeight,
-                    rotation
-                )
+                val uprightX = transform.sourceXAt(outputX, outputY)
+                val uprightY = transform.sourceYAt(outputX, outputY)
+                val rawX = uprightToRawX(uprightX, uprightY, rawWidth, rotation)
+                val rawY = uprightToRawY(uprightX, uprightY, rawHeight, rotation)
                 val sampled = sampleBilinearBlackBorder(
-                    sourceArgb,
-                    rawWidth,
-                    rawHeight,
-                    rawPoint.first,
-                    rawPoint.second
+                    sourceArgb, rawWidth, rawHeight, rawX, rawY
                 )
 
                 val red = (sampled ushr 16 and 0xff) / RGB_MAX
@@ -220,17 +222,29 @@ object QualcommHandRoiPreprocessor {
         return normalized.takeIf { it == 0 || it == 90 || it == 180 || it == 270 }
     }
 
-    private fun uprightToRaw(
+    private fun uprightToRawX(
         x: Float,
         y: Float,
         rawWidth: Int,
+        rotation: Int
+    ): Float = when (rotation) {
+        0 -> x
+        90 -> y
+        180 -> rawWidth - 1f - x
+        270 -> rawWidth - 1f - y
+        else -> error("Unsupported source rotation: $rotation")
+    }
+
+    private fun uprightToRawY(
+        x: Float,
+        y: Float,
         rawHeight: Int,
         rotation: Int
-    ): Pair<Float, Float> = when (rotation) {
-        0 -> x to y
-        90 -> y to (rawHeight - 1f - x)
-        180 -> (rawWidth - 1f - x) to (rawHeight - 1f - y)
-        270 -> (rawWidth - 1f - y) to x
+    ): Float = when (rotation) {
+        0 -> y
+        90 -> rawHeight - 1f - x
+        180 -> rawHeight - 1f - y
+        270 -> x
         else -> error("Unsupported source rotation: $rotation")
     }
 
