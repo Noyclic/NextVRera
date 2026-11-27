@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-27
+
+### NextVRera tracking / Qualcomm LiteRT
+- Added a pure Kotlin Qualcomm MediaPipe-Hand palm-output decoder with anchor-relative box/keypoint decoding, clipped sigmoid scores, confidence filtering and non-maximum suppression.
+- Added model-space letterbox geometry and conversion back to source camera coordinates, plus Qualcomm's wrist/middle-finger oriented hand ROI transform.
+- Added regression tests for dynamic anchor counts, supported tensor ranks, anchor mismatches, score filtering, NMS and ROI geometry.
+- Kept the standalone LiteRT provider PLANNED: exact anchor asset loading, concrete model adapters, QNN backend execution and physical-device validation are still required.
+
+# Changelog
+
 ## 2026-11-24
 
 ### NextVRera tracking / Sandbox
@@ -29,3 +39,4 @@
   on device.
 - Kept camera selection policy unchanged: the front camera remains opt-in and is never enabled
   automatically.
+
