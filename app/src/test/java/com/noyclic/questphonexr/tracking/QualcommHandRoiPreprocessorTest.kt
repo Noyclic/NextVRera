@@ -125,9 +125,9 @@ class QualcommHandRoiPreprocessorTest {
             )
         )
 
-        assertEquals(0.25f / 255f, output[0], 0.00001f)
-        assertEquals(0.25f / 255f, output[3], 0.00001f)
-        assertEquals(0.25f / 255f, output[6], 0.00001f)
+        assertEquals(0f, output[0], 0f)
+        assertEquals(1f / 255f, output[3], 0.00001f)
+        assertEquals(1f / 255f, output[6], 0.00001f)
     }
 
     @Test
