@@ -182,3 +182,30 @@ activate or replace the production tracker. A successful warm-up still does not 
 operator placement on HTP.
 
 The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.
+
+
+### Qualcomm MediaPipe-Hand palm output decoding (experimental building block)
+
+The standalone provider now has a pure Kotlin post-processing boundary for Qualcomm AI Hub's
+MediaPipe-Hand detector. It accepts already-dequantized LiteRT output tensors plus the matching
+model anchor array and performs:
+
+- shape/length checks for coordinate outputs `[1,N,18]` or `[1,N,9,2]` and score outputs
+  `[1,N]` or `[1,N,1]`;
+- anchor-relative center/size and seven-keypoint decoding, clipped-logit sigmoid, confidence
+  filtering and class-agnostic NMS;
+- letterbox-to-camera coordinate mapping, followed by wrist/middle-finder oriented ROI
+  construction using the Qualcomm model's offset, rotation and 2.5x crop scale.
+
+The decoder deliberately does **not** hard-code an anchor count. It rejects a run unless the
+coordinate tensor, score tensor and supplied anchor array agree on the same non-zero N. The
+anchor array must be loaded from `anchors_palm.npy` belonging to the exact palm detector export;
+a generated or unrelated MediaPipe anchor grid is not interchangeable.
+
+The numerical contract is based on Qualcomm AI Hub Models source revision
+`9b426b5942a45ae64d31ab275c290e1dcd467f9e` and its pinned MediaPipePyTorch revision
+`65f2549ba35cd61dfd29f402f6c21882a32fabb1`. The current code is a tested post-processing
+component only: model asset pairing, anchor asset loading, image preprocessing, LiteRT model
+adapters, real QNN backend execution and physical-device tracking remain separate integration
+work. In particular, this does not change `LITERT_STANDALONE` from PLANNED and does not claim
+that the decoder itself makes inference run on DSP or HTP.
