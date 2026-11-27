@@ -39,12 +39,12 @@ class QualcommPalmAnchorAssetLoaderTest {
     fun parsesBigEndianFloat32NpyPayload() {
         val bytes = npyFixture(
             descriptor = ">f4",
-            values = FloatArray(2_944 * 4) { index ->
+            values = DoubleArray(2_944 * 4) { index ->
                 when (index % 4) {
-                    0 -> 0.125f
-                    1 -> 0.875f
-                    2 -> 0.5f
-                    else -> 0.25f
+                    0 -> 0.125
+                    1 -> 0.875
+                    2 -> 0.5
+                    else -> 0.25
                 }
             },
             version = 2
