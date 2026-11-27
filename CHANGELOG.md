@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-27
+
+### NextVRera / Qualcomm LiteRT HTP probe
+- Added runtime tensor shape, shape-signature, element-count and quantization metadata to the isolated QNN HTP report.
+- Added model-specific validation for Qualcomm palm-detector and 21-point hand-landmark component tensor contracts, including NCHW/NHWC input layouts and detector anchor-count alignment.
+- Added a persistent error history dialog and full-report clipboard action to the standalone probe APK.
+- Added JVM regression tests for valid/invalid tensor contracts and wired the probe module tests into Android CI.
+- Kept LITERT_STANDALONE marked PLANNED: contract validation and HTP warm-up do not prove decoding, full operator placement or live hand tracking.
+
 ## 2026-11-24
 
 ### NextVRera tracking / Sandbox
