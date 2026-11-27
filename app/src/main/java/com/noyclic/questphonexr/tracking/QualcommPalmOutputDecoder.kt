@@ -28,7 +28,7 @@ data class QualcommPalmAnchor(
  * Geometry shared by the palm detector's letterbox preprocessor and output decoder.
  *
  * Use the same instance for preprocessing and decoding. Content dimensions are integer pixels,
- * so source mapping remains correct when an aspect-ratio resize rounds one dimension.
+ * so source mapping remains consistent with Qualcomm's nominal resize scale and integer output dimensions.
  */
 data class LiteRtPalmInputTransform(
     val sourceWidthPx: Int,
@@ -50,16 +50,18 @@ data class LiteRtPalmInputTransform(
         require(padTopPx + contentHeightPx <= inputHeightPx)
     }
 
-    val scaleX: Float
-        get() = contentWidthPx.toFloat() / sourceWidthPx
-
-    val scaleY: Float
-        get() = contentHeightPx.toFloat() / sourceHeightPx
+    /** Nominal resize scale returned by Qualcomm's resize_pad helper. */
+    val resizeScale: Float
+        get() = minOf(
+            inputWidthPx.toFloat() / sourceWidthPx,
+            inputHeightPx.toFloat() / sourceHeightPx
+        )
 
     fun toSourcePixel(modelX: Float, modelY: Float): Pair<Float, Float>? {
         if (!modelX.isFinite() || !modelY.isFinite()) return null
-        return (modelX - padLeftPx) / scaleX to
-            (modelY - padTopPx) / scaleY
+        val scale = resizeScale
+        return (modelX - padLeftPx) / scale to
+            (modelY - padTopPx) / scale
     }
 
     fun toSourceNormalized(modelX: Float, modelY: Float): Pair<Float, Float>? {
