@@ -660,7 +660,7 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 nativeProbeLabel = endXrOpenXrTestLabel,
                 ownPackageName = packageName
             )
-            val report = brokerReport.toDisplayText() + "\\n\\n" + readiness.toDisplayText()
+            val report = brokerReport.toDisplayText() + "\n\n" + readiness.toDisplayText()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
