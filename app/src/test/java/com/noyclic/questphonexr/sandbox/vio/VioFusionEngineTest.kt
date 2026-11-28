@@ -62,6 +62,33 @@ class VioFusionEngineTest {
         assertFalse(engine.diagnostics().cameraImuClockComparable)
     }
 
+    @Test fun poseInterpolatesOrientationAtCameraTimestampWhenClockIsRealtime() {
+        val engine = VioFusionEngine()
+        engine.setCameraTimestampComparable(true)
+        engine.onGyroscope(1_000_000_000L, Vec3.ZERO)
+        engine.onGyroscope(1_010_000_000L, Vec3(0.0, PI, 0.0))
+
+        val interpolated = engine.pose(1_005_000_000L).orientation
+        val latest = engine.pose(1_010_000_000L).orientation
+        assertTrue(interpolated.angularDistance(Quaternion.IDENTITY) > 0.0)
+        assertTrue(interpolated.angularDistance(Quaternion.IDENTITY) < latest.angularDistance(Quaternion.IDENTITY))
+    }
+
+    @Test fun visualInertialVerdictRequiresAnOrientationBracketAtCameraTime() {
+        val engine = VioFusionEngine()
+        engine.setCameraTimestampComparable(true)
+        val gravity = Vec3(0.0, 9.80665, 0.0)
+        engine.onAccelerometer(1_000_000_000L, gravity)
+        engine.onGyroscope(1_000_000_000L, Vec3.ZERO)
+        engine.onAccelerometer(1_010_000_000L, gravity)
+        engine.onGyroscope(1_010_000_000L, Vec3.ZERO)
+        engine.onVisualFrame(texture(1_005_000_000L, 0))
+        engine.onVisualFrame(texture(1_008_000_000L, 2))
+
+        val pose = engine.pose(1_008_000_000L)
+        assertTrue(pose.diagnostic.contains("visual-inertial"))
+    }
+
     @Test fun realtimeCameraClockMustBeExplicitlyEnabled() {
         val engine = VioFusionEngine()
         assertFalse(engine.diagnostics().cameraImuClockComparable)
