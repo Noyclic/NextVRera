@@ -3,8 +3,12 @@
 ## 2026-11-29
 
 ### NextVRera / Logcat utility
-- Added a separate NextVRera Logcat APK with Shizuku permission flow, shell-identity logcat capture, live preview filtering, stop control and TXT export.
-- Kept capture read-only and isolated from the main NextVRera application; documented Android shell permission and tombstone limitations.
+- Added a separate NextVRera Logcat APK with Shizuku permission flow, shell-identity capture of all readable log buffers, live preview filtering, start/stop, clipboard copy and TXT export.
+- Preserved Shizuku's reserved UserService destroy transaction and assigned explicit transaction IDs to every AIDL method.
+- Hardened service startup/reconnect, binder-death handling, pending-bind cancellation, reader shutdown, log-file I/O failure handling and bounded queue/preview/file memory.
+- Added dropped-line diagnostics when the remote queue is overloaded; display filtering never changes the saved raw log.
+- Documented capture timing, 8 MiB limit, private storage, clipboard/export behavior and Android shell/tombstone restrictions.
+- CI builds and validates the standalone package; physical-device Shizuku authorization and Android 15 log visibility remain to be tested.
 
 ## 2026-11-28
 
