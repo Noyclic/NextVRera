@@ -55,11 +55,7 @@ class VioFusionEngine(
     private var resetReason = "startup"
     private var lastVisualDelta = Vec2(0.0, 0.0)
     private var lastVisualOrientation = Quaternion.IDENTITY
-    private var latestAngularVelocity = Vec3.ZERO
-    private var latestLinearAcceleration = Vec3.ZERO
-    private var hasGyroscope = false
-    private var hasAccelerometer = false
-    private var lastIntegratedImuTimestamp = 0L
+    private val imuSynchronizer = ImuSensorSynchronizer()
 
     @Synchronized
     fun reset(reason: String = "manual reset") {
@@ -76,11 +72,7 @@ class VioFusionEngine(
         orientationSource = "not initialized"
         lastVisualDelta = Vec2(0.0, 0.0)
         lastVisualOrientation = Quaternion.IDENTITY
-        latestAngularVelocity = Vec3.ZERO
-        latestLinearAcceleration = Vec3.ZERO
-        hasGyroscope = false
-        hasAccelerometer = false
-        lastIntegratedImuTimestamp = 0L
+        imuSynchronizer.reset()
         resetReason = reason
         imu.reset()
         features.reset()
@@ -100,10 +92,8 @@ class VioFusionEngine(
             }
         }
         lastImuTimestamp = timestampNanos
-        latestAngularVelocity = radiansPerSecond
-        hasGyroscope = true
-        integrateLatestImuSample(timestampNanos)
-        imuSamples++
+        val pairedSamples = imuSynchronizer.addGyroscope(timestampNanos, radiansPerSecond, orientation)
+        integratePairedSamples(pairedSamples)
         return true
     }
 
@@ -114,21 +104,20 @@ class VioFusionEngine(
         bodyToWorld: Quaternion = orientation
     ): Boolean {
         if (timestampNanos <= 0L || !accelerationIncludingGravity.isFinite()) return false
-        val gravityBody = bodyToWorld.normalized().conjugate()
-            .rotate(Vec3(0.0, 9.80665, 0.0))
-        latestLinearAcceleration = accelerationIncludingGravity - gravityBody
-        hasAccelerometer = true
-        return integrateLatestImuSample(timestampNanos)
+        val pairedSamples = imuSynchronizer.addAccelerometer(timestampNanos, accelerationIncludingGravity)
+        integratePairedSamples(pairedSamples)
+        return pairedSamples.isNotEmpty()
     }
 
-    private fun integrateLatestImuSample(timestampNanos: Long): Boolean {
-        if (!hasGyroscope || !hasAccelerometer || timestampNanos <= lastIntegratedImuTimestamp) return false
-        val accepted = imu.add(TimedImuSample(timestampNanos, latestAngularVelocity, latestLinearAcceleration))
-        if (accepted) {
-            lastIntegratedImuTimestamp = timestampNanos
-            imuSamples++
+    private fun integratePairedSamples(samples: List<PairedImuSample>) {
+        samples.forEach { paired ->
+            val gravityBody = paired.bodyToWorld.normalized().conjugate()
+                .rotate(Vec3(0.0, 9.80665, 0.0))
+            val linearAcceleration = paired.accelerationIncludingGravity - gravityBody
+            if (imu.add(TimedImuSample(paired.timestampNanos, paired.angularVelocity, linearAcceleration))) {
+                imuSamples++
+            }
         }
-        return accepted
     }
 
     @Synchronized
