@@ -197,18 +197,21 @@ class VioFusionEngine(
             min(1.0, 0.35 + lastConfidence * 0.65)
         } else if (orientationSource != "not initialized") 0.2 else 0.0
         val imuState = imu.snapshot()
+        val timestampOrientation = if (cameraTimestampComparable) orientationAt(timestampNanos) else null
         val reason = when {
-            visualFresh && imuState.valid && cameraTimestampComparable ->
+            visualFresh && imuState.valid && timestampOrientation != null ->
                 "visual-inertial relative pose; metric scale unavailable"
-            visualFresh && imuState.valid ->
+            visualFresh && imuState.valid && !cameraTimestampComparable ->
                 "visual relative pose; camera/IMU clock domains not verified comparable"
+            visualFresh && imuState.valid ->
+                "visual relative pose; no IMU orientation sample brackets this camera timestamp"
             visualFresh -> "visual relative pose; IMU preintegration incomplete"
             orientationSource != "not initialized" -> "orientation only; translation not observable"
             else -> "waiting for camera and IMU"
         }
         return VioPose(
             timestampNanos = timestampNanos,
-            orientation = orientation.normalized(),
+            orientation = (timestampOrientation ?: orientation).normalized(),
             position = position,
             translationScale = if (position == Vec3.ZERO) TranslationScale.UNKNOWN
                 else TranslationScale.RELATIVE_ONLY,
@@ -239,8 +242,13 @@ class VioFusionEngine(
 
     private fun recordOrientation(timestampNanos: Long, value: Quaternion) {
         val sample = OrientationSample(timestampNanos, value.normalized())
-        val insertAt = orientationHistory.indexOfFirst { it.timestampNanos > timestampNanos }
-        if (insertAt < 0) orientationHistory.add(sample) else orientationHistory.add(insertAt, sample)
+        val existingIndex = orientationHistory.indexOfFirst { it.timestampNanos == timestampNanos }
+        if (existingIndex >= 0) {
+            orientationHistory[existingIndex] = sample
+        } else {
+            val insertAt = orientationHistory.indexOfFirst { it.timestampNanos > timestampNanos }
+            if (insertAt < 0) orientationHistory.add(sample) else orientationHistory.add(insertAt, sample)
+        }
         if (orientationHistory.size > 256) orientationHistory.removeAt(0)
     }
 
