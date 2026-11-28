@@ -14,7 +14,7 @@ import kotlin.math.ceil
 data class TensorInfo(val index: Int, val name: String, val shape: List<Int>, val type: String, val bytes: Int)
 data class HtpReport(
     val model: String,
-    val input: TensorInfo,
+    val inputs: List<TensorInfo>,
     val outputs: List<TensorInfo>,
     val warmupMs: Double,
     val medianMs: Double,
@@ -22,7 +22,11 @@ data class HtpReport(
     val placement: String = "NOT_VERIFIED"
 )
 
-/** Strict HTP-only Interpreter probe. No NNAPI, XNNPACK, GPU, generic DSP or CPU fallback. */
+/**
+ * Requests QNN HTP and disables NNAPI/XNNPACK.
+ * LiteRT may still execute unsupported graph partitions on builtin CPU kernels.
+ * A successful run proves delegate initialization and model invocation, not full HTP placement.
+ */
 class HtpModelProbe(context: Context, private val file: File) : Closeable {
     private val appContext = context.applicationContext
     private var interpreter: Interpreter? = null
@@ -52,15 +56,14 @@ class HtpModelProbe(context: Context, private val file: File) : Closeable {
             options.addDelegate(createdDelegate)
             val active = Interpreter(model, options)
             interpreter = active
-            check(active.inputTensorCount == 1) { "Expected one input, got ${active.inputTensorCount}." }
+            check(active.inputTensorCount > 0) { "No input tensors found." }
             check(active.outputTensorCount > 0) { "No output tensors found." }
-            val inputTensor = active.getInputTensor(0)
-            check(inputTensor.dataType() == DataType.FLOAT32) {
-                "Input type ${inputTensor.dataType()} is not FLOAT32."
-            }
-            val inputInfo = inputTensor.info(0)
+            val inputTensors = (0 until active.inputTensorCount).map { active.getInputTensor(it) }
+            val inputInfo = inputTensors.mapIndexed { index, tensor -> tensor.info(index) }
             val outputInfo = (0 until active.outputTensorCount).map { active.getOutputTensor(it).info(it) }
-            val input = ByteBuffer.allocateDirect(inputTensor.numBytes()).order(ByteOrder.nativeOrder())
+            val inputs = inputTensors.map {
+                ByteBuffer.allocateDirect(it.numBytes()).order(ByteOrder.nativeOrder())
+            }
             val outputBuffers = LinkedHashMap<Int, ByteBuffer>()
             val outputs = LinkedHashMap<Int, Any>()
             outputInfo.forEach { info ->
@@ -69,15 +72,24 @@ class HtpModelProbe(context: Context, private val file: File) : Closeable {
                 outputs[info.index] = buffer
             }
             fun infer(): Long {
-                input.clear()
+                inputs.forEach { it.clear() }
                 outputBuffers.values.forEach { it.clear() }
                 val start = SystemClock.elapsedRealtimeNanos()
-                active.runForMultipleInputsOutputs(arrayOf(input), outputs)
+                active.runForMultipleInputsOutputs(inputs.toTypedArray(), outputs)
                 return (SystemClock.elapsedRealtimeNanos() - start).coerceAtLeast(1L)
             }
             val warmup = infer() / NANOS_PER_MS
             val sorted = LongArray(iterations) { infer() }.sorted()
-            return HtpReport(file.name, inputInfo, outputInfo, warmup, percentile(sorted, .50), percentile(sorted, .95))
+            return HtpReport(
+                model = file.name,
+                inputs = inputInfo,
+                outputs = outputInfo,
+                warmupMs = warmup,
+                medianMs = percentile(sorted, .50),
+                p95Ms = percentile(sorted, .95),
+                placement = "HTP_REQUESTED_PLACEMENT_NOT_VERIFIED",
+                executionEvidence = "INTERPRETER_INVOKED"
+            )
         } catch (error: Throwable) {
             close()
             throw IllegalStateException(
