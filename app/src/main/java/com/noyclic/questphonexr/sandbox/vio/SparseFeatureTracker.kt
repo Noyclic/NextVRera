@@ -315,10 +315,9 @@ class SparseFeatureTracker(private val config: FeatureTrackerConfig = FeatureTra
         return points.take(64).mapIndexed { index, point ->
             val other = points[(index * 17 + 23) % points.size]
             val scale = radius / 4.0
-            (point.first * scale).toInt() to (point.second * scale).toInt() to
-                (other.first * scale).toInt() to (other.second * scale).toInt()
-        }.map { tuple ->
-            (tuple.first to tuple.second) to (tuple.third to tuple.fourth)
+            val first = (point.first * scale).toInt() to (point.second * scale).toInt()
+            val second = (other.first * scale).toInt() to (other.second * scale).toInt()
+            first to second
         }
     }
 }
