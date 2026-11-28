@@ -2,8 +2,35 @@
 
 ## 2026-11-28
 
+### EndXR lightweight VIO sandbox (active prototype)
+- Add a dedicated Sandbox lab with opt-in rear-camera capture and Economy/Balanced/Precision resolution and frame-rate caps.
+- Downsample camera frames to a bounded 160×120 grayscale image before CPU processing.
+- Add a grid-distributed FAST-like sparse corner detector, deterministic 64-bit BRIEF descriptors, local Hamming matching, and median/MAD motion consensus.
+- Add quaternion/vector primitives and bounded midpoint IMU preintegration with timestamp-gap rejection and stationary gyro-bias estimation.
+- Pair gyro measurements with linearly interpolated accelerometer values at each gyro timestamp; reject missing, stale, non-monotonic, and over-wide brackets instead of reusing the latest sensor values.
+- Query the active Camera2 timestamp source through CameraX interop. Only allow camera-to-IMU orientation interpolation when the camera reports the REALTIME clock; UNKNOWN or unavailable sources keep visual and inertial diagnostics separate.
+- Upgrade the aligned CameraX artifacts to stable 1.6.2 so the VIO lab can inspect the active camera's Camera2 timestamp-source metadata without relying on an unavailable older interop API.
+- Keep a bounded timestamped orientation history and interpolate orientation at camera exposure timestamps before optional rotational image-flow compensation.
+- Require an actual orientation-history bracket at the requested camera timestamp before returning a visual-inertial verdict; return the interpolated orientation for that timestamp and avoid duplicate history entries for equal timestamps.
+- Count only successfully accepted, timestamp-paired IMU samples in diagnostics; never report visual-inertial fusion when camera/IMU clock comparability is unverified.
+- Clear the camera clock capability when the camera stops or a new bind begins, preventing stale REALTIME status from a previous camera session from enabling fusion.
+- Fuse rotation-vector orientation, gyroscope updates, accelerometer samples and sparse visual flow into a conservative relative pose report.
+- Keep translation explicitly UNKNOWN/RELATIVE_ONLY; no metric metres or full 6DoF claim without calibrated depth/scale and device validation.
+- Add JVM regression tests for geometry, sensor integration, sparse matching, translation scale honesty, invalid timestamps and pose reacquisition.
+- Isolate the lab CameraX use case so it does not call unbindAll() against persistent hand-tracking camera sessions.
+
+### EndXR lightweight VIO sandbox lab (prototype)
+- Add a dedicated Sandbox screen to inspect rotation-vector and accelerometer event rates alongside rear-camera frame rate and image-gradient feature density.
+- Add Economy (320×240), Balanced (480×360), and Precision (640×480) camera sampling presets for thermal/performance comparison.
+- Keep the camera opt-in and rear-facing by default; the lab does not silently enable the front camera.
+- Explicitly label feature-centroid movement as a diagnostic 2D proxy, not optical flow, metric translation, or a completed 6DoF tracker.
+- This is instrumentation groundwork only; sparse feature matching, IMU preintegration, calibration, and validated 6DoF pose output remain future work.
+
+
+
 ### NextVRera / emulator smoke coverage
 - Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
+- After the external OpenXR probe's missing-APK dialog, verify modal dismissal and restored Sandbox controls; use Back only as a fallback for Android 15 accessibility-window glitches, then wait for the diagnostics button and save a screenshot.
 
 ### NextVRera / EndXR runtime readiness
 ### NextVRera / external OpenXR compatibility

@@ -441,7 +441,35 @@ class AppNavigationSmokeTest {
                 "Missing external probe dialog has no close action",
                 device.wait(Until.hasObject(closeAction), 2_000)
             )
-            device.findObject(closeAction).click()
+            val closeActionNode = requireNotNull(device.findObject(closeAction)) {
+                "Missing-probe dialog close action disappeared after its visibility wait"
+            }
+            closeActionNode.click()
+            device.waitForIdle()
+            if (!device.wait(Until.gone(missingProbeDialog), 2_000)) {
+                // A modal AlertDialog can remain the active accessibility window on Android 15
+                // even after UiAutomator reports the negative-button tap. Back is a safe,
+                // deterministic dismissal fallback; never continue while the modal is present.
+                device.pressBack()
+            }
+            assertTrue(
+                "Missing-probe dialog remained open after the close action",
+                device.wait(Until.gone(missingProbeDialog), 2_000)
+            )
+            if (!device.wait(Until.hasObject(diagnosticsButton), 2_000)) {
+                // A missing accessibility root can make Until.gone report a dialog as absent
+                // while the modal window still blocks Sandbox controls. Probe the actual
+                // underlying action before deciding that the screen has been restored.
+                device.pressBack()
+            }
+            assertTrue(
+                "Sandbox diagnostics action remained blocked after dismissing the missing-probe dialog",
+                device.wait(Until.hasObject(diagnosticsButton), 5_000)
+            )
+            assertTrue(
+                "Closing the missing-probe dialog did not restore Sandbox",
+                device.wait(Until.hasObject(By.text("Показать настройки")), 5_000)
+            )
         } else {
             device.pressBack()
             assertTrue(
@@ -452,8 +480,19 @@ class AppNavigationSmokeTest {
 
         // Android 15 may suppress or expose toast overlays inconsistently to UiAutomator.
         // Verify the app's own post-setPrimaryClip log instead of reading another process's clipboard.
+        device.waitForIdle()
+        val diagnosticsReturned = device.wait(Until.hasObject(diagnosticsButton), 5_000)
+        saveScreenshot(context, device, "sandbox-diagnostics-after-external-probe.png")
+        assertTrue(
+            "Returning from the external OpenXR probe did not restore the always-visible EndXR diagnostics action. " +
+                "Current package: ${device.currentPackageName}",
+            diagnosticsReturned
+        )
+        val restoredDiagnosticsButton = requireNotNull(device.findObject(diagnosticsButton)) {
+            "EndXR diagnostics button disappeared after its visibility wait"
+        }
         device.executeShellCommand("logcat -c")
-        device.findObject(diagnosticsButton).click()
+        restoredDiagnosticsButton.click()
         val copyDeadline = android.os.SystemClock.uptimeMillis() + 5_000
         var copyLog = ""
         while (
