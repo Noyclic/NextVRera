@@ -2,6 +2,9 @@
 
 ## 2026-11-28
 
+### NextVRera / emulator smoke coverage
+- Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
+
 ### NextVRera / EndXR runtime readiness
 ### NextVRera / external OpenXR compatibility
 - Added a conservative stage-by-stage assessment to the separate Khronos-loader client probe, covering service discovery, RuntimeBroker, loader, instance/system, stereo, GLES session, swapchain, frame/projection, hand tracking, input IPC and cleanup.
