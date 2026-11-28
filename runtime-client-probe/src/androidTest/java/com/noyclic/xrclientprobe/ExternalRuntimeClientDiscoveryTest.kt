@@ -125,7 +125,7 @@ class ExternalRuntimeClientDiscoveryTest {
 
             val assessmentFile = File(context.cacheDir, "external-openxr-compatibility.json")
             assessmentFile.writeText(assessmentJson)
-            publishReport(context, assessmentFile, "external-openxr-compatibility.json")
+            publishReport(context, assessmentFile, "external-openxr-compatibility.json", "application/json")
 
             assertEquals("com.noyclic.xrclientprobe", context.packageName)
             assertTrue(
@@ -255,12 +255,13 @@ class ExternalRuntimeClientDiscoveryTest {
     private fun publishReport(
         context: android.content.Context,
         source: File,
-        displayName: String
+        displayName: String,
+        mimeType: String = "text/plain"
     ) {
         check(source.isFile && source.length() > 0L)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
                 Environment.DIRECTORY_DOWNLOADS + "/QuestPhoneXR-CI/"
