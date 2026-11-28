@@ -50,7 +50,8 @@ internal object ExternalOpenXrCompatibilityAssessment {
         val recommendations: List<String>,
         val integrityReport: ExternalOpenXrReportIntegrity.Report =
             ExternalOpenXrReportIntegrity.Report(emptyList()),
-        val firstFailureDiagnosis: ExternalOpenXrFailureCatalog.Diagnosis? = null
+        val firstFailureDiagnosis: ExternalOpenXrFailureCatalog.Diagnosis? = null,
+        val recoveryPlan: ExternalOpenXrRecoveryAdvisor.Plan? = null
     ) {
         val verifiedCount: Int get() = stages.count { it.status == Status.VERIFIED }
         val failedCount: Int get() = stages.count { it.status == Status.FAILED }
@@ -95,6 +96,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
             appendLine()
             appendLine(integrityReport.toDisplayText())
             firstFailureDiagnosis?.let {
+                appendLine()
+                appendLine(it.toDisplayText())
+            }
+            recoveryPlan?.let {
                 appendLine()
                 appendLine(it.toDisplayText())
             }
@@ -148,6 +153,7 @@ internal object ExternalOpenXrCompatibilityAssessment {
                 append("\"stage_hint\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.stageHint?.name))
                 append('}')
             }
+            append(",\"recovery_plan\":").append(recoveryPlan?.toJson() ?: "null")
             append('}')
         }
 
@@ -200,6 +206,12 @@ internal object ExternalOpenXrCompatibilityAssessment {
         val firstFailureDiagnosis = firstFailure?.let {
             ExternalOpenXrFailureCatalog.diagnose(it.result, it.key, it.stage)
         }
+        val recoveryPlan = ExternalOpenXrRecoveryAdvisor.build(
+            stages = stages,
+            firstFailure = firstFailure,
+            diagnosis = firstFailureDiagnosis,
+            integrity = integrityReport
+        )
         if (integrityReport.blockingCount > 0 || integrityReport.highCount > 0) {
             warnings += "Cross-report integrity checks found " +
                 (integrityReport.blockingCount + integrityReport.highCount) +
@@ -227,7 +239,8 @@ internal object ExternalOpenXrCompatibilityAssessment {
             warnings = warnings.distinct(),
             recommendations = recommendations.distinct(),
             integrityReport = integrityReport,
-            firstFailureDiagnosis = firstFailureDiagnosis
+            firstFailureDiagnosis = firstFailureDiagnosis,
+            recoveryPlan = recoveryPlan
         )
     }
 
