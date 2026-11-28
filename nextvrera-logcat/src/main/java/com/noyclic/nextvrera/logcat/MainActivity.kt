@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
             if (uri != null) exportLog(uri)
         }
 
-    private val serviceConnection = object : ServiceConnection {
+    private val serviceConnection: ServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             bindingRequested = false
             val binder = service
