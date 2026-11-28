@@ -11,6 +11,7 @@
 - Query the active Camera2 timestamp source through CameraX interop. Only allow camera-to-IMU orientation interpolation when the camera reports the REALTIME clock; UNKNOWN or unavailable sources keep visual and inertial diagnostics separate.
 - Upgrade the aligned CameraX artifacts to stable 1.6.2 so the VIO lab can inspect the active camera's Camera2 timestamp-source metadata without relying on an unavailable older interop API.
 - Keep a bounded timestamped orientation history and interpolate orientation at camera exposure timestamps before optional rotational image-flow compensation.
+- Require an actual orientation-history bracket at the requested camera timestamp before returning a visual-inertial verdict; return the interpolated orientation for that timestamp and avoid duplicate history entries for equal timestamps.
 - Count only successfully accepted, timestamp-paired IMU samples in diagnostics; never report visual-inertial fusion when camera/IMU clock comparability is unverified.
 - Fuse rotation-vector orientation, gyroscope updates, accelerometer samples and sparse visual flow into a conservative relative pose report.
 - Keep translation explicitly UNKNOWN/RELATIVE_ONLY; no metric metres or full 6DoF claim without calibrated depth/scale and device validation.
