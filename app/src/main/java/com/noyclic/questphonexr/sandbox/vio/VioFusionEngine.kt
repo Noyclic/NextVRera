@@ -100,8 +100,7 @@ class VioFusionEngine(
     @Synchronized
     fun onAccelerometer(
         timestampNanos: Long,
-        accelerationIncludingGravity: Vec3,
-        bodyToWorld: Quaternion = orientation
+        accelerationIncludingGravity: Vec3
     ): Boolean {
         if (timestampNanos <= 0L || !accelerationIncludingGravity.isFinite()) return false
         val pairedSamples = imuSynchronizer.addAccelerometer(timestampNanos, accelerationIncludingGravity)
