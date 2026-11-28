@@ -16,6 +16,47 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class ExternalRuntimeClientDiscoveryTest {
     @Test
+    fun compactAssessmentHistoryPersistsOnlyStageVerdictsAndIsBounded() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val store = ExternalOpenXrAssessmentHistory.Store(context)
+        store.clear()
+        try {
+            repeat(ExternalOpenXrAssessmentHistory.MAX_SNAPSHOTS + 3) { index ->
+                val snapshot = ExternalOpenXrAssessmentHistory.Snapshot(
+                    timestampMillis = index.toLong() + 1L,
+                    selectedRuntimePackage = "com.noyclic.questphonexr",
+                    highestVerifiedStage = "INSTANCE_CREATION",
+                    firstFailureKey = null,
+                    stageStatuses = mapOf(
+                        "SERVICE_DISCOVERY" to "VERIFIED",
+                        "INSTANCE_CREATION" to "VERIFIED"
+                    )
+                )
+                assertTrue(store.append(snapshot))
+            }
+            val saved = store.history()
+            assertEquals(ExternalOpenXrAssessmentHistory.MAX_SNAPSHOTS, saved.size)
+            assertEquals(4L, saved.first().timestampMillis)
+            assertEquals(11L, saved.last().timestampMillis)
+            assertEquals("VERIFIED", store.latest()?.stageStatuses?.get("INSTANCE_CREATION"))
+
+            val encoded = ExternalOpenXrAssessmentHistory.encode(saved)
+            assertTrue(encoded.contains("INSTANCE_CREATION"))
+            assertFalse(encoded.contains("/data/app/"))
+            assertFalse(encoded.contains("hand_pose_x"))
+            assertEquals(saved, ExternalOpenXrAssessmentHistory.decode(encoded))
+        } finally {
+            store.clear()
+        }
+    }
+
+    @Test
+    fun malformedHistoryIsIgnoredWithoutCrashingTheProbe() {
+        assertTrue(ExternalOpenXrAssessmentHistory.decode("{broken-json").isEmpty())
+        assertTrue(ExternalOpenXrAssessmentHistory.decode(null).isEmpty())
+    }
+
+    @Test
     fun inputHealthClassifierDistinguishesLiveHandsFromStalePublisher() {
         assertEquals(
             ExternalInputPublicationState.LIVE_HANDS,
