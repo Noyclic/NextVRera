@@ -51,7 +51,8 @@ internal object ExternalOpenXrCompatibilityAssessment {
         val integrityReport: ExternalOpenXrReportIntegrity.Report =
             ExternalOpenXrReportIntegrity.Report(emptyList()),
         val firstFailureDiagnosis: ExternalOpenXrFailureCatalog.Diagnosis? = null,
-        val recoveryPlan: ExternalOpenXrRecoveryAdvisor.Plan? = null
+        val recoveryPlan: ExternalOpenXrRecoveryAdvisor.Plan? = null,
+        val evidenceCoverage: ExternalOpenXrEvidenceCoverage.Report? = null
     ) {
         val verifiedCount: Int get() = stages.count { it.status == Status.VERIFIED }
         val failedCount: Int get() = stages.count { it.status == Status.FAILED }
@@ -100,6 +101,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
                 appendLine(it.toDisplayText())
             }
             recoveryPlan?.let {
+                appendLine()
+                appendLine(it.toDisplayText())
+            }
+            evidenceCoverage?.let {
                 appendLine()
                 appendLine(it.toDisplayText())
             }
@@ -154,6 +159,7 @@ internal object ExternalOpenXrCompatibilityAssessment {
                 append('}')
             }
             append(",\"recovery_plan\":").append(recoveryPlan?.toJson() ?: "null")
+            append(",\"evidence_coverage\":").append(evidenceCoverage?.toJson() ?: "null")
             append('}')
         }
 
@@ -206,6 +212,11 @@ internal object ExternalOpenXrCompatibilityAssessment {
         val firstFailureDiagnosis = firstFailure?.let {
             ExternalOpenXrFailureCatalog.diagnose(it.result, it.key, it.stage)
         }
+        val evidenceCoverage = ExternalOpenXrEvidenceCoverage.analyze(
+            serviceReport = serviceReport,
+            loaderReport = loaderReport,
+            stages = stages
+        )
         val recoveryPlan = ExternalOpenXrRecoveryAdvisor.build(
             stages = stages,
             firstFailure = firstFailure,
@@ -240,7 +251,8 @@ internal object ExternalOpenXrCompatibilityAssessment {
             recommendations = recommendations.distinct(),
             integrityReport = integrityReport,
             firstFailureDiagnosis = firstFailureDiagnosis,
-            recoveryPlan = recoveryPlan
+            recoveryPlan = recoveryPlan,
+            evidenceCoverage = evidenceCoverage
         )
     }
 
