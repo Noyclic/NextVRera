@@ -422,7 +422,8 @@ internal object ExternalOpenXrFailureCatalog {
         base: List<String>
     ): List<String> = when {
         stage == ExternalOpenXrCompatibilityAssessment.StageId.RUNTIME_BROKER ->
-            base + "Do not spend time debugging swapchain or hand tracking until the runtime is selected."
+            listOf("Check which RuntimeBroker provider the Khronos loader selected and whether its active package is EndXR.") +
+                base + "Do not spend time debugging swapchain or hand tracking until the runtime is selected."
         stage == ExternalOpenXrCompatibilityAssessment.StageId.GRAPHICS_BINDING ->
             base + "Do not reuse an EGL context after its owning surface or Activity has been destroyed."
         stage == ExternalOpenXrCompatibilityAssessment.StageId.FRAME_LOOP ->
