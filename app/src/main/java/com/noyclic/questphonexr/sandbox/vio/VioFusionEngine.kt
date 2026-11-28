@@ -25,7 +25,8 @@ data class VioDiagnostics(
     val lastVisualConfidence: Double,
     val orientationSource: String,
     val scaleStatus: String,
-    val lastResetReason: String
+    val lastResetReason: String,
+    val cameraImuClockComparable: Boolean
 )
 
 /**
@@ -55,6 +56,10 @@ class VioFusionEngine(
     private var resetReason = "startup"
     private var lastVisualDelta = Vec2(0.0, 0.0)
     private var lastVisualOrientation = Quaternion.IDENTITY
+    private var lastVisualOrientationSynchronized = false
+    private var cameraTimestampComparable = false
+    private data class OrientationSample(val timestampNanos: Long, val orientation: Quaternion)
+    private val orientationHistory = ArrayList<OrientationSample>()
     private val imuSynchronizer = ImuSensorSynchronizer()
 
     @Synchronized
@@ -72,6 +77,8 @@ class VioFusionEngine(
         orientationSource = "not initialized"
         lastVisualDelta = Vec2(0.0, 0.0)
         lastVisualOrientation = Quaternion.IDENTITY
+        lastVisualOrientationSynchronized = false
+        orientationHistory.clear()
         imuSynchronizer.reset()
         resetReason = reason
         imu.reset()
@@ -92,6 +99,7 @@ class VioFusionEngine(
             }
         }
         lastImuTimestamp = timestampNanos
+        recordOrientation(timestampNanos, orientation)
         val pairedSamples = imuSynchronizer.addGyroscope(timestampNanos, radiansPerSecond, orientation)
         integratePairedSamples(pairedSamples)
         return true
@@ -125,6 +133,7 @@ class VioFusionEngine(
         val measured = Quaternion.fromAndroidRotationVector(values) ?: return false
         orientation = orientation.slerp(measured, 0.72)
         orientationSource = "rotation-vector + gyro"
+        recordOrientation(timestampNanos, orientation)
         return true
     }
 
@@ -133,9 +142,12 @@ class VioFusionEngine(
         visualFrames++
         val previousVisualTimestamp = lastVisualTimestamp
         val previousOrientation = lastVisualOrientation
+        val previousOrientationSynchronized = lastVisualOrientationSynchronized
+        val frameOrientation = if (cameraTimestampComparable) orientationAt(frame.timestampNanos) else null
         val estimate = features.process(frame)
         lastVisualTimestamp = frame.timestampNanos
-        lastVisualOrientation = orientation
+        lastVisualOrientation = frameOrientation ?: orientation
+        lastVisualOrientationSynchronized = frameOrientation != null
         lastConfidence = estimate.confidence
         if (!estimate.valid || estimate.confidence < config.minimumVisualConfidence) {
             rejectedVisual++
@@ -155,8 +167,10 @@ class VioFusionEngine(
         var dx = estimate.displacementNormalized.x
         var dy = estimate.displacementNormalized.y
         val focal = config.cameraFocalLengthPixels
-        if (focal != null && previousVisualTimestamp > 0L) {
-            val delta = (previousOrientation.conjugate() * orientation).normalized()
+        if (focal != null && previousVisualTimestamp > 0L &&
+            previousOrientationSynchronized && frameOrientation != null
+        ) {
+            val delta = (previousOrientation.conjugate() * frameOrientation).normalized()
             val yawRadians = 2.0 * delta.y
             val pitchRadians = 2.0 * delta.x
             val width = max(1, estimate.imageWidth).toDouble()
@@ -184,7 +198,10 @@ class VioFusionEngine(
         } else if (orientationSource != "not initialized") 0.2 else 0.0
         val imuState = imu.snapshot()
         val reason = when {
-            visualFresh && imuState.valid -> "visual-inertial relative pose; metric scale unavailable"
+            visualFresh && imuState.valid && cameraTimestampComparable ->
+                "visual-inertial relative pose; metric scale unavailable"
+            visualFresh && imuState.valid ->
+                "visual relative pose; camera/IMU clock domains not verified comparable"
             visualFresh -> "visual relative pose; IMU preintegration incomplete"
             orientationSource != "not initialized" -> "orientation only; translation not observable"
             else -> "waiting for camera and IMU"
@@ -210,8 +227,36 @@ class VioFusionEngine(
         lastVisualConfidence = lastConfidence,
         orientationSource = orientationSource,
         scaleStatus = "UNKNOWN: no metric depth or external scale",
-        lastResetReason = resetReason
+        lastResetReason = resetReason,
+        cameraImuClockComparable = cameraTimestampComparable
     )
+
+    @Synchronized
+    fun setCameraTimestampComparable(comparable: Boolean) {
+        cameraTimestampComparable = comparable
+        lastVisualOrientationSynchronized = false
+    }
+
+    private fun recordOrientation(timestampNanos: Long, value: Quaternion) {
+        val sample = OrientationSample(timestampNanos, value.normalized())
+        val insertAt = orientationHistory.indexOfFirst { it.timestampNanos > timestampNanos }
+        if (insertAt < 0) orientationHistory.add(sample) else orientationHistory.add(insertAt, sample)
+        if (orientationHistory.size > 256) orientationHistory.removeAt(0)
+    }
+
+    private fun orientationAt(timestampNanos: Long): Quaternion? {
+        if (timestampNanos <= 0L || orientationHistory.isEmpty()) return null
+        val upperIndex = orientationHistory.indexOfFirst { it.timestampNanos >= timestampNanos }
+        if (upperIndex < 0) return null
+        val upper = orientationHistory[upperIndex]
+        if (upper.timestampNanos == timestampNanos) return upper.orientation
+        if (upperIndex == 0) return null
+        val lower = orientationHistory[upperIndex - 1]
+        val span = upper.timestampNanos - lower.timestampNanos
+        if (span <= 0L || span > 40_000_000L) return null
+        val fraction = (timestampNanos - lower.timestampNanos).toDouble() / span.toDouble()
+        return lower.orientation.slerp(upper.orientation, fraction)
+    }
 
     @Synchronized
     fun latestVisualDelta() = lastVisualDelta
