@@ -953,7 +953,8 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             )
-            addView(\n                controlButton("EndXR 6DoF Lab · камера + IMU") {
+            addView(
+                controlButton("EndXR 6DoF Lab · камера + IMU") {
                     startActivity(Intent(this@SandboxActivity, EndXrVioLabActivity::class.java))
                 },
                 LinearLayout.LayoutParams(
