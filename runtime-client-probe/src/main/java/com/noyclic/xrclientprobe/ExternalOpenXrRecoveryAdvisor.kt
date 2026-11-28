@@ -177,6 +177,26 @@ internal object ExternalOpenXrRecoveryAdvisor {
             )
         }
 
+        if (stages.isEmpty()) {
+            return Plan(
+                state = PlanState.EVIDENCE_INCOMPLETE,
+                primaryCause = "The assessment contains no OpenXR stage observations.",
+                retryPolicy = RetryPolicy.RECAPTURE_REPORT,
+                retryCondition = "Run the separate client probe and capture its complete service and loader reports.",
+                stopCondition = "An empty report cannot be interpreted as a successful probe.",
+                actions = listOf(
+                    Action(
+                        1,
+                        "Capture a complete probe report",
+                        "No stage evidence was supplied to the recovery advisor.",
+                        listOf("Open the external OpenXR client probe.", "Copy the complete service and loader report.", "Run the assessment again with the captured evidence."),
+                        "At least the first service-discovery and loader-initialization fields are present."
+                    )
+                ),
+                scopeWarning = PROBE_SCOPE_WARNING
+            )
+        }
+
         val unknown = stages.filter {
             it.status == ExternalOpenXrCompatibilityAssessment.Status.UNKNOWN ||
                 it.status == ExternalOpenXrCompatibilityAssessment.Status.PARTIAL
