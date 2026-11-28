@@ -7,6 +7,10 @@
 - Downsample camera frames to a bounded 160×120 grayscale image before CPU processing.
 - Add a grid-distributed FAST-like sparse corner detector, deterministic 64-bit BRIEF descriptors, local Hamming matching, and median/MAD motion consensus.
 - Add quaternion/vector primitives and bounded midpoint IMU preintegration with timestamp-gap rejection and stationary gyro-bias estimation.
+- Pair gyro measurements with linearly interpolated accelerometer values at each gyro timestamp; reject missing, stale, non-monotonic, and over-wide brackets instead of reusing the latest sensor values.
+- Query the active Camera2 timestamp source through CameraX interop. Only allow camera-to-IMU orientation interpolation when the camera reports the REALTIME clock; UNKNOWN or unavailable sources keep visual and inertial diagnostics separate.
+- Keep a bounded timestamped orientation history and interpolate orientation at camera exposure timestamps before optional rotational image-flow compensation.
+- Count only successfully accepted, timestamp-paired IMU samples in diagnostics; never report visual-inertial fusion when camera/IMU clock comparability is unverified.
 - Fuse rotation-vector orientation, gyroscope updates, accelerometer samples and sparse visual flow into a conservative relative pose report.
 - Keep translation explicitly UNKNOWN/RELATIVE_ONLY; no metric metres or full 6DoF claim without calibrated depth/scale and device validation.
 - Add JVM regression tests for geometry, sensor integration, sparse matching, translation scale honesty, invalid timestamps and pose reacquisition.
