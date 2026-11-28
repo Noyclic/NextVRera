@@ -426,7 +426,8 @@ internal object ExternalOpenXrFailureCatalog {
                 base + "Do not spend time debugging swapchain or hand tracking until the runtime is selected."
         stage == ExternalOpenXrCompatibilityAssessment.StageId.GRAPHICS_BINDING ->
             base + "Do not reuse an EGL context after its owning surface or Activity has been destroyed."
-        stage == ExternalOpenXrCompatibilityAssessment.StageId.FRAME_LOOP ->
+        stage == ExternalOpenXrCompatibilityAssessment.StageId.FRAME_LOOP ||
+            stage == ExternalOpenXrCompatibilityAssessment.StageId.PROJECTION_SUBMISSION ->
             base + "Stop the frame loop after the first lifecycle error and perform bounded cleanup."
         key?.contains("Hand", ignoreCase = true) == true ->
             base + "Keep hand-tracking failure independent from the basic stereo rendering verdict."
