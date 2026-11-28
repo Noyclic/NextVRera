@@ -18,6 +18,7 @@ class ExternalOpenXrEvidenceCoverageTest {
     private fun loader() = """
         xrInitializeLoaderKHR call=XR_SUCCESS
         xrEnumerateInstanceExtensionProperties(count)=XR_SUCCESS
+        xrEnumerateInstanceExtensionProperties(list)=XR_SUCCESS
         xrCreateInstance=XR_SUCCESS
         runtime_instance_created=YES
         xrGetSystem(HMD)=XR_SUCCESS
