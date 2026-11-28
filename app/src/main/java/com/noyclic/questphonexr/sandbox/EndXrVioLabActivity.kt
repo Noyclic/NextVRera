@@ -31,6 +31,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private var rotation: Sensor? = null
     private var accelerometer: Sensor? = null
     private var cameraProvider: ProcessCameraProvider? = null
+    private var activeAnalysis: ImageAnalysis? = null
     private lateinit var report: TextView
     private var rotationEvents = 0L
     private var accelerationEvents = 0L
@@ -46,7 +47,13 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private var mode = Mode.BALANCED
     private var cameraMessage = "Камера выключена"
 
-    private data class Metrics(\n        val rotationEvents: Long, val accelerationEvents: Long, val cameraFrames: Long,\n        val cameraFps: Float, val featureCount: Int, val motionX: Float, val motionY: Float,\n        val accelerationMagnitude: Float\n    )\n\n    private enum class Mode(val width: Int, val height: Int, val fpsLabel: String) {
+    private data class Metrics(
+        val rotationEvents: Long, val accelerationEvents: Long, val cameraFrames: Long,
+        val cameraFps: Float, val featureCount: Int, val motionX: Float, val motionY: Float,
+        val accelerationMagnitude: Float
+    )
+
+    private enum class Mode(val width: Int, val height: Int, val fpsLabel: String) {
         ECONOMY(320, 240, "5–8 FPS target"),
         BALANCED(480, 360, "10–15 FPS target"),
         PRECISION(640, 480, "20–30 FPS target")
@@ -138,8 +145,8 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
                 analysis.setAnalyzer(worker) { image ->
                     try { analyzeFeatures(image) } finally { image.close() }
                 }
-                provider.unbindAll()
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis)
+                activeAnalysis = analysis
                 cameraMessage = "Задняя камера активна · " + mode.width + "×" + mode.height
             }.onFailure { error ->
                 running.set(false)
@@ -208,7 +215,12 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
 
     private fun stopCamera() {
         running.set(false)
-        cameraProvider?.unbindAll()
+        val provider = cameraProvider
+        val analysis = activeAnalysis
+        if (provider != null && analysis != null) {
+            runCatching { provider.unbind(analysis) }
+        }
+        activeAnalysis = null
         cameraProvider = null
         cameraMessage = "Камера остановлена"
         refresh()
