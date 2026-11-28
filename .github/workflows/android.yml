@@ -91,20 +91,30 @@ jobs:
       - name: Build isolated Qualcomm LiteRT HTP probe APK
         run: gradle --no-daemon :litert-htp-probe:assembleDebug
 
-      - name: Validate APK package and required payload
+      - name: Build isolated Qualcomm LiteRT DSP probe APK
+        run: gradle --no-daemon :litert-dsp-probe:assembleDebug
+
+      - name: Validate APK packages and required payload
         run: |
           set -euo pipefail
+          mkdir -p ci-results
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          mkdir -p ci-results
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee ci-results/apk-metadata.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee ci-results/apk-metadata.txt
           grep -q "package: name='com.noyclic.questphonexr'" ci-results/apk-metadata.txt
-
           APK_FILES="$(unzip -Z1 "$APK")"
           grep -qx "assets/hand_landmarker.task" <<< "$APK_FILES"
           grep -qx "lib/arm64-v8a/libquestphonexr_native.so" <<< "$APK_FILES"
           grep -qx "lib/arm64-v8a/libendxr_openxr.so" <<< "$APK_FILES"
-          echo "APK package, MediaPipe model, JNI library and OpenXR runtime library are present." | tee ci-results/apk-validation.txt
+          echo "Main APK package and required payload are present." | tee ci-results/apk-validation.txt
+
+          DSP_APK="litert-dsp-probe/build/outputs/apk/debug/litert-dsp-probe-debug.apk"
+          test -s "$DSP_APK"
+          "$BUILD_TOOLS/aapt" dump badging "$DSP_APK" | tee ci-results/dsp-probe-apk-metadata.txt
+          grep -q "package: name='com.noyclic.literdsp'" ci-results/dsp-probe-apk-metadata.txt
+          echo "Isolated DSP probe APK package is valid." | tee ci-results/dsp-probe-apk-validation.txt
 
       - name: Enable KVM for Android emulator
         run: |
@@ -166,9 +176,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Emulator startup is flaky on hosted runners. Keep the APK available
-      # whenever the build and validation steps produced it, even if the
-      # later connected-device smoke test fails.
+      - name: Upload isolated Qualcomm LiteRT DSP probe APK
+        if: always() && !cancelled() && hashFiles('litert-dsp-probe/build/outputs/apk/debug/litert-dsp-probe-debug.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextVRera-LiteRT-DSP-probe-apk
+          path: litert-dsp-probe/build/outputs/apk/debug/litert-dsp-probe-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Emulator startup is flaky on hosted runners. Keep APKs available
+      # whenever their build and validation steps produced them.
       - name: Upload debug APK
         if: always() && !cancelled() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
         uses: actions/upload-artifact@v4

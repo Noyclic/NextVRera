@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-29
+
+### LiteRT / Qualcomm DSP diagnostic
+- Add an isolated `litert-dsp-probe` APK using TensorFlow Lite Interpreter 2.16.1 and QNN 2.34.0; keep legacy QNN dependencies out of the main Play-services LiteRT app.
+- Add integrity-pinned, explicit-download Qualcomm Hand Detector and Hand Landmark models with size and SHA-256 verification.
+- Add strict QNN `DSP_BACKEND` delegate initialization and inference diagnostics for both models, including tensor signatures, warm-up, median/P95 latency, and copyable reports.
+- Keep operator placement explicitly `NOT_VERIFIED`; zero-filled input tests invocation only, not detection quality. No camera or tracker is activated.
+
 ## 2026-11-28
 
 ### NextVRera / emulator smoke coverage
