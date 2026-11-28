@@ -2,6 +2,12 @@
 
 ## 2026-11-28
 
+### NextVRera / Qualcomm standalone tracker foundations
+- Import the pinned Qualcomm palm/landmark model anchor and tensor adapters with explicit provenance and license.
+- Correct palm ROI generation to match pinned BlazePalm box-mode geometry (`dy=-0.5`, `dscale=2.6`, square ROI) and replace greedy suppression with confidence-weighted NMS over boxes and keypoints.
+- Add regression coverage for ROI geometry and weighted suppression; keep the adapters disconnected from provider registration until QNN backend execution and physical-device validation are proven.
+
+
 ### NextVRera / emulator smoke coverage
 - Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
 
