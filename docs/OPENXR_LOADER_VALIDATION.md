@@ -238,3 +238,34 @@ report. After selection, the key checkpoints are `xrCreateInstance`,
 `external_xrEndFrame`. The report must be interpreted alongside the broker state. A phone
 that has no installable or system RuntimeBroker cannot prove runtime selection
 just because Android can see EndXR's exported service.
+
+
+## Report integrity and result-code diagnosis
+
+The separate client probe cross-checks its service and loader evidence before it
+exports the compatibility assessment. The integrity pass reports contradictions
+without rewriting stage verdicts. Examples include an instance-create error
+paired with `runtime_instance_created=YES`, a successful session after an
+explicit instance failure, frame calls that contradict their prerequisites,
+projection readback marked PASS while `xrEndFrame` failed, and hand-joint
+location succeeding after tracker creation failed.
+
+Integrity findings are classified as BLOCKING, HIGH, WARNING or INFO. A
+different active package reported by the installable and system RuntimeBroker
+providers is a warning rather than an automatic failure: the loader's selected
+provider precedence still determines which runtime is actually used. Missing
+evidence remains missing; it is not guessed or promoted to success.
+
+The result-code catalogue uses the symbolic `XR_ERROR_*` token as its lookup
+key. It preserves any numeric value exactly as logged and does not infer a
+symbolic result from a number alone. Unknown vendor or future codes remain
+unclassified with generic next steps rather than receiving a guessed meaning.
+Contextual hints distinguish RuntimeBroker, graphics, swapchain, frame,
+hand-tracking and input failures.
+
+The JSON export includes `integrity_report` and
+`first_failure_diagnosis`. The integrity report is derived from the current
+probe's service and loader text; the history store continues to keep only
+compact stage verdicts. Raw reports, camera frames, hand samples and native
+library paths are not added to persistent history. The integrity check is a
+diagnostic aid, not a cryptographic attestation or OpenXR conformance test.
