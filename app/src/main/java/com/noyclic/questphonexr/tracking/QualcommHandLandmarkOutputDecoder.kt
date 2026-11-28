@@ -47,6 +47,7 @@ sealed class QualcommHandLandmarkDecodeResult {
  * not by a presumed positional order from a delegate API.
  */
 object QualcommHandLandmarkOutputDecoder {
+    const val MODEL_INPUT_SIZE_PX = 256
     const val LANDMARK_COUNT = 21
     const val VALUES_PER_LANDMARK = 3
     const val LANDMARK_VALUE_COUNT = LANDMARK_COUNT * VALUES_PER_LANDMARK
