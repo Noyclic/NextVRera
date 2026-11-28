@@ -29,6 +29,7 @@
 
 ### NextVRera / emulator smoke coverage
 - Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
+- After the external OpenXR probe's missing-APK dialog, verify modal dismissal and restored Sandbox controls; use Back only as a fallback for Android 15 accessibility-window glitches, then wait for the diagnostics button and save a screenshot.
 
 ### NextVRera / EndXR runtime readiness
 ### NextVRera / external OpenXR compatibility
