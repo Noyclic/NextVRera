@@ -10,6 +10,8 @@
 - Add a structured JSON assessment export and one-tap copy/share actions to the external probe screen.
 - Extend JVM regression tests for broker precedence, unavailable runtime, projection rejection, hand-tracking capability, input permission, missing evidence, JSON escaping and cleanup.
 - Extend emulator instrumentation to validate and publish the structured report alongside raw diagnostics.
+- Keep the last eight compact stage-only assessments in app-private storage and compare each run with the previous run to highlight verified-stage regressions and improvements; raw traces, camera data and native paths are not persisted.
+- Add regression coverage for history ordering, bounded retention, status transitions, malformed storage and privacy boundaries.
 - Correct the loader-validation documentation to describe swapchain-image FBO readback accurately; it is not compositor/display readback.
 
 - Added a conservative READY / DEGRADED / BLOCKED assessment combining runtime service metadata, the Khronos-selected RuntimeBroker provider, and the current native GLES/OpenXR self-test.
