@@ -96,29 +96,29 @@ internal object ExternalOpenXrCompatibilityAssessment {
         fun toJson(): String = buildString {
             append('{')
             append("\"assessment_version\":1,")
-            append("\"selected_runtime_package\":").append(json(selectedRuntimePackage)).append(',')
-            append("\"highest_verified_stage\":").append(json(highestVerifiedStage?.name)).append(',')
+            append("\"selected_runtime_package\":").append(ExternalOpenXrCompatibilityAssessment.json(selectedRuntimePackage)).append(',')
+            append("\"highest_verified_stage\":").append(ExternalOpenXrCompatibilityAssessment.json(highestVerifiedStage?.name)).append(',')
             append("\"verified_stages\":").append(verifiedCount).append(',')
             append("\"failed_stages\":").append(failedCount).append(',')
             append("\"blocked_stages\":").append(blockedCount).append(',')
             append("\"first_failure\":")
             if (firstFailure == null) append("null") else {
                 append('{')
-                append("\"key\":").append(json(firstFailure.key)).append(',')
-                append("\"result\":").append(json(firstFailure.result)).append(',')
-                append("\"explanation\":").append(json(firstFailure.explanation)).append(',')
-                append("\"stage\":").append(json(firstFailure.stage?.name))
+                append("\"key\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailure.key)).append(',')
+                append("\"result\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailure.result)).append(',')
+                append("\"explanation\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailure.explanation)).append(',')
+                append("\"stage\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailure.stage?.name))
                 append('}')
             }
             append(",\"stages\":[")
             stages.forEachIndexed { index, stage ->
                 if (index > 0) append(',')
                 append('{')
-                append("\"id\":").append(json(stage.id.name)).append(',')
-                append("\"title\":").append(json(stage.title)).append(',')
-                append("\"status\":").append(json(stage.status.name)).append(',')
-                append("\"evidence\":").append(json(stage.evidence)).append(',')
-                append("\"next_step\":").append(json(stage.nextStep))
+                append("\"id\":").append(ExternalOpenXrCompatibilityAssessment.json(stage.id.name)).append(',')
+                append("\"title\":").append(ExternalOpenXrCompatibilityAssessment.json(stage.title)).append(',')
+                append("\"status\":").append(ExternalOpenXrCompatibilityAssessment.json(stage.status.name)).append(',')
+                append("\"evidence\":").append(ExternalOpenXrCompatibilityAssessment.json(stage.evidence)).append(',')
+                append("\"next_step\":").append(ExternalOpenXrCompatibilityAssessment.json(stage.nextStep))
                 append('}')
             }
             append("],\"warnings\":")
@@ -132,7 +132,7 @@ internal object ExternalOpenXrCompatibilityAssessment {
             append('[')
             values.forEachIndexed { index, value ->
                 if (index > 0) append(',')
-                append(json(value))
+                append(ExternalOpenXrCompatibilityAssessment.json(value))
             }
             append(']')
         }
