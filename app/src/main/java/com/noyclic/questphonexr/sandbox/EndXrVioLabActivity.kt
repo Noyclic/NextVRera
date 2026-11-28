@@ -20,7 +20,12 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.abs
+import com.noyclic.questphonexr.sandbox.vio.GrayFrame
+import com.noyclic.questphonexr.sandbox.vio.VioFusionEngine
+import com.noyclic.questphonexr.sandbox.vio.VioPose
+import com.noyclic.questphonexr.sandbox.vio.VisualMotionEstimate
+import com.noyclic.questphonexr.sandbox.vio.Vec3
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /** First-stage VIO lab. Image centroid motion is diagnostic only, never metric 6DoF. */
@@ -30,33 +35,41 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private lateinit var sensors: SensorManager
     private var rotation: Sensor? = null
     private var accelerometer: Sensor? = null
+    private var gyroscope: Sensor? = null
+    private val vio = VioFusionEngine()
     private var cameraProvider: ProcessCameraProvider? = null
     private var activeAnalysis: ImageAnalysis? = null
     private lateinit var report: TextView
     private var rotationEvents = 0L
     private var accelerationEvents = 0L
+    private var gyroscopeEvents = 0L
+    private var skippedCameraFrames = 0L
+    private var nextFrameAllowedNs = 0L
+    private var lastVisualEstimate: VisualMotionEstimate? = null
+    private var lastPose: VioPose? = null
     private var cameraFrames = 0L
     private var lastCameraFrameNs = 0L
     private var cameraFps = 0f
     private var featureCount = 0
-    private var featureMotionX = 0f
-    private var featureMotionY = 0f
     private var accelerationMagnitude = 0f
-    private var lastFeatureCenterX = Float.NaN
-    private var lastFeatureCenterY = Float.NaN
     private var mode = Mode.BALANCED
     private var cameraMessage = "Камера выключена"
 
     private data class Metrics(
-        val rotationEvents: Long, val accelerationEvents: Long, val cameraFrames: Long,
-        val cameraFps: Float, val featureCount: Int, val motionX: Float, val motionY: Float,
+        val rotationEvents: Long,
+        val accelerationEvents: Long,
+        val gyroscopeEvents: Long,
+        val cameraFrames: Long,
+        val skippedCameraFrames: Long,
+        val cameraFps: Float,
+        val featureCount: Int,
         val accelerationMagnitude: Float
     )
 
-    private enum class Mode(val width: Int, val height: Int, val fpsLabel: String) {
-        ECONOMY(320, 240, "5–8 FPS target"),
-        BALANCED(480, 360, "10–15 FPS target"),
-        PRECISION(640, 480, "20–30 FPS target")
+    private enum class Mode(val width: Int, val height: Int, val maxFps: Int) {
+        ECONOMY(320, 240, 8),
+        BALANCED(480, 360, 15),
+        PRECISION(640, 480, 24)
     }
 
     private val cameraPermission = registerForActivityResult(
@@ -74,6 +87,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
         rotation = sensors.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
             ?: sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroscope = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 20, 20, 20)
@@ -157,60 +171,57 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun analyzeFeatures(image: androidx.camera.core.ImageProxy) {
+        val timestamp = image.imageInfo.timestamp
+        synchronized(this) {
+            val interval = 1_000_000_000L / mode.maxFps
+            if (nextFrameAllowedNs != 0L && timestamp < nextFrameAllowedNs) {
+                skippedCameraFrames++
+                return
+            }
+            nextFrameAllowedNs = timestamp + interval
+        }
         val plane = image.planes.firstOrNull() ?: return
-        val buffer = plane.buffer
         val pixelStride = plane.pixelStride
         val rowStride = plane.rowStride
         val width = image.width
         val height = image.height
-        if (width < 16 || height < 16 || pixelStride < 4) return
+        if (width < 32 || height < 32 || pixelStride < 4) return
+        val buffer = plane.buffer
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
-        var count = 0
-        var sumX = 0f
-        var sumY = 0f
-        var y = 4
-        while (y < height - 4) {
-            var x = 4
-            while (x < width - 4) {
-                val offset = y * rowStride + x * pixelStride
-                val right = offset + pixelStride
-                val down = offset + rowStride
-                if (right < bytes.size && down < bytes.size) {
-                    val center = bytes[offset].toInt() and 0xff
-                    val gx = abs(center - (bytes[right].toInt() and 0xff))
-                    val gy = abs(center - (bytes[down].toInt() and 0xff))
-                    if (gx + gy > 42) {
-                        count++
-                        sumX += x.toFloat() / width
-                        sumY += y.toFloat() / height
-                    }
-                }
-                x += 8
+
+        // Downsample to a fixed 160x120 luminance grid before CPU feature detection.
+        // This bounds per-frame work on the Snapdragon 685 and keeps descriptor geometry stable.
+        val sampleWidth = 160
+        val sampleHeight = 120
+        val gray = ByteArray(sampleWidth * sampleHeight)
+        for (sampleY in 0 until sampleHeight) {
+            val sourceY = min(height - 1, sampleY * height / sampleHeight)
+            for (sampleX in 0 until sampleWidth) {
+                val sourceX = min(width - 1, sampleX * width / sampleWidth)
+                val offset = sourceY * rowStride + sourceX * pixelStride
+                if (offset + 2 >= bytes.size) continue
+                val red = bytes[offset].toInt() and 0xff
+                val green = bytes[offset + 1].toInt() and 0xff
+                val blue = bytes[offset + 2].toInt() and 0xff
+                gray[sampleY * sampleWidth + sampleX] =
+                    ((red * 77 + green * 150 + blue * 29) shr 8).toByte()
             }
-            y += 8
         }
-        val centerX = if (count > 0) sumX / count else Float.NaN
-        val centerY = if (count > 0) sumY / count else Float.NaN
-        val now = image.imageInfo.timestamp
+        val estimate = vio.onVisualFrame(GrayFrame(timestamp, sampleWidth, sampleHeight, gray))
+        val pose = vio.pose(timestamp)
         synchronized(this) {
             cameraFrames++
-            if (lastCameraFrameNs > 0L && now > lastCameraFrameNs) {
-                val instant = 1_000_000_000f / (now - lastCameraFrameNs)
+            if (lastCameraFrameNs > 0L && timestamp > lastCameraFrameNs) {
+                val instant = 1_000_000_000f / (timestamp - lastCameraFrameNs)
                 cameraFps = if (cameraFps == 0f) instant else cameraFps * 0.8f + instant * 0.2f
             }
-            lastCameraFrameNs = now
-            featureCount = count
-            if (count > 0 && lastFeatureCenterX.isFinite()) {
-                featureMotionX = centerX - lastFeatureCenterX
-                featureMotionY = centerY - lastFeatureCenterY
-            }
-            if (count > 0) {
-                lastFeatureCenterX = centerX
-                lastFeatureCenterY = centerY
-            }
+            lastCameraFrameNs = timestamp
+            featureCount = estimate.inliers
+            lastVisualEstimate = estimate
+            lastPose = pose
         }
-        if (cameraFrames % 5L == 0L) runOnUiThread { refresh() }
+        if (cameraFrames % 3L == 0L) runOnUiThread { refresh() }
     }
 
     private fun stopCamera() {
@@ -233,12 +244,14 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
             cameraFrames = 0
             cameraFps = 0f
             featureCount = 0
-            featureMotionX = 0f
-            featureMotionY = 0f
+            gyroscopeEvents = 0L
+            skippedCameraFrames = 0L
+            nextFrameAllowedNs = 0L
+            lastVisualEstimate = null
+            lastPose = null
             lastCameraFrameNs = 0L
-            lastFeatureCenterX = Float.NaN
-            lastFeatureCenterY = Float.NaN
         }
+        vio.reset("sandbox lab measurements reset")
         refresh()
     }
 
@@ -246,6 +259,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
         super.onResume()
         rotation?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
         accelerometer?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        gyroscope?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
     }
 
     override fun onPause() {
@@ -255,19 +269,37 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
-        synchronized(this) {
-            when (event.sensor.type) {
-                Sensor.TYPE_GAME_ROTATION_VECTOR, Sensor.TYPE_ROTATION_VECTOR -> rotationEvents++
-                Sensor.TYPE_ACCELEROMETER -> {
+        when (event.sensor.type) {
+            Sensor.TYPE_GAME_ROTATION_VECTOR, Sensor.TYPE_ROTATION_VECTOR -> {
+                vio.onRotationVector(event.timestamp, event.values)
+                synchronized(this) { rotationEvents++ }
+            }
+            Sensor.TYPE_GYROSCOPE -> {
+                vio.onGyroscope(event.timestamp, Vec3(
+                    event.values[0].toDouble(),
+                    event.values[1].toDouble(),
+                    event.values[2].toDouble()
+                ))
+                synchronized(this) { gyroscopeEvents++ }
+            }
+            Sensor.TYPE_ACCELEROMETER -> {
+                val acceleration = Vec3(
+                    event.values[0].toDouble(),
+                    event.values[1].toDouble(),
+                    event.values[2].toDouble()
+                )
+                vio.onAccelerometer(event.timestamp, acceleration)
+                synchronized(this) {
                     accelerationEvents++
-                    val x = event.values[0]
-                    val y = event.values[1]
-                    val z = event.values[2]
-                    accelerationMagnitude = sqrt(x*x + y*y + z*z)
+                    accelerationMagnitude = sqrt(
+                        acceleration.x * acceleration.x +
+                            acceleration.y * acceleration.y +
+                            acceleration.z * acceleration.z
+                    ).toFloat()
                 }
             }
         }
-        if ((rotationEvents + accelerationEvents) % 40L == 0L) refresh()
+        if ((rotationEvents + accelerationEvents + gyroscopeEvents) % 40L == 0L) refresh()
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -275,22 +307,35 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private fun refresh() {
         if (!::report.isInitialized) return
         val values = synchronized(this) {
-            Metrics(rotationEvents, accelerationEvents, cameraFrames, cameraFps,
-                featureCount, featureMotionX, featureMotionY, accelerationMagnitude)
+            Metrics(
+                rotationEvents, accelerationEvents, gyroscopeEvents, cameraFrames,
+                skippedCameraFrames, cameraFps, featureCount, accelerationMagnitude
+            )
         }
+        val visual = lastVisualEstimate
+        val pose = lastPose
+        val imu = vio.diagnostics()
         report.text = buildString {
-            appendLine("Режим: " + mode.name + " · " + mode.fpsLabel)
-            appendLine("Rotation-vector events: " + values.rotationEvents + " · " + (rotation?.name ?: "нет"))
-            appendLine("Accelerometer events: " + values.accelerationEvents + " · |a|: " + "%.2f".format(values.accelerationMagnitude) + " m/s²")
-            appendLine("Camera frames: " + values.cameraFrames + " · FPS: " + "%.1f".format(values.cameraFps))
-            appendLine("Image gradient features: " + values.featureCount)
-            appendLine("Feature-centroid delta: dx=" + "%.4f".format(values.motionX) + ", dy=" + "%.4f".format(values.motionY))
+            appendLine("Режим: " + mode.name + " · cap " + mode.maxFps + " FPS")
+            appendLine("Rotation-vector: " + values.rotationEvents + " · " + (rotation?.name ?: "нет"))
+            appendLine("Gyroscope: " + values.gyroscopeEvents + " · " + (gyroscope?.name ?: "нет"))
+            appendLine("Accelerometer: " + values.accelerationEvents + " · |a| " + "%.2f".format(values.accelerationMagnitude) + " m/s²")
+            appendLine("Camera frames: " + values.cameraFrames + " · FPS " + "%.1f".format(values.cameraFps))
+            appendLine("Frames skipped by cap: " + values.skippedCameraFrames)
+            appendLine("Sparse features / inliers: " + (visual?.matches ?: 0) + " / " + (visual?.inliers ?: 0))
+            appendLine("Visual flow: " + (visual?.reason ?: "waiting for camera"))
+            appendLine("Visual confidence: " + "%.2f".format(visual?.confidence ?: 0.0))
             appendLine()
-            appendLine("Camera: " + cameraMessage)
-            appendLine("Status: " + if (running.get()) "RUNNING" else "IDLE")
+            appendLine("Pose: " + (pose?.diagnostic ?: "waiting"))
+            appendLine("Orientation source: " + imu.orientationSource)
+            appendLine("Relative position: " + (pose?.position?.let {
+                "%.4f, %.4f, %.4f".format(it.x, it.y, it.z)
+            } ?: "—"))
+            appendLine("Translation scale: " + (pose?.translationScale?.name ?: "UNKNOWN"))
+            appendLine("IMU samples / visual accepted: " + imu.imuSamples + " / " + imu.acceptedVisualUpdates)
             appendLine()
-            appendLine("Важно: centroid delta — диагностический 2D proxy, не optical flow, не метры и не 6DoF.")
-            appendLine("Далее: sparse feature matching + IMU preintegration + калибровка intrinsics/extrinsics.")
+            appendLine("Важно: это sparse 2D flow + IMU orientation. Перенос пока относительный, не метры; полноценная 6DoF и масштаб не подтверждены.")
+            appendLine("Камера: " + cameraMessage + " · " + if (running.get()) "RUNNING" else "IDLE")
         }
     }
 
