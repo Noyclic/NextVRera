@@ -353,6 +353,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
 
     private fun systemStage(fields: ReportFields, recommendations: MutableList<String>): Stage {
         val result = fields.loader("xrGetSystem(HMD)")
+        if (result == null && fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.HMD_SYSTEM, "HMD system discovery", Status.NOT_RUN,
+                "No runtime instance existed, so HMD system discovery was not attempted.")
+        }
         return resultStage(StageId.HMD_SYSTEM, "HMD system discovery", result,
             "The runtime returned an HMD system identifier.",
             "Inspect form-factor availability and runtime system support.",
@@ -361,6 +365,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
 
     private fun stereoStage(fields: ReportFields, recommendations: MutableList<String>): Stage {
         val supported = fields.loader("primary_stereo_supported")
+        if (supported == null && fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.STEREO_CONFIGURATION, "Primary stereo view configuration", Status.NOT_RUN,
+                "No runtime instance existed, so view configuration enumeration was not attempted.")
+        }
         return when (supported) {
             "YES" -> stage(StageId.STEREO_CONFIGURATION, "Primary stereo view configuration", Status.VERIFIED,
                 "The runtime reports PRIMARY_STEREO support.")
@@ -375,6 +383,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
     }
 
     private fun graphicsStage(fields: ReportFields, recommendations: MutableList<String>): Stage {
+        if (fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.GRAPHICS_BINDING, "OpenGL ES graphics binding", Status.NOT_RUN,
+                "No runtime instance existed, so EGL/OpenXR graphics binding was not attempted.")
+        }
         val egl = fields.loader("external_egl_context")
         val requirements = fields.loader("xrGetOpenGLESGraphicsRequirementsKHR")
         val result = when {
@@ -398,11 +410,16 @@ internal object ExternalOpenXrCompatibilityAssessment {
             "The external client created an OpenXR session.",
             "Inspect graphics binding, system identifier and session-create validation errors.",
             recommendations,
-            prerequisite = fields.loader("external_gles_session")?.contains("SKIPPED") == true
+            prerequisite = fields.loader("runtime_instance_created") == "NO" ||
+                fields.loader("external_gles_session")?.contains("SKIPPED") == true
         )
 
     private fun swapchainStage(fields: ReportFields, recommendations: MutableList<String>): Stage {
         val create = fields.loader("external_xrCreateSwapchain")
+        if (fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.SWAPCHAIN, "Swapchain creation and image enumeration", Status.NOT_RUN,
+                "No runtime instance existed, so no swapchain could be created.")
+        }
         val images = fields.loader("external_xrEnumerateSwapchainImages")
         return when {
             create?.startsWith("XR_SUCCESS") == true && images?.startsWith("XR_SUCCESS") == true ->
@@ -428,6 +445,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
 
     private fun frameStage(fields: ReportFields, recommendations: MutableList<String>): Stage {
         val wait = fields.loader("external_xrWaitFrame")
+        if (fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.FRAME_LOOP, "Frame lifecycle", Status.NOT_RUN,
+                "No runtime instance existed, so the frame loop was not entered.")
+        }
         val begin = fields.loader("external_xrBeginFrame")
         val end = fields.loader("external_xrEndFrame(projection)")
             ?: fields.loader("external_xrEndFrame(empty_fallback)")
@@ -455,6 +476,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
 
     private fun projectionStage(fields: ReportFields, recommendations: MutableList<String>): Stage {
         val submitted = fields.loader("external_projection_layer_submission")
+        if (fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.PROJECTION_SUBMISSION, "Stereo projection submission and readback", Status.NOT_RUN,
+                "No runtime instance existed, so projection submission was not attempted.")
+        }
         val readback = fields.loader("external_projection_swapchain_image_verification")
         return when {
             submitted == "PASS" && readback == "PASS" ->
@@ -547,6 +572,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
 
     private fun cleanupStage(fields: ReportFields, warnings: MutableList<String>): Stage {
         val instance = fields.loader("xrDestroyInstance")
+        if (instance == null && fields.loader("runtime_instance_created") == "NO") {
+            return stage(StageId.CLEANUP, "OpenXR resource cleanup", Status.NOT_RUN,
+                "No OpenXR instance or session was created, so no OpenXR handles required teardown.")
+        }
         val session = fields.loader("external_xrDestroySession")
         val hasSession = fields.loader("external_xrCreateSession")?.startsWith("XR_SUCCESS") == true
         return when {
@@ -685,7 +714,7 @@ internal object ExternalOpenXrCompatibilityAssessment {
         }
     }
 
-    private val KEY_PATTERN = Regex("[A-Za-z0-9_().-]+")
+    private val KEY_PATTERN = Regex("[A-Za-z0-9_(). -]+")
     private val ACTIVE_PACKAGE_PATTERN = Regex("active package=([A-Za-z0-9_.]+)")
     private const val ENDXR_PACKAGE = "com.noyclic.questphonexr"
 }
