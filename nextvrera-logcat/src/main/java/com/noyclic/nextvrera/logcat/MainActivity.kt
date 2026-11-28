@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
 
     private fun userServiceArgs() = Shizuku.UserServiceArgs(
         ComponentName(packageName, LogcatUserService::class.java.name)
-    ).daemon(false).tag("nextvrera-logcat-service").version(1)
+    ).processNameSuffix("logcat").daemon(false).tag("nextvrera-logcat-service").version(1)
 
     private fun bindLogcatService() {
         if (bound) {
