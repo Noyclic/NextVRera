@@ -87,6 +87,7 @@ import com.noyclic.questphonexr.runtime.EndXrTrackingInputBridge
 import com.noyclic.questphonexr.tracking.TrackingProviderId
 import com.noyclic.questphonexr.tracking.TrackingSelectionMode
 import com.noyclic.questphonexr.runtime.EndXrRuntimeState
+import com.noyclic.questphonexr.runtime.EndXrExternalRuntimeReadiness
 import com.noyclic.questphonexr.tracking.TrackingHealthDiagnostics
 
 /** Phone-first 3D sandbox for testing stereo viewing, Joy-Con input and object grabbing. */
