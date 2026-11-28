@@ -58,6 +58,11 @@ class VioFusionEngine(
     private var orientationSource = "not initialized"
     private var resetReason = "startup"
     private var lastVisualDelta = Vec2(0.0, 0.0)
+    private var latestAngularVelocity = Vec3.ZERO
+    private var latestLinearAcceleration = Vec3.ZERO
+    private var hasGyroscope = false
+    private var hasAccelerometer = false
+    private var lastIntegratedImuTimestamp = 0L
 
     @Synchronized
     fun reset(reason: String = "manual reset") {
@@ -72,6 +77,11 @@ class VioFusionEngine(
         lastConfidence = 0.0
         orientationSource = "not initialized"
         lastVisualDelta = Vec2(0.0, 0.0)
+        latestAngularVelocity = Vec3.ZERO
+        latestLinearAcceleration = Vec3.ZERO
+        hasGyroscope = false
+        hasAccelerometer = false
+        lastIntegratedImuTimestamp = 0L
         resetReason = reason
         imu.reset()
         features.reset()
@@ -91,6 +101,9 @@ class VioFusionEngine(
             }
         }
         lastImuTimestamp = timestampNanos
+        latestAngularVelocity = radiansPerSecond
+        hasGyroscope = true
+        integrateLatestImuSample(timestampNanos)
         imuSamples++
         return true
     }
@@ -102,13 +115,20 @@ class VioFusionEngine(
         bodyToWorld: Quaternion = orientation
     ): Boolean {
         if (timestampNanos <= 0L || !accelerationIncludingGravity.isFinite()) return false
-        val accepted = imu.addWithGravityRemoval(
-            timestampNanos,
-            Vec3.ZERO,
-            accelerationIncludingGravity,
-            bodyToWorld
-        )
-        if (accepted) imuSamples++
+        val gravityBody = bodyToWorld.normalized().conjugate()
+            .rotate(Vec3(0.0, 9.80665, 0.0))
+        latestLinearAcceleration = accelerationIncludingGravity - gravityBody
+        hasAccelerometer = true
+        return integrateLatestImuSample(timestampNanos)
+    }
+
+    private fun integrateLatestImuSample(timestampNanos: Long): Boolean {
+        if (!hasGyroscope || !hasAccelerometer || timestampNanos <= lastIntegratedImuTimestamp) return false
+        val accepted = imu.add(TimedImuSample(timestampNanos, latestAngularVelocity, latestLinearAcceleration))
+        if (accepted) {
+            lastIntegratedImuTimestamp = timestampNanos
+            imuSamples++
+        }
         return accepted
     }
 
@@ -124,6 +144,7 @@ class VioFusionEngine(
     @Synchronized
     fun onVisualFrame(frame: GrayFrame): VisualMotionEstimate {
         visualFrames++
+        val previousVisualTimestamp = lastVisualTimestamp
         val estimate = features.process(frame)
         lastVisualTimestamp = frame.timestampNanos
         lastConfidence = estimate.confidence
@@ -132,9 +153,8 @@ class VioFusionEngine(
             lastVisualDelta = Vec2(0.0, 0.0)
             return estimate
         }
-        val previousTimestamp = lastVisualTimestamp
-        val gapSeconds = if (previousTimestamp == 0L) 0.0
-            else (frame.timestampNanos - previousTimestamp) * 1e-9
+        val gapSeconds = if (previousVisualTimestamp == 0L) 0.0
+            else (frame.timestampNanos - previousVisualTimestamp) * 1e-9
         if (gapSeconds > config.maximumVisualGapSeconds) {
             rejectedVisual++
             resetReason = "visual frame gap"
