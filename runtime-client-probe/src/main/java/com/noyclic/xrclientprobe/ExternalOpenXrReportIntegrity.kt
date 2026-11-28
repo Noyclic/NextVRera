@@ -185,7 +185,9 @@ internal object ExternalOpenXrReportIntegrity {
         val swapchain = loader.latest("external_xrCreateSwapchain")
         val enumerateImages = loader.latest("external_xrEnumerateSwapchainImages")
 
-        if (isSuccess(session) && (instance == "NO" || isFailure(instanceResult))) {
+        if (isSuccess(session) && (
+                instance == "NO" || (instance != "YES" && isFailure(instanceResult))
+            )) {
             findings += Finding(
                 "SESSION_SUCCESS_WITHOUT_INSTANCE", Severity.BLOCKING,
                 "Session creation is reported successful although instance creation is explicitly unavailable or failed.",
