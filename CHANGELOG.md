@@ -2,6 +2,11 @@
 
 ## 2026-11-28
 
+### Qualcomm QNN HTP probe hardening
+- Correct the probe's evidence wording: requesting the QNN HTP delegate and completing an Interpreter invocation do not prove every operator ran on HTP; LiteRT may retain unsupported partitions on builtin CPU kernels.
+- Report all model input tensors instead of assuming exactly one FLOAT32 input, and keep HTP placement explicitly unverified until backend/operator evidence is available.
+
+
 ### NextVRera / Qualcomm standalone tracker foundations
 - Import the pinned Qualcomm palm/landmark model anchor and tensor adapters with explicit provenance and license.
 - Correct palm ROI generation to match pinned BlazePalm box-mode geometry (`dy=-0.5`, `dscale=2.6`, square ROI) and replace greedy suppression with confidence-weighted NMS over boxes and keypoints.
