@@ -36,6 +36,8 @@ data class FeatureMatch(
 
 data class VisualMotionEstimate(
     val timestampNanos: Long,
+    val imageWidth: Int,
+    val imageHeight: Int,
     val matches: Int,
     val inliers: Int,
     val displacementPixels: Vec2,
@@ -118,7 +120,7 @@ class SparseFeatureTracker(private val config: FeatureTrackerConfig = FeatureTra
         val matches = match(oldFeatures, currentFeatures)
         if (matches.size < config.minimumMatches) {
             return VisualMotionEstimate(
-                frame.timestampNanos, matches.size, 0, Vec2(0.0, 0.0), Vec2(0.0, 0.0),
+                frame.timestampNanos, frame.width, frame.height, matches.size, 0, Vec2(0.0, 0.0), Vec2(0.0, 0.0),
                 Double.POSITIVE_INFINITY, 0.0, false, "not enough stable feature matches"
             )
         }
@@ -276,6 +278,8 @@ class SparseFeatureTracker(private val config: FeatureTrackerConfig = FeatureTra
         val robustDy = if (valid) inliers.map { matches[it].displacement.y }.median() else 0.0
         return VisualMotionEstimate(
             timestampNanos = frame.timestampNanos,
+            imageWidth = frame.width,
+            imageHeight = frame.height,
             matches = matches.size,
             inliers = inliers.size,
             displacementPixels = Vec2(robustDx, robustDy),
@@ -288,7 +292,7 @@ class SparseFeatureTracker(private val config: FeatureTrackerConfig = FeatureTra
     }
 
     private fun invalid(timestamp: Long, reason: String) = VisualMotionEstimate(
-        timestamp, 0, 0, Vec2(0.0, 0.0), Vec2(0.0, 0.0),
+        timestamp, 0, 0, 0, 0, Vec2(0.0, 0.0), Vec2(0.0, 0.0),
         Double.POSITIVE_INFINITY, 0.0, false, reason
     )
 
