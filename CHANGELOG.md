@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-28
+
+### NextVRera / EndXR runtime readiness
+- Added a conservative READY / DEGRADED / BLOCKED assessment combining runtime service metadata, the Khronos-selected RuntimeBroker provider, and the current native GLES/OpenXR self-test.
+- Report the selected broker's provider/query failure distinctly instead of inferring provider visibility from a successful query string.
+- Added regression coverage for missing broker, failed query, wrong selected runtime, missing native library and failed native probe.
+- Exposed the readiness report in the Sandbox RuntimeBroker diagnostic and clipboard output; it does not claim arbitrary Quest APK compatibility.
+
 ## 2026-11-27
 
 ### NextVRera / EndXR game diagnostics
