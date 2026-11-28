@@ -269,3 +269,13 @@ probe's service and loader text; the history store continues to keep only
 compact stage verdicts. Raw reports, camera frames, hand samples and native
 library paths are not added to persistent history. The integrity check is a
 diagnostic aid, not a cryptographic attestation or OpenXR conformance test.
+
+
+The assessment also generates a read-only recovery plan. Its priority is
+deliberate: report contradictions first, then the earliest known OpenXR
+failure, then blocked or incomplete prerequisites. It does not execute calls,
+change RuntimeBroker selection, grant permissions, or launch a game. The JSON
+field `recovery_plan` includes the plan state, ordered actions, expected
+evidence and retry policy. A lost session or instance is never retried with
+stale handles; an empty report is classified as incomplete evidence, not as a
+successful probe.
