@@ -15,6 +15,7 @@
 - Correct the loader-validation documentation to describe swapchain-image FBO readback accurately; it is not compositor/display readback.
 - Add an offline OpenXR result-code catalogue with stage-aware next steps, retry guidance and safe handling for unknown or vendor-specific errors.
 - Generate a prioritized, read-only recovery plan: reconcile report contradictions first, then address the earliest failed prerequisite, then capture missing evidence. Lost sessions/instances are never retried with stale handles.
+- Add per-stage field-presence coverage for all 15 diagnostic stages, including missing keys and NOT_APPLICABLE handling for skipped stages; explicitly do not convert field completeness into a compatibility score or VERIFIED verdict.
 - Cross-check service and loader reports for contradictory instance/session/swapchain/frame/projection/hand-tracking/input evidence before export; retain original stage verdicts and surface integrity findings separately.
 - Extend the JSON report with integrity findings and contextual first-failure diagnosis; preserve only compact stage snapshots in local history.
 - Add JVM regression cases for result-code mapping, untrusted numeric values, duplicate log observations, prerequisite ordering, broker disagreement and cross-field contradictions.
