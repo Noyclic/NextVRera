@@ -171,6 +171,9 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
 
     private fun startCamera() {
         if (!running.compareAndSet(false, true)) return
+        // Never carry a previous camera's clock capability into a new bind attempt.
+        vio.setCameraTimestampComparable(false)
+        cameraImuClockStatus = "проверяется"
         cameraMessage = "Подключение " + cameraFacingLabel + " камеры…"
         refresh()
         val future = ProcessCameraProvider.getInstance(this)
@@ -266,6 +269,8 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
 
     private fun stopCamera() {
         running.set(false)
+        vio.setCameraTimestampComparable(false)
+        cameraImuClockStatus = "камера выключена"
         val provider = cameraProvider
         val analysis = activeAnalysis
         if (provider != null && analysis != null) {
