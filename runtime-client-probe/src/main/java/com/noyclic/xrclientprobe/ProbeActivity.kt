@@ -27,6 +27,9 @@ class ProbeActivity : Activity() {
     internal var assessmentJsonText: String = ""
         private set
 
+    internal var historyComparisonText: String = ""
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -37,9 +40,26 @@ class ProbeActivity : Activity() {
             loaderReport = loaderReportText
         )
         assessmentJsonText = assessment.toJson()
+
+        // Keep only compact stage verdicts in app-private storage. Raw reports,
+        // input samples, camera data and native paths are never persisted here.
+        val historyStore = ExternalOpenXrAssessmentHistory.Store(this)
+        val currentSnapshot = ExternalOpenXrAssessmentHistory.snapshot(
+            assessment = assessment,
+            timestampMillis = System.currentTimeMillis()
+        )
+        val previousSnapshot = historyStore.latest()
+        historyComparisonText = previousSnapshot?.let {
+            ExternalOpenXrAssessmentHistory.compare(it, currentSnapshot).toDisplayText()
+        } ?: "PREVIOUS RUN COMPARISON\\nNo earlier compatibility assessment is stored on this device."
+        val historySaved = historyStore.append(currentSnapshot)
+
         combinedReportText = buildString {
             appendLine("=== External OpenXR compatibility assessment ===")
             appendLine(assessment.toDisplayText())
+            appendLine()
+            appendLine(historyComparisonText)
+            if (!historySaved) appendLine("history_save=FAILED; current report remains available")
             appendLine()
             appendLine("=== Android service and RuntimeBroker visibility ===")
             appendLine(serviceReportText)
