@@ -15,12 +15,15 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.text.Editable
+import android.text.TextWatcher
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import rikka.shizuku.Shizuku
 import java.io.File
 import java.util.Locale
@@ -33,7 +36,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var stopButton: Button
     private var remote: ILogcatService? = null
     private var bound = false
+    private var bindingRequested = false
     private var captureActive = false
+    private var pollingJob: Job? = null
+    private val serviceArgs by lazy { createUserServiceArgs() }
     private val preview = StringBuilder()
     private val logFile by lazy { File(filesDir, "last-logcat.txt") }
 
@@ -50,7 +56,9 @@ class MainActivity : ComponentActivity() {
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         remote = null
         bound = false
+        bindingRequested = false
         captureActive = false
+        pollingJob?.cancel()
         setStatus("Shizuku stopped")
         updateButtons()
     }
@@ -80,7 +88,9 @@ class MainActivity : ComponentActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             remote = null
             bound = false
+            bindingRequested = false
             captureActive = false
+            pollingJob?.cancel()
             setStatus("Logcat service disconnected")
             updateButtons()
         }
@@ -96,9 +106,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (bound) {
+        pollingJob?.cancel()
+        if (bound || bindingRequested) {
             runCatching { remote?.stopCapture() }
-            runCatching { Shizuku.unbindUserService(userServiceArgs(), serviceConnection, true) }
+            runCatching { Shizuku.unbindUserService(serviceArgs, serviceConnection, true) }
         }
         Shizuku.removeBinderReceivedListener(binderListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
@@ -131,6 +142,11 @@ class MainActivity : ComponentActivity() {
         filter = EditText(this).apply {
             hint = "Display filter (optional): QNN, DSP, package…"
             singleLine = true
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderPreview()
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
         }
         root.addView(filter, matchWidth())
 
@@ -192,8 +208,6 @@ class MainActivity : ComponentActivity() {
             }
             if (Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 bindLogcatService()
-            } else if (Shizuku.shouldShowRequestPermissionRationale()) {
-                setStatus("Permission denied earlier. Allow NextVRera Logcat in Shizuku.")
             } else {
                 Shizuku.requestPermission(REQUEST_SHIZUKU)
                 setStatus("Waiting for Shizuku permission…")
@@ -203,28 +217,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun userServiceArgs() = Shizuku.UserServiceArgs(
+    private fun createUserServiceArgs() = Shizuku.UserServiceArgs(
         ComponentName(packageName, LogcatUserService::class.java.name)
     ).processNameSuffix("logcat").daemon(false).tag("nextvrera-logcat-service").version(1)
 
     private fun bindLogcatService() {
-        if (bound) {
-            setStatus("Logcat service is already connected")
+        if (bound || bindingRequested) {
+            setStatus(if (bound) "Logcat service is already connected" else "Connecting to Shizuku service…")
             return
         }
         try {
-            Shizuku.bindUserService(userServiceArgs(), serviceConnection)
+            bindingRequested = true
+            Shizuku.bindUserService(serviceArgs, serviceConnection)
             setStatus("Starting shell-identity logcat service…")
         } catch (error: Throwable) {
-            setStatus("Could not start Shizuku service: " + error.message)
+            bindingRequested = false
+            setStatus("Could not start Shizuku service: ${error.javaClass.simpleName}: ${error.message}")
+            updateButtons()
         }
     }
 
     private fun startPolling() {
-        lifecycleScope.launch {
+        pollingJob?.cancel()
+        pollingJob = lifecycleScope.launch {
             while (isActive && captureActive) {
                 val chunk = runCatching { remote?.readChunk(180).orEmpty() }.getOrElse {
-                    setStatus("Logcat read failed: " + it.message)
+                    setStatus("Logcat read failed: ${it.javaClass.simpleName}: ${it.message}")
+                    stopCapture()
                     ""
                 }
                 if (chunk.isNotBlank()) appendChunk(chunk)
@@ -251,12 +270,24 @@ class MainActivity : ComponentActivity() {
         output.text = visible.ifBlank { "Capture is running. No matching lines yet." }
     }
 
+    private fun renderPreview() {
+        if (!::output.isInitialized || !::filter.isInitialized) return
+        val needle = filter.text.toString().trim().lowercase(Locale.ROOT)
+        val visible = if (needle.isEmpty()) preview.toString() else preview.lineSequence()
+            .filter { it.lowercase(Locale.ROOT).contains(needle) }
+            .joinToString("\\n")
+        output.text = visible.ifBlank { if (captureActive) "Capture is running. No matching lines yet." else "No log lines captured yet." }
+    }
+
     private fun stopCapture() {
+        pollingJob?.cancel()
+        pollingJob = null
         captureActive = false
         runCatching { remote?.stopCapture() }
         if (bound) {
-            runCatching { Shizuku.unbindUserService(userServiceArgs(), serviceConnection, true) }
+            runCatching { Shizuku.unbindUserService(serviceArgs, serviceConnection, true) }
             bound = false
+            bindingRequested = false
             remote = null
         }
         setStatus("Capture stopped — saved in app storage")
@@ -269,7 +300,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setStatus(message: String) {
-        if (::status.isInitialized) status.text = message
+        if (!::status.isInitialized) return
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) status.text = message
+        else runOnUiThread { if (!isFinishing && !isDestroyed) status.text = message }
     }
 
     private fun copyLogToClipboard() {
@@ -282,9 +315,11 @@ class MainActivity : ComponentActivity() {
             setStatus("Nothing to copy yet — start capture first")
             return
         }
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("NextVRera Logcat", content))
-        setStatus("Copied ${content.length} characters to clipboard")
+        runCatching {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("NextVRera Logcat", content))
+        }.onSuccess { setStatus("Copied ${content.length} characters to clipboard") }
+            .onFailure { setStatus("Clipboard copy failed: ${it.message}") }
     }
 
     private fun exportLog(uri: Uri) {
