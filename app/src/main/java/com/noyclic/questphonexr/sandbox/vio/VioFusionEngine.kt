@@ -58,6 +58,7 @@ class VioFusionEngine(
     private var orientationSource = "not initialized"
     private var resetReason = "startup"
     private var lastVisualDelta = Vec2(0.0, 0.0)
+    private var lastVisualOrientation = Quaternion.IDENTITY
     private var latestAngularVelocity = Vec3.ZERO
     private var latestLinearAcceleration = Vec3.ZERO
     private var hasGyroscope = false
@@ -77,6 +78,7 @@ class VioFusionEngine(
         lastConfidence = 0.0
         orientationSource = "not initialized"
         lastVisualDelta = Vec2(0.0, 0.0)
+        lastVisualOrientation = Quaternion.IDENTITY
         latestAngularVelocity = Vec3.ZERO
         latestLinearAcceleration = Vec3.ZERO
         hasGyroscope = false
@@ -145,8 +147,10 @@ class VioFusionEngine(
     fun onVisualFrame(frame: GrayFrame): VisualMotionEstimate {
         visualFrames++
         val previousVisualTimestamp = lastVisualTimestamp
+        val previousOrientation = lastVisualOrientation
         val estimate = features.process(frame)
         lastVisualTimestamp = frame.timestampNanos
+        lastVisualOrientation = orientation
         lastConfidence = estimate.confidence
         if (!estimate.valid || estimate.confidence < config.minimumVisualConfidence) {
             rejectedVisual++
@@ -166,17 +170,14 @@ class VioFusionEngine(
         var dx = estimate.displacementNormalized.x
         var dy = estimate.displacementNormalized.y
         val focal = config.cameraFocalLengthPixels
-        if (focal != null) {
-            val pixelDx = estimate.displacementPixels.x
-            val pixelDy = estimate.displacementPixels.y
-            val angularX = orientation.x * 2.0
-            val angularY = orientation.y * 2.0
-            dx -= angularY * focal / max(1.0, focal)
-            dy += angularX * focal / max(1.0, focal)
-            if (!pixelDx.isFinite() || !pixelDy.isFinite()) {
-                rejectedVisual++
-                return estimate.copy(valid = false, reason = "non-finite visual flow")
-            }
+        if (focal != null && previousVisualTimestamp > 0L) {
+            val delta = (previousOrientation.conjugate() * orientation).normalized()
+            val yawRadians = 2.0 * delta.y
+            val pitchRadians = 2.0 * delta.x
+            val width = max(1, estimate.imageWidth).toDouble()
+            val height = max(1, estimate.imageHeight).toDouble()
+            dx -= focal * yawRadians / width
+            dy += focal * pitchRadians / height
         }
         val boundedX = dx.coerceIn(-config.maximumRelativeStep, config.maximumRelativeStep)
         val boundedY = dy.coerceIn(-config.maximumRelativeStep, config.maximumRelativeStep)
