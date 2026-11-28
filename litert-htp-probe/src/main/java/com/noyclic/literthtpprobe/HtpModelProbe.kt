@@ -3,7 +3,6 @@ package com.noyclic.literthtpprobe
 import android.content.Context
 import android.os.SystemClock
 import com.qualcomm.qti.QnnDelegate
-import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.Closeable
 import java.io.File
@@ -19,13 +18,15 @@ data class HtpReport(
     val warmupMs: Double,
     val medianMs: Double,
     val p95Ms: Double,
-    val placement: String = "NOT_VERIFIED"
+    val placement: String = "NOT_VERIFIED",
+    val executionEvidence: String = "NOT_RUN"
 )
 
 /**
  * Requests QNN HTP and disables NNAPI/XNNPACK.
  * LiteRT may still execute unsupported graph partitions on builtin CPU kernels.
- * A successful run proves delegate initialization and model invocation, not full HTP placement.
+ * Inputs are deterministic zero-filled buffers: this is a delegate/model smoke test, not hand detection.
+ * A successful run proves interpreter invocation, not full HTP placement or DSP-only execution.
  */
 class HtpModelProbe(context: Context, private val file: File) : Closeable {
     private val appContext = context.applicationContext
@@ -88,7 +89,7 @@ class HtpModelProbe(context: Context, private val file: File) : Closeable {
                 medianMs = percentile(sorted, .50),
                 p95Ms = percentile(sorted, .95),
                 placement = "HTP_REQUESTED_PLACEMENT_NOT_VERIFIED",
-                executionEvidence = "INTERPRETER_INVOKED"
+                executionEvidence = "SYNTHETIC_ZERO_INPUTS_INVOKED"
             )
         } catch (error: Throwable) {
             close()
