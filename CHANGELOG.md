@@ -13,6 +13,7 @@
 - Keep a bounded timestamped orientation history and interpolate orientation at camera exposure timestamps before optional rotational image-flow compensation.
 - Require an actual orientation-history bracket at the requested camera timestamp before returning a visual-inertial verdict; return the interpolated orientation for that timestamp and avoid duplicate history entries for equal timestamps.
 - Count only successfully accepted, timestamp-paired IMU samples in diagnostics; never report visual-inertial fusion when camera/IMU clock comparability is unverified.
+- Clear the camera clock capability when the camera stops or a new bind begins, preventing stale REALTIME status from a previous camera session from enabling fusion.
 - Fuse rotation-vector orientation, gyroscope updates, accelerometer samples and sparse visual flow into a conservative relative pose report.
 - Keep translation explicitly UNKNOWN/RELATIVE_ONLY; no metric metres or full 6DoF claim without calibrated depth/scale and device validation.
 - Add JVM regression tests for geometry, sensor integration, sparse matching, translation scale honesty, invalid timestamps and pose reacquisition.
