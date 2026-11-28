@@ -28,7 +28,7 @@ import com.noyclic.questphonexr.sandbox.vio.Vec3
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/** First-stage VIO lab. Image centroid motion is diagnostic only, never metric 6DoF. */
+/** Sandbox VIO lab: sparse image flow + IMU orientation, with explicit scale limitations. */
 class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private val worker = Executors.newSingleThreadExecutor()
     private val running = AtomicBoolean(false)
@@ -45,8 +45,8 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private var gyroscopeEvents = 0L
     private var skippedCameraFrames = 0L
     private var nextFrameAllowedNs = 0L
-    private var lastVisualEstimate: VisualMotionEstimate? = null
-    private var lastPose: VioPose? = null
+    @Volatile private var lastVisualEstimate: VisualMotionEstimate? = null
+    @Volatile private var lastPose: VioPose? = null
     private var cameraFrames = 0L
     private var lastCameraFrameNs = 0L
     private var cameraFps = 0f
@@ -128,6 +128,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
 
     private fun setMode(value: Mode) {
         mode = value
+        nextFrameAllowedNs = 0L
         if (running.get()) {
             stopCamera()
             startCamera()
