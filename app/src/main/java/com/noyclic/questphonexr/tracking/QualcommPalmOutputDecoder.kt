@@ -50,18 +50,21 @@ data class LiteRtPalmInputTransform(
         require(padTopPx + contentHeightPx <= inputHeightPx)
     }
 
-    /** Nominal resize scale returned by Qualcomm's resize_pad helper. */
-    val resizeScale: Float
-        get() = minOf(
-            inputWidthPx.toFloat() / sourceWidthPx,
-            inputHeightPx.toFloat() / sourceHeightPx
-        )
+    /**
+     * Exact inverse scale for each integer resize dimension. Qualcomm's resize_pad
+     * floors the shorter dimension before resizing, so using the pre-floor nominal
+     * input/source ratio introduces a small but systematic coordinate drift.
+     */
+    val resizeScaleX: Float
+        get() = contentWidthPx.toFloat() / sourceWidthPx
+
+    val resizeScaleY: Float
+        get() = contentHeightPx.toFloat() / sourceHeightPx
 
     fun toSourcePixel(modelX: Float, modelY: Float): Pair<Float, Float>? {
         if (!modelX.isFinite() || !modelY.isFinite()) return null
-        val scale = resizeScale
-        return (modelX - padLeftPx) / scale to
-            (modelY - padTopPx) / scale
+        return (modelX - padLeftPx) / resizeScaleX to
+            (modelY - padTopPx) / resizeScaleY
     }
 
     fun toSourceNormalized(modelX: Float, modelY: Float): Pair<Float, Float>? {
@@ -159,13 +162,15 @@ object QualcommPalmOutputDecoder {
     const val KEYPOINT_COUNT = 7
     const val WRIST_KEYPOINT_INDEX = 0
     const val MIDDLE_FINDER_KEYPOINT_INDEX = 2
-    const val DEFAULT_SCORE_THRESHOLD = 0.95f
+    // The pinned MediaPipePyTorch demo uses .75 even though the model wrapper starts at .5.
+    const val DEFAULT_SCORE_THRESHOLD = 0.75f
     const val DEFAULT_NMS_IOU_THRESHOLD = 0.30f
     const val DEFAULT_MAX_HANDS = 2
     const val SCORE_CLIP_LIMIT = 100f
 
-    private const val ROI_DIRECTIONAL_OFFSET = 0.5f
-    private const val ROI_SCALE = 2.5f
+    // Pinned BlazePalm detection2roi settings: self.dy=-0.5, self.dscale=2.6.
+    const val REFERENCE_ROI_DY = -0.5f
+    const val REFERENCE_ROI_SCALE = 2.6f
     private const val MIN_VECTOR_LENGTH_PX = 0.0001f
 
     private data class Candidate(
@@ -320,17 +325,17 @@ object QualcommPalmOutputDecoder {
             boxWidth <= 0f || boxHeight <= 0f
         ) return null
 
-        var centerX = (left + right) * 0.5f
-        var centerY = (top + bottom) * 0.5f
-        val directionalOffset = ROI_DIRECTIONAL_OFFSET * boxWidth
-        centerX += directionalOffset * vectorX / vectorLength
-        centerY += directionalOffset * vectorY / vectorLength
+        // BlazePalm.detection2roi(method="box") keeps the detector box center,
+        // shifts its Y coordinate by dy * width, and uses a square width*scale ROI.
+        val centerX = (left + right) * 0.5f
+        val centerY = (top + bottom) * 0.5f + REFERENCE_ROI_DY * boxWidth
 
-        // Qualcomm's reference computes atan2(startY-endY, startX-endX) - PI/2.
+        // Pinned source: atan2(wristY-middleY, wristX-middleX) - theta0.
         val rotation = atan2(wrist.second - middleFinder.second, wrist.first - middleFinder.first) -
             (PI.toFloat() * 0.5f)
-        val regionWidth = boxWidth * ROI_SCALE / sourceWidthPx
-        val regionHeight = boxHeight * ROI_SCALE / sourceHeightPx
+        val roiSidePx = boxWidth * REFERENCE_ROI_SCALE
+        val regionWidth = roiSidePx / sourceWidthPx
+        val regionHeight = roiSidePx / sourceHeightPx
         if (!centerX.isFinite() || !centerY.isFinite() ||
             !rotation.isFinite() || !regionWidth.isFinite() || !regionHeight.isFinite() ||
             regionWidth <= 0f || regionHeight <= 0f
@@ -346,6 +351,11 @@ object QualcommPalmOutputDecoder {
         )
     }
 
+    /**
+     * MediaPipe's reference implementation uses weighted NMS, not hard suppression:
+     * all boxes whose IoU with the highest-scoring candidate exceeds the threshold
+     * contribute a confidence-weighted mean for the 4 box and 14 keypoint values.
+     */
     private fun nonMaximumSuppression(
         candidates: List<Candidate>,
         iouThreshold: Float,
@@ -357,15 +367,43 @@ object QualcommPalmOutputDecoder {
         val selected = ArrayList<Candidate>(maxHands)
         while (remaining.isNotEmpty() && selected.size < maxHands) {
             val best = remaining.removeAt(0)
-            selected += best
+            val cluster = ArrayList<Candidate>().apply { add(best) }
             val iterator = remaining.iterator()
             while (iterator.hasNext()) {
-                if (intersectionOverUnion(best, iterator.next()) > iouThreshold) {
+                val candidate = iterator.next()
+                if (intersectionOverUnion(best, candidate) > iouThreshold) {
+                    cluster += candidate
                     iterator.remove()
                 }
             }
+            selected += weightedAverage(cluster)
         }
         return selected
+    }
+
+    private fun weightedAverage(cluster: List<Candidate>): Candidate {
+        require(cluster.isNotEmpty())
+        if (cluster.size == 1) return cluster.single()
+        val totalScore = cluster.sumOf { it.score.toDouble() }
+        require(totalScore > 0.0 && totalScore.isFinite())
+
+        fun weighted(value: (Candidate) -> Float): Float =
+            (cluster.sumOf { it.score.toDouble() * value(it).toDouble() } / totalScore).toFloat()
+
+        val keypoints = List(KEYPOINT_COUNT) { keypointIndex ->
+            weighted { it.keypoints[keypointIndex].first } to
+                weighted { it.keypoints[keypointIndex].second }
+        }
+        return Candidate(
+            anchorIndex = cluster.first().anchorIndex,
+            // Matches the pinned reference: retain the average score of the overlap cluster.
+            score = (totalScore / cluster.size).toFloat(),
+            left = weighted { it.left },
+            top = weighted { it.top },
+            right = weighted { it.right },
+            bottom = weighted { it.bottom },
+            keypoints = keypoints
+        )
     }
 
     private fun intersectionOverUnion(a: Candidate, b: Candidate): Float {
