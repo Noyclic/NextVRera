@@ -167,7 +167,8 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
         if (!running.compareAndSet(false, true)) return
         cameraMessage = "Подключение " + cameraFacingLabel + " камеры…"
         refresh()
-        val future = ProcessCameraProvider.getInstance(this)        future.addListener({
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener({
             if (isFinishing || !running.get()) return@addListener
             runCatching {
                 val provider = future.get()
