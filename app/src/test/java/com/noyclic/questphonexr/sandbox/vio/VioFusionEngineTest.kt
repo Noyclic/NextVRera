@@ -16,6 +16,15 @@ class VioFusionEngineTest {
         assertTrue(pose.diagnostic.contains("orientation only"))
     }
 
+    @Test fun firstUnmatchedCameraFrameDoesNotPublishTrackingPose() {
+        val engine = VioFusionEngine()
+        engine.onVisualFrame(texture(1_000_000_000L, 0))
+        val pose = engine.pose(1_010_000_000L)
+        assertFalse(pose.isValid)
+        assertEquals(TranslationScale.UNKNOWN, pose.translationScale)
+        assertEquals(0.0, pose.trackingQuality, 0.0)
+    }
+
     @Test fun gyroUpdatesAreMonotonicAndBounded() {
         val engine = VioFusionEngine()
         assertTrue(engine.onGyroscope(1_000_000_000L, Vec3.ZERO))
