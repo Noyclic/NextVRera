@@ -327,7 +327,7 @@ internal object ExternalOpenXrFailureCatalog {
     ).associateBy { it.code }
 
     private val resultPattern = Regex("XR_ERROR_[A-Z0-9_]+")
-    private val numericPattern = Regex("\\\\((-?\\\\d+)\\\\)")
+    private val numericPattern = Regex("""\((-?\d+)\)""")
 
     fun knownCodes(): Set<String> = rules.keys
 
@@ -444,9 +444,9 @@ internal object ExternalOpenXrFailureCatalog {
                 ExternalOpenXrCompatibilityAssessment.StageId.GRAPHICS_BINDING
             key.contains("CreateSession") -> ExternalOpenXrCompatibilityAssessment.StageId.SESSION_CREATION
             key.contains("Swapchain") -> ExternalOpenXrCompatibilityAssessment.StageId.SWAPCHAIN
+            key.contains("EndFrame") -> ExternalOpenXrCompatibilityAssessment.StageId.PROJECTION_SUBMISSION
             key.contains("Frame") || key.contains("SwapchainImage") ->
                 ExternalOpenXrCompatibilityAssessment.StageId.FRAME_LOOP
-            key.contains("EndFrame") -> ExternalOpenXrCompatibilityAssessment.StageId.PROJECTION_SUBMISSION
             key.contains("Hand") -> ExternalOpenXrCompatibilityAssessment.StageId.HAND_TRACKING
             key.contains("input", ignoreCase = true) -> ExternalOpenXrCompatibilityAssessment.StageId.INPUT_BRIDGE
             key.contains("Destroy") -> ExternalOpenXrCompatibilityAssessment.StageId.CLEANUP
@@ -473,12 +473,6 @@ internal object ExternalOpenXrFailureCatalog {
             else -> Category.UNKNOWN
         }
 
-    private fun contextualActions(
-        key: String?,
-        stage: ExternalOpenXrCompatibilityAssessment.StageId?,
-        actions: List<String>,
-        marker: Unit = Unit
-    ): List<String> = actions
 
     private const val MAX_RESULT_LENGTH = 240
 }
