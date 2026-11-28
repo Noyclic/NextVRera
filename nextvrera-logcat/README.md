@@ -1,13 +1,25 @@
 # NextVRera Logcat
 
-A small, separate Android APK for capturing Android logcat through Shizuku.
+A small, standalone Android APK for capturing Android logcat through Shizuku. It does not modify the main NextVRera app or require root.
 
 ## Use
+
 1. Install and start Shizuku using Android Wireless debugging.
-2. Open NextVRera Logcat and tap **Connect / grant Shizuku permission**.
-3. Approve the Shizuku permission request.
-4. Tap **Start capture**, reproduce the issue, then tap **Stop** and **Export TXT**.
+2. Open **NextVRera Logcat** and tap **Connect / grant Shizuku permission**.
+3. Approve the permission request in Shizuku.
+4. Tap **Start capture** (the first successful connection starts capture automatically).
+5. Reproduce the issue, then tap **Stop**.
+6. Use **Copy log** to put the complete saved session on the clipboard, or **Export TXT** to save it as a file.
 
-The app runs only the read-only `logcat` command in a Shizuku user-service process. It does not require root, change system settings, or access other apps' private files. ADB/Shizuku permissions remain subject to Android and OEM restrictions. Native tombstones and protected buffers may still be unavailable.
+## What it captures
 
-The display filter only filters the on-screen preview; the exported TXT retains the captured stream. Captures are saved in app-private storage and capped at 8 MiB per session.
+- Runs the read-only `logcat -b all -v threadtime -T 1` command in a dedicated Shizuku UserService under the shell identity.
+- Captures all Android log buffers readable by the Shizuku shell identity. Android/OEM restrictions may hide protected buffers.
+- The display filter only changes the on-screen preview. It does not filter or delete the saved log.
+- The preview is kept bounded in memory; the complete saved session is capped at 8 MiB.
+- When the service queue is overloaded, old queued lines are dropped to keep memory bounded and a diagnostic line is added to the output.
+- Sessions are stored in app-private storage as `last-logcat.txt`; uninstalling the app removes this private file.
+
+## Limits
+
+Shizuku must be running and this app must be authorized. ADB shell access does not grant access to other apps' private data. Native tombstones, protected log buffers, and some vendor diagnostics may remain unavailable without additional system privileges. This app cannot guarantee capture of logs emitted before capture starts; it begins with the most recent log entry and then follows new entries.
