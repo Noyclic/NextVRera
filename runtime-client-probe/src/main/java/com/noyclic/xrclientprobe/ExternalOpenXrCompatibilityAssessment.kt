@@ -475,7 +475,7 @@ internal object ExternalOpenXrCompatibilityAssessment {
                 stage(StageId.PROJECTION_SUBMISSION, "Stereo projection submission and readback", Status.NOT_RUN,
                     "Frame lifecycle was skipped before projection submission.")
             submitted == null ->
-                stage(StageId.PROJECTION_SUBJECTION, "Stereo projection submission and readback", Status.UNKNOWN,
+                stage(StageId.PROJECTION_SUBMISSION, "Stereo projection submission and readback", Status.UNKNOWN,
                     "No projection submission evidence was recorded.")
             else -> {
                 recommendations += "Inspect external projection submission and swapchain readback evidence."
