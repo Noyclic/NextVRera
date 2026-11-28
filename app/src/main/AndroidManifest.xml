@@ -107,7 +107,12 @@
             android:exported="false"
             android:screenOrientation="landscape" />
         <activity
-            android:name=".sandbox.EndXrVioLabActivity"\n            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|uiMode|density"\n            android:exported="false"\n            android:screenOrientation="landscape" />\n        <activity\n            android:name=".sandbox.SandboxActivity"
+            android:name=".sandbox.EndXrVioLabActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|uiMode|density"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
+            android:name=".sandbox.SandboxActivity"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|uiMode|density"
             android:exported="false"
             android:screenOrientation="landscape" />
