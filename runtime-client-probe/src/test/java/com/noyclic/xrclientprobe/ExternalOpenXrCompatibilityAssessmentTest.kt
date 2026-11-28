@@ -110,8 +110,8 @@ class ExternalOpenXrCompatibilityAssessmentTest {
             ExternalOpenXrCompatibilityAssessment.Status.NOT_RUN,
             result.stage(ExternalOpenXrCompatibilityAssessment.StageId.SWAPCHAIN).status
         )
-        assertEquals("xrCreateInstance", result.firstFailure?.key)
-        assertEquals(ExternalOpenXrCompatibilityAssessment.StageId.INSTANCE_CREATION, result.firstFailure?.stage)
+        assertEquals("xrEnumerateInstanceExtensionProperties(count)", result.firstFailure?.key)
+        assertEquals(ExternalOpenXrCompatibilityAssessment.StageId.EXTENSION_ENUMERATION, result.firstFailure?.stage)
     }
 
     @Test
