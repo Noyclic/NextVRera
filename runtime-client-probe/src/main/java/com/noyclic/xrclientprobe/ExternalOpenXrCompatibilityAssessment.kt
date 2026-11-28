@@ -47,7 +47,10 @@ internal object ExternalOpenXrCompatibilityAssessment {
         val highestVerifiedStage: StageId?,
         val firstFailure: Failure?,
         val warnings: List<String>,
-        val recommendations: List<String>
+        val recommendations: List<String>,
+        val integrityReport: ExternalOpenXrReportIntegrity.Report =
+            ExternalOpenXrReportIntegrity.Report(emptyList()),
+        val firstFailureDiagnosis: ExternalOpenXrFailureCatalog.Diagnosis? = null
     ) {
         val verifiedCount: Int get() = stages.count { it.status == Status.VERIFIED }
         val failedCount: Int get() = stages.count { it.status == Status.FAILED }
@@ -90,6 +93,12 @@ internal object ExternalOpenXrCompatibilityAssessment {
                 recommendations.forEachIndexed { index, item -> appendLine("${index + 1}. $item") }
             }
             appendLine()
+            appendLine(integrityReport.toDisplayText())
+            firstFailureDiagnosis?.let {
+                appendLine()
+                appendLine(it.toDisplayText())
+            }
+            appendLine()
             append("Scope: this assessment describes the diagnostic probe only. It does not certify OpenXR conformance, arbitrary Quest APK compatibility, Meta service availability, or sustained frame performance.")
         }
 
@@ -125,6 +134,20 @@ internal object ExternalOpenXrCompatibilityAssessment {
             appendJsonArray(warnings)
             append(",\"recommendations\":")
             appendJsonArray(recommendations)
+            append(",\"integrity_report\":").append(integrityReport.toJson())
+            append(",\"first_failure_diagnosis\":")
+            if (firstFailureDiagnosis == null) {
+                append("null")
+            } else {
+                append('{')
+                append("\"code\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.code)).append(',')
+                append("\"category\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.category.name)).append(',')
+                append("\"impact\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.impact.name)).append(',')
+                append("\"summary\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.summary)).append(',')
+                append("\"likely_cause\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.likelyCause)).append(',')
+                append("\"stage_hint\":").append(ExternalOpenXrCompatibilityAssessment.json(firstFailureDiagnosis.stageHint?.name))
+                append('}')
+            }
             append('}')
         }
 
@@ -173,6 +196,19 @@ internal object ExternalOpenXrCompatibilityAssessment {
         stages += cleanupStage(fields, warnings)
 
         val firstFailure = findFirstFailure(fields)
+        val integrityReport = ExternalOpenXrReportIntegrity.analyze(serviceReport, loaderReport)
+        val firstFailureDiagnosis = firstFailure?.let {
+            ExternalOpenXrFailureCatalog.diagnose(it.result, it.key, it.stage)
+        }
+        if (integrityReport.blockingCount > 0 || integrityReport.highCount > 0) {
+            warnings += "Cross-report integrity checks found " +
+                (integrityReport.blockingCount + integrityReport.highCount) +
+                " high-impact contradiction(s); review OPENXR REPORT INTEGRITY below."
+            integrityReport.findings.firstOrNull {
+                it.severity == ExternalOpenXrReportIntegrity.Severity.BLOCKING ||
+                    it.severity == ExternalOpenXrReportIntegrity.Severity.HIGH
+            }?.let { recommendations.add(0, it.recommendation) }
+        }
         if (firstFailure != null && recommendations.none { it.contains(firstFailure.key) }) {
             recommendations.add(0, "Inspect ${firstFailure.key}: ${firstFailure.explanation}")
         }
@@ -189,7 +225,9 @@ internal object ExternalOpenXrCompatibilityAssessment {
             highestVerifiedStage = highest,
             firstFailure = firstFailure,
             warnings = warnings.distinct(),
-            recommendations = recommendations.distinct()
+            recommendations = recommendations.distinct(),
+            integrityReport = integrityReport,
+            firstFailureDiagnosis = firstFailureDiagnosis
         )
     }
 
