@@ -636,8 +636,8 @@ internal object ExternalOpenXrCompatibilityAssessment {
         key.contains("egl") || key.contains("GraphicsRequirements") -> StageId.GRAPHICS_BINDING
         key.contains("CreateSession") -> StageId.SESSION_CREATION
         key.contains("Swapchain") -> StageId.SWAPCHAIN
-        key.contains("Frame") || key.contains("SwapchainImage") -> StageId.FRAME_LOOP
         key.contains("EndFrame") -> StageId.PROJECTION_SUBMISSION
+        key.contains("Frame") || key.contains("SwapchainImage") -> StageId.FRAME_LOOP
         else -> StageId.CLEANUP
     }
 
