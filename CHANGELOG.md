@@ -2,6 +2,9 @@
 
 ## 2026-11-28
 
+### NextVRera / Qualcomm LiteRT HTP probe
+- Add an always-visible, initially disabled **СКОПИРОВАТЬ ОТЧЁТ** action to the isolated QNN HTP probe; enable it after a test result and copy the complete report to the Android clipboard with confirmation.
+
 ### NextVRera / emulator smoke coverage
 - Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
 

@@ -1,12 +1,16 @@
 package com.noyclic.literthtpprobe
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -16,7 +20,9 @@ class ProbeActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var install: Button
     private lateinit var probe: Button
+    private lateinit var copyReport: Button
     @Volatile private var modelsReady = false
+    @Volatile private var latestReport = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +52,12 @@ class ProbeActivity : Activity() {
             setOnClickListener { runProbe() }
         }
         root.addView(probe)
+        copyReport = Button(this).apply {
+            text = "СКОПИРОВАТЬ ОТЧЁТ"
+            isEnabled = false
+            setOnClickListener { copyLatestReport() }
+        }
+        root.addView(copyReport)
         root.addView(Button(this).apply { text = "ЗАКРЫТЬ"; setOnClickListener { finish() } })
         val scroll = ScrollView(this)
         status = TextView(this).apply {
@@ -103,7 +115,9 @@ class ProbeActivity : Activity() {
             val pair = ModelStore.installed(this)
             if (pair == null) {
                 modelsReady = false
-                setStatus("ERROR: models are missing or failed SHA-256 verification.")
+                val report = "ERROR: models are missing or failed SHA-256 verification."
+                latestReport = report
+                setStatus(report)
                 busy.set(false)
                 setBusy(false)
                 return@execute
@@ -125,17 +139,35 @@ class ProbeActivity : Activity() {
                 append("\nУспешный warm-up не доказывает полное размещение операций на HTP.")
                 append("\nЭтот APK не активирует трекер EndXR.")
             }
+            latestReport = report
             setStatus(report)
             busy.set(false)
             setBusy(false)
         }
     }
 
+    private fun copyLatestReport() {
+        val report = latestReport
+        if (report.isBlank()) {
+            Toast.makeText(this, "Отчёт ещё не создан.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("NextVRera QNN HTP report", report))
+        Toast.makeText(this, "Полный отчёт скопирован.", Toast.LENGTH_SHORT).show()
+    }
+
     private fun setStatus(value: String) {
         runOnUiThread { if (!isFinishing) status.text = value }
     }
     private fun setBusy(value: Boolean) {
-        runOnUiThread { if (!isFinishing) { install.isEnabled = !value; probe.isEnabled = !value && modelsReady } }
+        runOnUiThread {
+            if (!isFinishing) {
+                install.isEnabled = !value
+                probe.isEnabled = !value && modelsReady
+                copyReport.isEnabled = !value && latestReport.isNotBlank()
+            }
+        }
     }
     override fun onDestroy() { worker.shutdownNow(); super.onDestroy() }
 }
