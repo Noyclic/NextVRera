@@ -105,11 +105,15 @@ if [[ -s ci-results/device-artifacts/endxr-openxr-latest.log ]]; then
 elif [[ -s ci-results/device-artifacts/endxr-openxr-latest.log.txt ]]; then
   cp ci-results/device-artifacts/endxr-openxr-latest.log.txt ci-results/diagnostics/endxr-openxr-latest.log
 fi
-for report in runtime-broker-probe.txt external-client-probe.txt openxr-loader-client-probe.txt; do
+for report in runtime-broker-probe.txt external-client-probe.txt openxr-loader-client-probe.txt external-openxr-compatibility.json; do
   if [[ -s "ci-results/device-artifacts/$report" ]]; then
     cp "ci-results/device-artifacts/$report" ci-results/diagnostics/
   fi
 done
+# MediaStore may append a MIME-derived extension on some Android builds.
+if [[ ! -s ci-results/diagnostics/external-openxr-compatibility.json && -s ci-results/device-artifacts/external-openxr-compatibility.json.txt ]]; then
+  cp ci-results/device-artifacts/external-openxr-compatibility.json.txt ci-results/diagnostics/external-openxr-compatibility.json
+fi
 
 # Keep an independent final emulator screenshot even if a UI test failed.
 adb exec-out screencap -p > ci-results/screenshots/emulator-final.png || true
@@ -142,6 +146,10 @@ if [[ "$test_exit" -eq 0 ]]; then
   }
   test -s ci-results/diagnostics/openxr-loader-client-probe.txt || {
     echo "Instrumentation tests passed but the official Khronos loader report is missing."
+    test_exit=1
+  }
+  test -s ci-results/diagnostics/external-openxr-compatibility.json || {
+    echo "Instrumentation tests passed but the structured external compatibility report is missing."
     test_exit=1
   }
   test -s ci-results/screenshots/mode-selection.png || {

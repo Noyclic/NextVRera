@@ -7,6 +7,7 @@ import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,6 +16,47 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class ExternalRuntimeClientDiscoveryTest {
+    @Test
+    fun compactAssessmentHistoryPersistsOnlyStageVerdictsAndIsBounded() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val store = ExternalOpenXrAssessmentHistory.Store(context)
+        store.clear()
+        try {
+            repeat(ExternalOpenXrAssessmentHistory.MAX_SNAPSHOTS + 3) { index ->
+                val snapshot = ExternalOpenXrAssessmentHistory.Snapshot(
+                    timestampMillis = index.toLong() + 1L,
+                    selectedRuntimePackage = "com.noyclic.questphonexr",
+                    highestVerifiedStage = "INSTANCE_CREATION",
+                    firstFailureKey = null,
+                    stageStatuses = mapOf(
+                        "SERVICE_DISCOVERY" to "VERIFIED",
+                        "INSTANCE_CREATION" to "VERIFIED"
+                    )
+                )
+                assertTrue(store.append(snapshot))
+            }
+            val saved = store.history()
+            assertEquals(ExternalOpenXrAssessmentHistory.MAX_SNAPSHOTS, saved.size)
+            assertEquals(4L, saved.first().timestampMillis)
+            assertEquals(11L, saved.last().timestampMillis)
+            assertEquals("VERIFIED", store.latest()?.stageStatuses?.get("INSTANCE_CREATION"))
+
+            val encoded = ExternalOpenXrAssessmentHistory.encode(saved)
+            assertTrue(encoded.contains("INSTANCE_CREATION"))
+            assertFalse(encoded.contains("/data/app/"))
+            assertFalse(encoded.contains("hand_pose_x"))
+            assertEquals(saved, ExternalOpenXrAssessmentHistory.decode(encoded))
+        } finally {
+            store.clear()
+        }
+    }
+
+    @Test
+    fun malformedHistoryIsIgnoredWithoutCrashingTheProbe() {
+        assertTrue(ExternalOpenXrAssessmentHistory.decode("{broken-json").isEmpty())
+        assertTrue(ExternalOpenXrAssessmentHistory.decode(null).isEmpty())
+    }
+
     @Test
     fun inputHealthClassifierDistinguishesLiveHandsFromStalePublisher() {
         assertEquals(
@@ -70,6 +112,8 @@ class ExternalRuntimeClientDiscoveryTest {
         try {
             val serviceReport = activity.serviceReportText
             val loaderReport = activity.loaderReportText
+            val assessmentJson = activity.assessmentJsonText
+            val combinedReport = activity.combinedReportText
 
             val externalReportFile = File(context.cacheDir, "external-client-probe.txt")
             externalReportFile.writeText(serviceReport)
@@ -79,7 +123,17 @@ class ExternalRuntimeClientDiscoveryTest {
             loaderReportFile.writeText(loaderReport)
             publishReport(context, loaderReportFile, "openxr-loader-client-probe.txt")
 
+            val assessmentFile = File(context.cacheDir, "external-openxr-compatibility.json")
+            assessmentFile.writeText(assessmentJson)
+            publishReport(context, assessmentFile, "external-openxr-compatibility.json", "application/json")
+
             assertEquals("com.noyclic.xrclientprobe", context.packageName)
+            assertTrue(
+                "The combined diagnostic must include the staged compatibility summary.",
+                combinedReport.contains("EXTERNAL OPENXR COMPATIBILITY ASSESSMENT")
+            )
+            assertEquals(1, org.json.JSONObject(assessmentJson).getInt("assessment_version"))
+            assertTrue(org.json.JSONObject(assessmentJson).has("stages"))
             assertTrue(
                 "External package could not discover EndXR's exported runtime service:\n$serviceReport",
                 serviceReport.contains("EndXR service visible: YES")
@@ -201,12 +255,13 @@ class ExternalRuntimeClientDiscoveryTest {
     private fun publishReport(
         context: android.content.Context,
         source: File,
-        displayName: String
+        displayName: String,
+        mimeType: String = "text/plain"
     ) {
         check(source.isFile && source.length() > 0L)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
                 Environment.DIRECTORY_DOWNLOADS + "/QuestPhoneXR-CI/"

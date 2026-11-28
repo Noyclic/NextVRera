@@ -2,7 +2,27 @@
 
 ## 2026-11-28
 
+### NextVRera / emulator smoke coverage
+- Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
+
 ### NextVRera / EndXR runtime readiness
+### NextVRera / external OpenXR compatibility
+- Added a conservative stage-by-stage assessment to the separate Khronos-loader client probe, covering service discovery, RuntimeBroker, loader, instance/system, stereo, GLES session, swapchain, frame/projection, hand tracking, input IPC and cleanup.
+- Distinguish VERIFIED, PARTIAL, FAILED, BLOCKED, NOT_RUN and UNKNOWN; skipped or missing evidence is never promoted to success.
+- Identify the first recorded failure in OpenXR call order and attach targeted next-step guidance.
+- Add a structured JSON assessment export and one-tap copy/share actions to the external probe screen.
+- Extend JVM regression tests for broker precedence, unavailable runtime, projection rejection, hand-tracking capability, input permission, missing evidence, JSON escaping and cleanup.
+- Extend emulator instrumentation to validate and publish the structured report alongside raw diagnostics.
+- Keep the last eight compact stage-only assessments in app-private storage and compare each run with the previous run to highlight verified-stage regressions and improvements; raw traces, camera data and native paths are not persisted.
+- Add regression coverage for history ordering, bounded retention, status transitions, malformed storage and privacy boundaries.
+- Correct the loader-validation documentation to describe swapchain-image FBO readback accurately; it is not compositor/display readback.
+- Add an offline OpenXR result-code catalogue with stage-aware next steps, retry guidance and safe handling for unknown or vendor-specific errors.
+- Generate a prioritized, read-only recovery plan: reconcile report contradictions first, then address the earliest failed prerequisite, then capture missing evidence. Lost sessions/instances are never retried with stale handles.
+- Add per-stage field-presence coverage for all 15 diagnostic stages, including missing keys and NOT_APPLICABLE handling for skipped stages; explicitly do not convert field completeness into a compatibility score or VERIFIED verdict.
+- Cross-check service and loader reports for contradictory instance/session/swapchain/frame/projection/hand-tracking/input evidence before export; retain original stage verdicts and surface integrity findings separately.
+- Extend the JSON report with integrity findings and contextual first-failure diagnosis; preserve only compact stage snapshots in local history.
+- Add JVM regression cases for result-code mapping, untrusted numeric values, duplicate log observations, prerequisite ordering, broker disagreement and cross-field contradictions.
+
 - Added a conservative READY / DEGRADED / BLOCKED assessment combining runtime service metadata, the Khronos-selected RuntimeBroker provider, and the current native GLES/OpenXR self-test.
 - Report the selected broker's provider/query failure distinctly instead of inferring provider visibility from a successful query string.
 - Added regression coverage for missing broker, failed query, wrong selected runtime, missing native library and failed native probe.

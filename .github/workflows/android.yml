@@ -79,6 +79,9 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
 
+      - name: Run external client probe JVM unit tests
+        run: gradle --no-daemon :runtime-client-probe:testDebugUnitTest
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
@@ -138,6 +141,8 @@ jobs:
             ci-results/**
             app/build/reports/tests/testDebugUnitTest/**
             app/build/test-results/testDebugUnitTest/**
+            runtime-client-probe/build/reports/tests/testDebugUnitTest/**
+            runtime-client-probe/build/test-results/testDebugUnitTest/**
             runtime-client-probe/build/reports/androidTests/connected/**
             runtime-client-probe/build/outputs/androidTest-results/connected/**
           if-no-files-found: warn

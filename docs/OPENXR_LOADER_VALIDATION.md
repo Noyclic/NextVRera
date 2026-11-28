@@ -41,9 +41,11 @@ The probe records these stages:
 9. It renders a red left-eye region and blue right-eye region into a released
    swapchain image, waits/begins a frame, locates the two stereo views, and
    submits one `XrCompositionLayerProjection` with separate side-by-side image
-   rectangles. After `xrEndFrame`, it reads one pixel from each half of the
-   probe's EGL pbuffer to check that the compositor copied the expected colors.
-   The probe enumerates environment blend modes and prefers `OPAQUE` when
+   rectangles. Before releasing the swapchain image, it attaches an FBO to that
+   image and reads one pixel from each eye region to verify the red/blue test
+   pattern. This validates the application's swapchain image contents; it does
+   not observe a physical display or prove that a compositor presented pixels
+   to a viewer. The probe enumerates environment blend modes and prefers `OPAQUE` when
    supported; otherwise it uses the first mode advertised by the runtime.
 10. It tears down the reference space, swapchain, session, EGL context and instance.
    If the HMD system or primary stereo view is unavailable, the GLES session
@@ -55,6 +57,52 @@ The native loader is supplied by the Khronos
 a local imitation of the loader or RuntimeBroker.
 
 ## Reading the result
+
+## Stage-by-stage compatibility assessment
+
+The separate client probe now appends an **External OpenXR Compatibility
+Assessment** before the raw service and loader reports. It classifies each
+stage independently as `VERIFIED`, `PARTIAL`, `FAILED`, `BLOCKED`,
+`NOT_RUN`, or `UNKNOWN`.
+
+The assessment covers Android service/library discovery, RuntimeBroker
+selection, official loader initialization, extension enumeration, instance
+creation, HMD system discovery, primary stereo configuration, GLES binding,
+session creation, swapchain creation, frame lifecycle, projection submission,
+hand tracking, input IPC, and resource cleanup.
+
+Important interpretation rules:
+
+- A visible runtime service is not an active RuntimeBroker selection.
+- A successful loader initialization is not a successful runtime instance.
+- A created session is not proof of swapchain or projection compatibility.
+- Projection submission and swapchain-image pixel verification are separate
+  observations.
+- An advertised hand-tracking extension is not proof of active hands. The
+  report retains per-hand tracker and locate evidence and does not claim
+  metric 6DoF tracking from camera-estimated joints.
+- Missing fields remain `UNKNOWN`; prerequisites that were never reached are
+  `NOT_RUN` or `BLOCKED`. The analyzer does not fill skipped stages with
+  assumed success.
+- The report identifies the first recorded OpenXR/native failure in call
+  order and includes stage-specific next steps.
+
+The probe screen provides **COPY REPORT** for the complete text output and
+**SHARE JSON** for the structured assessment. It also compares the current run
+with the previous run on that device. Only compact stage verdicts, the selected
+runtime package, timestamps and the first failure key are retained in app-private
+storage (eight snapshots maximum); raw traces, camera samples and native library
+paths are not stored in this history. A transition from VERIFIED to any other
+status is shown as a regression, and a transition to VERIFIED is shown as an
+improvement. Other non-verified status changes are reported without assigning a
+false quality ranking. The instrumentation test writes
+the JSON report to the CI Downloads folder alongside the raw service and
+loader reports. This makes it possible to compare reports from different
+Android devices without scraping the UI.
+
+The assessment is diagnostic guidance, not an OpenXR conformance score and
+not a compatibility guarantee for arbitrary Quest APKs.
+
 
 - `xrInitializeLoaderKHR call=XR_SUCCESS` means the official Android loader
   initialized in the separate client package.
@@ -82,12 +130,12 @@ a local imitation of the loader or RuntimeBroker.
 - `external_projection_layer_submission=PASS` means the separate client
   submitted a two-view projection layer and the runtime returned success from
   `xrEndFrame`.
-- `external_projection_layer_readback=PASS` additionally means the probe read
-  the expected red left-eye pixel and blue right-eye pixel from its EGL pbuffer
-  after the runtime compositor copied the projection layer.
-- This is a real projection-layer submission from another APK, but the probe
-  uses an EGL pbuffer rather than a headset/window surface. It does not prove
-  that pixels reach a physical viewer or that a game is compatible.
+- `external_projection_swapchain_image_verification=PASS` means the probe
+  attached an FBO to the acquired swapchain image and read the expected red
+  left-eye and blue right-eye pixels before releasing that image.
+- Swapchain-image readback validates application rendering into the OpenXR
+  image. It is not compositor readback and does not prove that pixels reach a
+  physical viewer or that a game is compatible.
 
 If instance creation returns `XR_ERROR_RUNTIME_UNAVAILABLE`, inspect the
 RuntimeBroker report. Service visibility alone does not select an active
@@ -190,3 +238,57 @@ report. After selection, the key checkpoints are `xrCreateInstance`,
 `external_xrEndFrame`. The report must be interpreted alongside the broker state. A phone
 that has no installable or system RuntimeBroker cannot prove runtime selection
 just because Android can see EndXR's exported service.
+
+
+## Report integrity and result-code diagnosis
+
+The separate client probe cross-checks its service and loader evidence before it
+exports the compatibility assessment. The integrity pass reports contradictions
+without rewriting stage verdicts. Examples include an instance-create error
+paired with `runtime_instance_created=YES`, a successful session after an
+explicit instance failure, frame calls that contradict their prerequisites,
+projection readback marked PASS while `xrEndFrame` failed, and hand-joint
+location succeeding after tracker creation failed.
+
+Integrity findings are classified as BLOCKING, HIGH, WARNING or INFO. A
+different active package reported by the installable and system RuntimeBroker
+providers is a warning rather than an automatic failure: the loader's selected
+provider precedence still determines which runtime is actually used. Missing
+evidence remains missing; it is not guessed or promoted to success.
+
+The result-code catalogue uses the symbolic `XR_ERROR_*` token as its lookup
+key. It preserves any numeric value exactly as logged and does not infer a
+symbolic result from a number alone. Unknown vendor or future codes remain
+unclassified with generic next steps rather than receiving a guessed meaning.
+Contextual hints distinguish RuntimeBroker, graphics, swapchain, frame,
+hand-tracking and input failures.
+
+The JSON export includes `integrity_report` and
+`first_failure_diagnosis`. The integrity report is derived from the current
+probe's service and loader text; the history store continues to keep only
+compact stage verdicts. Raw reports, camera frames, hand samples and native
+library paths are not added to persistent history. The integrity check is a
+diagnostic aid, not a cryptographic attestation or OpenXR conformance test.
+
+
+The assessment also generates a read-only recovery plan. Its priority is
+deliberate: report contradictions first, then the earliest known OpenXR
+failure, then blocked or incomplete prerequisites. It does not execute calls,
+change RuntimeBroker selection, grant permissions, or launch a game. The JSON
+field `recovery_plan` includes the plan state, ordered actions, expected
+evidence and retry policy. A lost session or instance is never retried with
+stale handles; an empty report is classified as incomplete evidence, not as a
+successful probe.
+
+
+The report also lists field-presence coverage for every one of the 15 stages.
+Each row is `COMPLETE`, `PARTIAL`, `ABSENT` or `NOT_APPLICABLE`, with the
+observed and missing diagnostic keys. An alternative key is accepted where
+the probe has more than one legitimate way to record the same operation.
+A stage marked `NOT_RUN` because its prerequisite was not reached is not
+counted as absent evidence.
+
+This is not a compatibility percentage. Complete field presence does not
+promote an `UNKNOWN` stage to `VERIFIED`, and absent fields are never filled
+from assumptions. The JSON field `evidence_coverage` is intended to make
+incomplete or incorrectly instrumented probe reports easier to recognize.
