@@ -88,8 +88,10 @@ class MainActivity : ComponentActivity() {
 
             remote = ILogcatService.Stub.asInterface(binder)
             bound = remote != null
-            val result = runCatching { remote?.startCapture() }.getOrElse {
-                "ERROR ${it.javaClass.simpleName}: ${it.message}"
+            val result: String? = try {
+                remote?.startCapture()
+            } catch (error: Throwable) {
+                "ERROR ${error.javaClass.simpleName}: ${error.message}"
             }
 
             if (result?.startsWith("CAPTURING") == true) {
@@ -184,7 +186,7 @@ class MainActivity : ComponentActivity() {
 
         filter = EditText(this).apply {
             hint = "Display filter (optional): QNN, DSP, package…"
-            singleLine = true
+            setSingleLine(true)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) =
