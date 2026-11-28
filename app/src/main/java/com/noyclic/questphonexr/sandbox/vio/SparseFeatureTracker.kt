@@ -155,7 +155,7 @@ class SparseFeatureTracker(private val config: FeatureTrackerConfig = FeatureTra
             }
             y += 2
         }
-        byCell.forEach(candidates::addAll)
+        byCell.forEach { bucket -> candidates.addAll(bucket) }
         candidates.sortByDescending { it.response }
         val selected = ArrayList<SparseFeature>(config.maximumFeatures)
         for (candidate in candidates) {
