@@ -33,6 +33,19 @@ class VioFusionEngineTest {
         assertTrue(engine.pose(1_020_000_000L).orientation.angularDistance(Quaternion.IDENTITY) > 0.0)
     }
 
+    @Test fun imuDiagnosticsCountOnlyTimestampMatchedSamplesOnce() {
+        val engine = VioFusionEngine()
+        val gravity = Vec3(0.0, 9.80665, 0.0)
+        assertFalse(engine.onAccelerometer(1_000_000_000L, gravity))
+        assertTrue(engine.onGyroscope(1_005_000_000L, Vec3.ZERO))
+        assertTrue(engine.onAccelerometer(1_010_000_000L, gravity))
+        assertEquals(1, engine.diagnostics().imuSamples)
+
+        assertTrue(engine.onGyroscope(1_015_000_000L, Vec3.ZERO))
+        assertTrue(engine.onAccelerometer(1_020_000_000L, gravity))
+        assertEquals(2, engine.diagnostics().imuSamples)
+    }
+
     @Test fun visualMotionNeverGetsMetricScaleByDefault() {
         val engine = VioFusionEngine()
         engine.onVisualFrame(texture(1_000_000_000L, 0))
