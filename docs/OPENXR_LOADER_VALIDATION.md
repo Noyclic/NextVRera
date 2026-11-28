@@ -88,7 +88,14 @@ Important interpretation rules:
   order and includes stage-specific next steps.
 
 The probe screen provides **COPY REPORT** for the complete text output and
-**SHARE JSON** for the structured assessment. The instrumentation test writes
+**SHARE JSON** for the structured assessment. It also compares the current run
+with the previous run on that device. Only compact stage verdicts, the selected
+runtime package, timestamps and the first failure key are retained in app-private
+storage (eight snapshots maximum); raw traces, camera samples and native library
+paths are not stored in this history. A transition from VERIFIED to any other
+status is shown as a regression, and a transition to VERIFIED is shown as an
+improvement. Other non-verified status changes are reported without assigning a
+false quality ranking. The instrumentation test writes
 the JSON report to the CI Downloads folder alongside the raw service and
 loader reports. This makes it possible to compare reports from different
 Android devices without scraping the UI.
