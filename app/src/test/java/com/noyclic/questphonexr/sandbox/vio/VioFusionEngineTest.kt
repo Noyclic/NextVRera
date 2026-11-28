@@ -46,6 +46,31 @@ class VioFusionEngineTest {
         assertEquals(2, engine.diagnostics().imuSamples)
     }
 
+    @Test fun visualPoseDoesNotClaimInertialFusionWhenCameraClockIsUnknown() {
+        val engine = VioFusionEngine()
+        val gravity = Vec3(0.0, 9.80665, 0.0)
+        engine.onAccelerometer(1_000_000_000L, gravity)
+        engine.onGyroscope(1_000_000_000L, Vec3.ZERO)
+        engine.onAccelerometer(1_010_000_000L, gravity)
+        engine.onGyroscope(1_010_000_000L, Vec3.ZERO)
+        assertEquals(2, engine.diagnostics().imuSamples)
+
+        engine.onVisualFrame(texture(1_033_000_000L, 0))
+        engine.onVisualFrame(texture(1_066_000_000L, 2))
+        val pose = engine.pose(1_070_000_000L)
+        assertTrue(pose.diagnostic.contains("clock domains not verified comparable"))
+        assertFalse(engine.diagnostics().cameraImuClockComparable)
+    }
+
+    @Test fun realtimeCameraClockMustBeExplicitlyEnabled() {
+        val engine = VioFusionEngine()
+        assertFalse(engine.diagnostics().cameraImuClockComparable)
+        engine.setCameraTimestampComparable(true)
+        assertTrue(engine.diagnostics().cameraImuClockComparable)
+        engine.setCameraTimestampComparable(false)
+        assertFalse(engine.diagnostics().cameraImuClockComparable)
+    }
+
     @Test fun visualMotionNeverGetsMetricScaleByDefault() {
         val engine = VioFusionEngine()
         engine.onVisualFrame(texture(1_000_000_000L, 0))
