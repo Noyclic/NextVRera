@@ -109,6 +109,12 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 captureActive = false
+                runCatching { remote?.stopCapture() }
+                if (bound) {
+                    runCatching { Shizuku.unbindUserService(serviceArgs, serviceConnection, true) }
+                }
+                remote = null
+                bound = false
                 setStatus(result ?: "Could not start logcat")
             }
             updateButtons()
