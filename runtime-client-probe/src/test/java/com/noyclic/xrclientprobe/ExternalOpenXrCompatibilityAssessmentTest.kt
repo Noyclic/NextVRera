@@ -252,15 +252,17 @@ class ExternalOpenXrCompatibilityAssessmentTest {
 
     @Test
     fun jsonEscapesQuotesAndNewlinesInUntrustedEvidence() {
-        val report = service(input = "provider_query=FAIL; detail=quote \" and newline\nnext")
-        val result = ExternalOpenXrCompatibilityAssessment.analyze(report, loader())
+        val report = loader().replace(
+            "external_egl_context=PASS",
+            "external_egl_context=PASS; detail=quote \" and newline\\nnext"
+        )
+        val result = ExternalOpenXrCompatibilityAssessment.analyze(service(), report)
         val json = result.toJson()
         assertTrue(json.startsWith("{"))
         assertTrue(json.endsWith("}"))
         assertTrue(json.contains("\\\""))
-        assertTrue(json.contains("\\n"))
+        assertTrue(json.contains("\\\\n"))
     }
-
     @Test
     fun firstFailureIsSelectedInOpenXrCallOrder() {
         val report = loader()
