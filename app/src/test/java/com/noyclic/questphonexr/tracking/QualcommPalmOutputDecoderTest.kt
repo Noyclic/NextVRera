@@ -26,10 +26,12 @@ class QualcommPalmOutputDecoderTest {
 
         // Letterbox is 256x192 at y=32 for a 640x480 source frame.
         // The model-space box (108,98)-(148,158) maps to (270,165)-(370,315).
-        assertEquals(0.55524f, hand.centerX, 0.0002f)
-        assertEquals(0.42634f, hand.centerY, 0.0002f)
-        assertEquals(0.390625f, hand.width, 0.0001f)
-        assertEquals(0.78125f, hand.height, 0.0001f)
+        // Pinned detection2roi uses its box center, dy=-0.5 and dscale=2.6:
+        // center=(320,190), square ROI side=100*2.6=260 source pixels.
+        assertEquals(0.5f, hand.centerX, 0.0001f)
+        assertEquals(190f / 480f, hand.centerY, 0.0001f)
+        assertEquals(260f / 640f, hand.width, 0.0001f)
+        assertEquals(260f / 480f, hand.height, 0.0001f)
         assertEquals((PI / 4.0).toFloat(), hand.rotationRadians, 0.0002f)
         assertEquals(1f / (1f + kotlin.math.exp(-3f)), hand.confidence, 0.0001f)
     }
@@ -78,7 +80,7 @@ class QualcommPalmOutputDecoderTest {
                 coordinates = LiteRtFloatTensor(intArrayOf(1, 3, 18), coordinates),
                 scores = LiteRtFloatTensor(intArrayOf(1, 3), floatArrayOf(4f, 3.5f, 3f))
             ),
-            anchors = listOf(anchor(0.5f), anchor(0.5f), anchor(0.8f)),
+            anchors = listOf(anchor(0.5f), anchor(0.52f), anchor(0.8f)),
             inputTransform = transform(),
             maxHands = 2
         )
@@ -87,6 +89,10 @@ class QualcommPalmOutputDecoderTest {
         assertEquals(3, success.candidatesAfterThreshold)
         assertEquals(2, success.candidatesAfterNms)
         assertEquals(2, success.regions.size)
+        // The top two candidates overlap. The pinned weighted NMS blends their
+        // boxes/keypoints rather than keeping the highest-scoring box unchanged.
+        assertEquals(0.50994f, success.regions[0].centerX, 0.0002f)
+        assertEquals(0.97635f, success.regions[0].confidence, 0.0002f)
         assertTrue(success.regions[1].centerX > success.regions[0].centerX + 0.2f)
     }
 
@@ -178,7 +184,7 @@ class QualcommPalmOutputDecoderTest {
         val result = decode(
             anchors = listOf(anchor()),
             coordinates = FloatArray(18),
-            scores = floatArrayOf(2f)
+            scores = floatArrayOf(0f)
         )
 
         val success = assertSuccess(result)
