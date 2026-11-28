@@ -8,7 +8,10 @@ class VioGeometryTest {
     @Test fun vectorArithmeticAndNormalizationAreStable() {
         val a = Vec3(3.0, 0.0, 4.0)
         assertEquals(5.0, a.length(), 1e-9)
-        assertEquals(Vec3(0.6, 0.0, 0.8), a.normalized())
+        val normalized = a.normalized()
+        assertEquals(0.6, normalized.x, 1e-9)
+        assertEquals(0.0, normalized.y, 1e-9)
+        assertEquals(0.8, normalized.z, 1e-9)
         assertEquals(Vec3.ZERO, Vec3.ZERO.normalized())
         assertEquals(Vec3(0.0, 0.0, 1.0), Vec3.UNIT_X.cross(Vec3.UNIT_Y))
     }
