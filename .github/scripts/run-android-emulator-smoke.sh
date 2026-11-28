@@ -105,7 +105,7 @@ if [[ -s ci-results/device-artifacts/endxr-openxr-latest.log ]]; then
 elif [[ -s ci-results/device-artifacts/endxr-openxr-latest.log.txt ]]; then
   cp ci-results/device-artifacts/endxr-openxr-latest.log.txt ci-results/diagnostics/endxr-openxr-latest.log
 fi
-for report in runtime-broker-probe.txt external-client-probe.txt openxr-loader-client-probe.txt; do
+for report in runtime-broker-probe.txt external-client-probe.txt openxr-loader-client-probe.txt external-openxr-compatibility.json; do
   if [[ -s "ci-results/device-artifacts/$report" ]]; then
     cp "ci-results/device-artifacts/$report" ci-results/diagnostics/
   fi
