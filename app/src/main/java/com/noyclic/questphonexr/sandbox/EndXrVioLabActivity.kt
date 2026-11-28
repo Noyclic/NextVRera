@@ -53,6 +53,9 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private var featureCount = 0
     private var accelerationMagnitude = 0f
     private var mode = Mode.BALANCED
+    // Rear camera remains the default; switching is always an explicit user action.
+    private var cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    private var cameraFacingLabel = "задняя"
     private var cameraMessage = "Камера выключена"
 
     private data class Metrics(
@@ -112,6 +115,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
         content.addView(button("Economy · 320×240") { setMode(Mode.ECONOMY) })
         content.addView(button("Balanced · 480×360") { setMode(Mode.BALANCED) })
         content.addView(button("Precision · 640×480") { setMode(Mode.PRECISION) })
+        content.addView(button("Камера: задняя / передняя") { toggleCameraFacing() })
         content.addView(button("Запустить / остановить камеру") {
             if (running.get()) stopCamera() else requestCamera()
         })
@@ -136,6 +140,23 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
         refresh()
     }
 
+    private fun toggleCameraFacing() {
+        cameraSelector = if (cameraFacingLabel == "задняя") {
+            cameraFacingLabel = "передняя"
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            cameraFacingLabel = "задняя"
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+        cameraMessage = "Выбрана " + cameraFacingLabel + " камера · запуск только вручную"
+        if (running.get()) {
+            stopCamera()
+            startCamera()
+        } else {
+            refresh()
+        }
+    }
+
     private fun requestCamera() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
@@ -144,10 +165,9 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
 
     private fun startCamera() {
         if (!running.compareAndSet(false, true)) return
-        cameraMessage = "Подключение задней камеры…"
+        cameraMessage = "Подключение " + cameraFacingLabel + " камеры…"
         refresh()
-        val future = ProcessCameraProvider.getInstance(this)
-        future.addListener({
+        val future = ProcessCameraProvider.getInstance(this)        future.addListener({
             if (isFinishing || !running.get()) return@addListener
             runCatching {
                 val provider = future.get()
@@ -160,9 +180,9 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
                 analysis.setAnalyzer(worker) { image ->
                     try { analyzeFeatures(image) } finally { image.close() }
                 }
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis)
+                provider.bindToLifecycle(this, cameraSelector, analysis)
                 activeAnalysis = analysis
-                cameraMessage = "Задняя камера активна · " + mode.width + "×" + mode.height
+                cameraMessage = cameraFacingLabel.replaceFirstChar { it.uppercase() } + " камера активна · " + mode.width + "×" + mode.height
             }.onFailure { error ->
                 running.set(false)
                 cameraMessage = "Ошибка камеры: " + error.javaClass.simpleName + ": " + error.message
