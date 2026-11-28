@@ -35,8 +35,15 @@ class ExternalOpenXrCompatibilityAssessmentTest {
     ): String = buildString {
         appendLine("Khronos OpenXR Android Loader probe")
         appendLine("xrInitializeLoaderKHR call=XR_SUCCESS")
-        appendLine("xrEnumerateInstanceExtensionProperties(list)=XR_SUCCESS")
-        appendLine("runtime_advertises_XR_EXT_hand_tracking=$handTracking")
+        val runtimeUnavailable = instance.startsWith("XR_ERROR_RUNTIME_UNAVAILABLE")
+        appendLine(
+            "xrEnumerateInstanceExtensionProperties(count)=" +
+                if (runtimeUnavailable) "XR_ERROR_RUNTIME_UNAVAILABLE (-51)" else "XR_SUCCESS"
+        )
+        if (!runtimeUnavailable) {
+            appendLine("xrEnumerateInstanceExtensionProperties(list)=XR_SUCCESS")
+            appendLine("runtime_advertises_XR_EXT_hand_tracking=$handTracking")
+        }
         appendLine("xrCreateInstance=$instance")
         appendLine("runtime_instance_created=$created")
         if (created == "YES") {
@@ -60,7 +67,7 @@ class ExternalOpenXrCompatibilityAssessmentTest {
             appendLine("external_xrCreateHandTrackerEXT_left=XR_SUCCESS")
             appendLine("external_xrCreateHandTrackerEXT_right=XR_SUCCESS")
         }
-        appendLine("xrDestroyInstance=XR_SUCCESS")
+        if (created == "YES") appendLine("xrDestroyInstance=XR_SUCCESS")
     }
 
     @Test
