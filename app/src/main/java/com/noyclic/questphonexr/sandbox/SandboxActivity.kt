@@ -87,6 +87,7 @@ import com.noyclic.questphonexr.runtime.EndXrTrackingInputBridge
 import com.noyclic.questphonexr.tracking.TrackingProviderId
 import com.noyclic.questphonexr.tracking.TrackingSelectionMode
 import com.noyclic.questphonexr.runtime.EndXrRuntimeState
+import com.noyclic.questphonexr.runtime.EndXrExternalRuntimeReadiness
 import com.noyclic.questphonexr.tracking.TrackingHealthDiagnostics
 
 /** Phone-first 3D sandbox for testing stereo viewing, Joy-Con input and object grabbing. */
@@ -653,7 +654,13 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
     private fun showRuntimeBrokerDiagnostic() {
         Toast.makeText(this, "Проверяем OpenXR RuntimeBroker…", Toast.LENGTH_SHORT).show()
         Thread({
-            val report = AndroidRuntimeBrokerProbe.inspect(this).toDisplayText()
+            val brokerReport = AndroidRuntimeBrokerProbe.inspect(this)
+            val readiness = EndXrExternalRuntimeReadiness.fromBrokerProbe(
+                report = brokerReport,
+                nativeProbeLabel = endXrOpenXrTestLabel,
+                ownPackageName = packageName
+            )
+            val report = brokerReport.toDisplayText() + "\\n\\n" + readiness.toDisplayText()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
