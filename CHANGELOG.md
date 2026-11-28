@@ -1,6 +1,15 @@
 # Changelog
 
-## 2026-11-28\n\n### EndXR lightweight VIO sandbox lab (prototype)\n- Add a dedicated Sandbox screen to inspect rotation-vector and accelerometer event rates alongside rear-camera frame rate and image-gradient feature density.\n- Add Economy (320×240), Balanced (480×360), and Precision (640×480) camera sampling presets for thermal/performance comparison.\n- Keep the camera opt-in and rear-facing by default; the lab does not silently enable the front camera.\n- Explicitly label feature-centroid movement as a diagnostic 2D proxy, not optical flow, metric translation, or a completed 6DoF tracker.\n- This is instrumentation groundwork only; sparse feature matching, IMU preintegration, calibration, and validated 6DoF pose output remain future work.\n\n
+## 2026-11-28
+
+### EndXR lightweight VIO sandbox lab (prototype)
+- Add a dedicated Sandbox screen to inspect rotation-vector and accelerometer event rates alongside rear-camera frame rate and image-gradient feature density.
+- Add Economy (320×240), Balanced (480×360), and Precision (640×480) camera sampling presets for thermal/performance comparison.
+- Keep the camera opt-in and rear-facing by default; the lab does not silently enable the front camera.
+- Explicitly label feature-centroid movement as a diagnostic 2D proxy, not optical flow, metric translation, or a completed 6DoF tracker.
+- This is instrumentation groundwork only; sparse feature matching, IMU preintegration, calibration, and validated 6DoF pose output remain future work.
+
+
 
 ### NextVRera / emulator smoke coverage
 - Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
