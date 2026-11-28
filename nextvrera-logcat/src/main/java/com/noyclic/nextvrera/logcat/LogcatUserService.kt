@@ -19,7 +19,7 @@ class LogcatUserService : ILogcatService.Stub() {
         stopCapture()
         lines.clear()
         return try {
-            val child = ProcessBuilder("logcat", "-v", "threadtime", "-T", "1")
+            val child = ProcessBuilder("logcat", "-b", "all", "-v", "threadtime", "-T", "1")
                 .redirectErrorStream(true)
                 .start()
             process = child
