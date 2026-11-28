@@ -9,6 +9,7 @@
 - Add quaternion/vector primitives and bounded midpoint IMU preintegration with timestamp-gap rejection and stationary gyro-bias estimation.
 - Pair gyro measurements with linearly interpolated accelerometer values at each gyro timestamp; reject missing, stale, non-monotonic, and over-wide brackets instead of reusing the latest sensor values.
 - Query the active Camera2 timestamp source through CameraX interop. Only allow camera-to-IMU orientation interpolation when the camera reports the REALTIME clock; UNKNOWN or unavailable sources keep visual and inertial diagnostics separate.
+- Upgrade the aligned CameraX artifacts to stable 1.6.2 so the VIO lab can inspect the active camera's Camera2 timestamp-source metadata without relying on an unavailable older interop API.
 - Keep a bounded timestamped orientation history and interpolate orientation at camera exposure timestamps before optional rotational image-flow compensation.
 - Count only successfully accepted, timestamp-paired IMU samples in diagnostics; never report visual-inertial fusion when camera/IMU clock comparability is unverified.
 - Fuse rotation-vector orientation, gyroscope updates, accelerometer samples and sparse visual flow into a conservative relative pose report.
