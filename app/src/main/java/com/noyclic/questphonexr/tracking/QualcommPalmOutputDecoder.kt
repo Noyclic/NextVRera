@@ -143,7 +143,7 @@ sealed class QualcommPalmDecodeResult {
  * - box and seven keypoint values are decoded against the model's [N,2,2] anchors;
  * - confidence is clipped to [-100,100] then passed through sigmoid;
  * - box coordinates are center/size and converted to corners;
- * - class-agnostic weighted NMS blends overlapping boxes and keypoints;
+ * - class-agnostic NMS is applied to the palm boxes using the Qualcomm AI Hub app contract;
  * - keypoints 0 (wrist) and 2 (middle-finger finder) orient and shift the hand ROI.
  *
  * The caller supplies anchors from the matching `anchors_palm.npy`. A valid N is checked
@@ -164,9 +164,9 @@ object QualcommPalmOutputDecoder {
     const val DEFAULT_MAX_HANDS = 2
     const val SCORE_CLIP_LIMIT = 100f
 
-    // Pinned BlazePalm detection2roi(method="box") contract.
-    private const val ROI_VERTICAL_SHIFT = -0.5f
-    private const val ROI_SCALE = 2.6f
+    // Pinned Qualcomm AI Hub MediaPipe-Hand app.py configuration.
+    private const val ROI_DIRECTIONAL_OFFSET = 0.5f
+    private const val ROI_SCALE = 2.5f
     private const val MIN_VECTOR_LENGTH_PX = 0.0001f
 
     private data class Candidate(
@@ -321,17 +321,19 @@ object QualcommPalmOutputDecoder {
             boxWidth <= 0f || boxHeight <= 0f
         ) return null
 
-        val centerX = (left + right) * 0.5f
-        // BlazePalm's "box" ROI uses the detector box center and width (square ROI),
-        // then applies dy=-0.5 of that width. It does not shift along the wrist vector.
-        val centerY = (top + bottom) * 0.5f + ROI_VERTICAL_SHIFT * boxWidth
+        var centerX = (left + right) * 0.5f
+        var centerY = (top + bottom) * 0.5f
+        // Qualcomm AI Hub's MediaPipeHandApp applies a directional offset along the
+        // wrist-to-middle-finder vector, scaled by the detector box width.
+        val directionalOffset = ROI_DIRECTIONAL_OFFSET * boxWidth
+        centerX += directionalOffset * vectorX / vectorLength
+        centerY += directionalOffset * vectorY / vectorLength + ROI_VERTICAL_SHIFT * boxWidth
 
         // Qualcomm's reference computes atan2(startY-endY, startX-endX) - PI/2.
         val rotation = atan2(wrist.second - middleFinder.second, wrist.first - middleFinder.first) -
             (PI.toFloat() * 0.5f)
-        val roiSide = boxWidth * ROI_SCALE
-        val regionWidth = roiSide / sourceWidthPx
-        val regionHeight = roiSide / sourceHeightPx
+        val regionWidth = boxWidth * ROI_SCALE / sourceWidthPx
+        val regionHeight = boxHeight * ROI_SCALE / sourceHeightPx
         if (!centerX.isFinite() || !centerY.isFinite() ||
             !rotation.isFinite() || !regionWidth.isFinite() || !regionHeight.isFinite() ||
             regionWidth <= 0f || regionHeight <= 0f
@@ -358,46 +360,15 @@ object QualcommPalmOutputDecoder {
         val selected = ArrayList<Candidate>(maxHands)
         while (remaining.isNotEmpty() && selected.size < maxHands) {
             val best = remaining.removeAt(0)
-            val overlapping = ArrayList<Candidate>()
-            overlapping += best
+            selected += best
             val iterator = remaining.iterator()
             while (iterator.hasNext()) {
-                val candidate = iterator.next()
-                if (intersectionOverUnion(best, candidate) > iouThreshold) {
-                    overlapping += candidate
+                if (intersectionOverUnion(best, iterator.next()) > iouThreshold) {
                     iterator.remove()
                 }
             }
-            selected += if (overlapping.size == 1) best else weightedBlend(overlapping)
         }
         return selected
-    }
-
-    /**
-     * BlazePalm uses weighted suppression: overlapping regressions are blended by confidence,
-     * and the resulting confidence is the arithmetic mean of the grouped scores. Averaging
-     * keypoints as well as box corners is essential because those points define the hand ROI.
-     */
-    private fun weightedBlend(group: List<Candidate>): Candidate {
-        val totalScore = group.sumOf { it.score.toDouble() }.toFloat()
-        if (!totalScore.isFinite() || totalScore <= 0f) return group.first()
-        fun weighted(value: (Candidate) -> Float): Float =
-            group.sumOf { (value(it) * it.score).toDouble() }.toFloat() / totalScore
-
-        val keypointCount = group.first().keypoints.size
-        val blendedKeypoints = List(keypointCount) { index ->
-            weighted { it.keypoints[index].first } to
-                weighted { it.keypoints[index].second }
-        }
-        return Candidate(
-            anchorIndex = group.first().anchorIndex,
-            score = totalScore / group.size,
-            left = weighted { it.left },
-            top = weighted { it.top },
-            right = weighted { it.right },
-            bottom = weighted { it.bottom },
-            keypoints = blendedKeypoints
-        )
     }
 
     private fun intersectionOverUnion(a: Candidate, b: Candidate): Float {
