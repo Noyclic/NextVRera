@@ -112,8 +112,13 @@ internal object ExternalOpenXrReportIntegrity {
             .filter { it.isNotEmpty() }.toList()
         val values = linkedMapOf<String, MutableList<String>>()
         lines.forEach { line ->
-            val separator = line.indexOf('=')
-            if (separator <= 0) return@forEach
+            val equals = line.indexOf('=')
+            val colon = line.indexOf(':')
+            val separator = when {
+                equals > 0 && (colon < 0 || equals < colon) -> equals
+                colon > 0 -> colon
+                else -> return@forEach
+            }
             val key = line.substring(0, separator).trim()
             if (!KEY_PATTERN.matches(key)) return@forEach
             values.getOrPut(key) { mutableListOf() }.add(line.substring(separator + 1).trim())
