@@ -41,7 +41,7 @@ class ProbeActivity : Activity() {
         install = Button(this).apply { text = "СКАЧАТЬ МОДЕЛИ · ~15 МБ"; setOnClickListener { downloadModels() } }
         root.addView(install)
         probe = Button(this).apply {
-            text = "ЗАПУСТИТЬ СТРОГИЙ QNN HTP ТЕСТ"
+            text = "ЗАПУСТИТЬ QNN HTP DELEGATE PROBE"
             isEnabled = false
             setOnClickListener { runProbe() }
         }
