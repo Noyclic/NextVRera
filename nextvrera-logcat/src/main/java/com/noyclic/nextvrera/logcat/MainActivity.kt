@@ -1,5 +1,8 @@
 package com.noyclic.nextvrera.logcat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.ComponentName
 import android.content.ServiceConnection
 import android.net.Uri
@@ -145,10 +148,16 @@ class MainActivity : ComponentActivity() {
         actions.addView(stopButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(actions, matchWidth())
 
-        root.addView(Button(this).apply {
+        val outputActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        outputActions.addView(Button(this).apply {
+            text = "Copy log"
+            setOnClickListener { copyLogToClipboard() }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        outputActions.addView(Button(this).apply {
             text = "Export TXT"
             setOnClickListener { exportDocument.launch("nextvrera-logcat.txt") }
-        }, matchWidth())
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(outputActions, matchWidth())
 
         output = TextView(this).apply {
             text = "No capture yet.\n\n1. Start Shizuku using Wireless debugging.\n2. Tap Connect and approve the permission dialog.\n3. Start capture, reproduce the issue, then export TXT."
@@ -261,6 +270,21 @@ class MainActivity : ComponentActivity() {
 
     private fun setStatus(message: String) {
         if (::status.isInitialized) status.text = message
+    }
+
+    private fun copyLogToClipboard() {
+        val content = runCatching { if (logFile.exists()) logFile.readText() else "" }
+            .getOrElse {
+                setStatus("Could not read log: " + it.message)
+                return
+            }
+        if (content.isBlank()) {
+            setStatus("Nothing to copy yet — start capture first")
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("NextVRera Logcat", content))
+        setStatus("Copied ${content.length} characters to clipboard")
     }
 
     private fun exportLog(uri: Uri) {
