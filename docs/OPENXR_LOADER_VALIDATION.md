@@ -41,9 +41,11 @@ The probe records these stages:
 9. It renders a red left-eye region and blue right-eye region into a released
    swapchain image, waits/begins a frame, locates the two stereo views, and
    submits one `XrCompositionLayerProjection` with separate side-by-side image
-   rectangles. After `xrEndFrame`, it reads one pixel from each half of the
-   probe's EGL pbuffer to check that the compositor copied the expected colors.
-   The probe enumerates environment blend modes and prefers `OPAQUE` when
+   rectangles. Before releasing the swapchain image, it attaches an FBO to that
+   image and reads one pixel from each eye region to verify the red/blue test
+   pattern. This validates the application's swapchain image contents; it does
+   not observe a physical display or prove that a compositor presented pixels
+   to a viewer. The probe enumerates environment blend modes and prefers `OPAQUE` when
    supported; otherwise it uses the first mode advertised by the runtime.
 10. It tears down the reference space, swapchain, session, EGL context and instance.
    If the HMD system or primary stereo view is unavailable, the GLES session
@@ -55,6 +57,45 @@ The native loader is supplied by the Khronos
 a local imitation of the loader or RuntimeBroker.
 
 ## Reading the result
+
+## Stage-by-stage compatibility assessment
+
+The separate client probe now appends an **External OpenXR Compatibility
+Assessment** before the raw service and loader reports. It classifies each
+stage independently as `VERIFIED`, `PARTIAL`, `FAILED`, `BLOCKED`,
+`NOT_RUN`, or `UNKNOWN`.
+
+The assessment covers Android service/library discovery, RuntimeBroker
+selection, official loader initialization, extension enumeration, instance
+creation, HMD system discovery, primary stereo configuration, GLES binding,
+session creation, swapchain creation, frame lifecycle, projection submission,
+hand tracking, input IPC, and resource cleanup.
+
+Important interpretation rules:
+
+- A visible runtime service is not an active RuntimeBroker selection.
+- A successful loader initialization is not a successful runtime instance.
+- A created session is not proof of swapchain or projection compatibility.
+- Projection submission and swapchain-image pixel verification are separate
+  observations.
+- An advertised hand-tracking extension is not proof of active hands. The
+  report retains per-hand tracker and locate evidence and does not claim
+  metric 6DoF tracking from camera-estimated joints.
+- Missing fields remain `UNKNOWN`; prerequisites that were never reached are
+  `NOT_RUN` or `BLOCKED`. The analyzer does not fill skipped stages with
+  assumed success.
+- The report identifies the first recorded OpenXR/native failure in call
+  order and includes stage-specific next steps.
+
+The probe screen provides **COPY REPORT** for the complete text output and
+**SHARE JSON** for the structured assessment. The instrumentation test writes
+the JSON report to the CI Downloads folder alongside the raw service and
+loader reports. This makes it possible to compare reports from different
+Android devices without scraping the UI.
+
+The assessment is diagnostic guidance, not an OpenXR conformance score and
+not a compatibility guarantee for arbitrary Quest APKs.
+
 
 - `xrInitializeLoaderKHR call=XR_SUCCESS` means the official Android loader
   initialized in the separate client package.
@@ -82,12 +123,12 @@ a local imitation of the loader or RuntimeBroker.
 - `external_projection_layer_submission=PASS` means the separate client
   submitted a two-view projection layer and the runtime returned success from
   `xrEndFrame`.
-- `external_projection_layer_readback=PASS` additionally means the probe read
-  the expected red left-eye pixel and blue right-eye pixel from its EGL pbuffer
-  after the runtime compositor copied the projection layer.
-- This is a real projection-layer submission from another APK, but the probe
-  uses an EGL pbuffer rather than a headset/window surface. It does not prove
-  that pixels reach a physical viewer or that a game is compatible.
+- `external_projection_swapchain_image_verification=PASS` means the probe
+  attached an FBO to the acquired swapchain image and read the expected red
+  left-eye and blue right-eye pixels before releasing that image.
+- Swapchain-image readback validates application rendering into the OpenXR
+  image. It is not compositor readback and does not prove that pixels reach a
+  physical viewer or that a game is compatible.
 
 If instance creation returns `XR_ERROR_RUNTIME_UNAVAILABLE`, inspect the
 RuntimeBroker report. Service visibility alone does not select an active
