@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-28
+
+### NextVRera / external OpenXR compatibility
+- Added a conservative stage-by-stage assessment to the separate Khronos-loader client probe, covering service discovery, RuntimeBroker, loader, instance/system, stereo, GLES session, swapchain, frame/projection, hand tracking, input IPC and cleanup.
+- Distinguish VERIFIED, PARTIAL, FAILED, BLOCKED, NOT_RUN and UNKNOWN; skipped or missing evidence is never promoted to success.
+- Identify the first recorded failure in OpenXR call order and attach targeted next-step guidance.
+- Add a structured JSON assessment export and one-tap copy/share actions to the external probe screen.
+- Extend JVM regression tests for broker precedence, unavailable runtime, projection rejection, hand-tracking capability, input permission, missing evidence, JSON escaping and cleanup.
+- Extend emulator instrumentation to validate and publish the structured report alongside raw diagnostics.
+- Correct the loader-validation documentation to describe swapchain-image FBO readback accurately; it is not compositor/display readback.
+
 ## 2026-11-27
 
 ### NextVRera / EndXR game diagnostics
