@@ -279,3 +279,16 @@ field `recovery_plan` includes the plan state, ordered actions, expected
 evidence and retry policy. A lost session or instance is never retried with
 stale handles; an empty report is classified as incomplete evidence, not as a
 successful probe.
+
+
+The report also lists field-presence coverage for every one of the 15 stages.
+Each row is `COMPLETE`, `PARTIAL`, `ABSENT` or `NOT_APPLICABLE`, with the
+observed and missing diagnostic keys. An alternative key is accepted where
+the probe has more than one legitimate way to record the same operation.
+A stage marked `NOT_RUN` because its prerequisite was not reached is not
+counted as absent evidence.
+
+This is not a compatibility percentage. Complete field presence does not
+promote an `UNKNOWN` stage to `VERIFIED`, and absent fields are never filled
+from assumptions. The JSON field `evidence_coverage` is intended to make
+incomplete or incorrectly instrumented probe reports easier to recognize.
