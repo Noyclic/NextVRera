@@ -31,6 +31,10 @@ class EndXrInputAccessManager(context: Context) {
     private val packageManager = appContext.packageManager
     private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
+    init {
+        migrateLegacyTraceConsent()
+    }
+
     fun installedLaunchableClient(packageName: String): EndXrInputClient? {
         if (!EndXrInputGrantCodec.isValidPackageName(packageName)) return null
         val resolveInfo = queryLauncherActivities(packageName).firstOrNull() ?: return null
@@ -82,12 +86,45 @@ class EndXrInputAccessManager(context: Context) {
             EndXrInputGrantCodec.matches(it, client) && it.runtimeTelemetryGranted
         }
 
-    /** Detailed call tracing has a separate opt-in from the older lifecycle-only consent. */
+    /** Detailed call tracing has a separate opt-in from lifecycle telemetry. */
     fun isRuntimeTraceAuthorized(client: EndXrInputClient): Boolean =
         readRecords().any {
             EndXrInputGrantCodec.matches(it, client) &&
                 it.runtimeTelemetryGranted && it.runtimeTraceGranted
         }
+
+    /** Enables detailed OpenXR tracing only after its dedicated UI confirmation. */
+    fun authorizeRuntimeTrace(packageName: String): EndXrInputClient {
+        require(EndXrInputGrantCodec.isValidPackageName(packageName)) {
+            "Некорректное имя пакета."
+        }
+        val client = installedLaunchableClient(packageName)
+            ?: throw IllegalStateException("Установленное приложение не найдено или его подпись не подтверждена.")
+        synchronized(GRANT_STATE_LOCK) {
+            writeRecords(
+                EndXrInputGrantCodec.withRuntimeTraceConsent(readRecords(), client, enabled = true)
+            )
+        }
+        return client
+    }
+
+    /** Revokes detailed tracing while preserving controller and lifecycle permissions. */
+    fun revokeRuntimeTrace(packageName: String): Boolean {
+        if (!EndXrInputGrantCodec.isValidPackageName(packageName)) return false
+        val client = installedLaunchableClient(packageName) ?: return false
+        synchronized(GRANT_STATE_LOCK) {
+            val records = readRecords()
+            if (records.none {
+                    EndXrInputGrantCodec.matches(it, client) &&
+                        it.runtimeTelemetryGranted && it.runtimeTraceGranted
+                }
+            ) return false
+            writeRecords(
+                EndXrInputGrantCodec.withRuntimeTraceConsent(records, client, enabled = false)
+            )
+        }
+        return true
+    }
 
     /**
      * Provider hot-path check. Controller input is queried around 50 times per
@@ -190,6 +227,9 @@ class EndXrInputAccessManager(context: Context) {
             )
 
         synchronized(GRANT_STATE_LOCK) {
+            val existingTraceConsent = readRecords().firstOrNull {
+                EndXrInputGrantCodec.matches(it, client)
+            }?.runtimeTraceGranted == true
             try {
                 appContext.grantUriPermission(
                     client.packageName,
@@ -207,7 +247,7 @@ class EndXrInputAccessManager(context: Context) {
                             client.packageName,
                             client.signingCertificateSha256,
                             runtimeTelemetryGranted = true,
-                            runtimeTraceGranted = true
+                            runtimeTraceGranted = existingTraceConsent
                         )
                 )
             } catch (error: Throwable) {
@@ -246,6 +286,18 @@ class EndXrInputAccessManager(context: Context) {
             writeRecords(readRecords().filterNot { it.packageName == packageName })
         }
         return true
+    }
+
+    private fun migrateLegacyTraceConsent() {
+        if (traceConsentMigrationCompleted) return
+        synchronized(GRANT_STATE_LOCK) {
+            if (traceConsentMigrationCompleted) return
+            if (preferences.getInt(KEY_TRACE_CONSENT_VERSION, 0) < TRACE_CONSENT_VERSION) {
+                writeRecords(EndXrInputGrantCodec.clearRuntimeTraceConsent(readRecords()))
+                preferences.edit().putInt(KEY_TRACE_CONSENT_VERSION, TRACE_CONSENT_VERSION).apply()
+            }
+            traceConsentMigrationCompleted = true
+        }
     }
 
     private fun readRecords(): List<EndXrInputGrantRecord> =
@@ -326,6 +378,7 @@ class EndXrInputAccessManager(context: Context) {
         )
 
         private val GRANT_STATE_LOCK = Any()
+        @Volatile private var traceConsentMigrationCompleted = false
         private val CALLER_ACCESS_CACHE = ConcurrentHashMap<String, CachedCallerAuthorization>()
 
         internal fun invalidateAuthorizationCache() {
@@ -333,6 +386,8 @@ class EndXrInputAccessManager(context: Context) {
         }
         private const val PREFERENCES_NAME = "endxr_input_access"
         private const val KEY_GRANTS = "approved_package_signers"
+        private const val KEY_TRACE_CONSENT_VERSION = "runtime_trace_consent_version"
+        private const val TRACE_CONSENT_VERSION = 1
         private val INPUT_URI: Uri = Uri.parse(EndXrInputContentProvider.CONTENT_URI)
         private val RUNTIME_EVENT_URI: Uri =
             Uri.parse(EndXrRuntimeEventContentProvider.CONTENT_URI)
@@ -358,6 +413,27 @@ internal object EndXrInputGrantCodec {
     fun matches(record: EndXrInputGrantRecord, client: EndXrInputClient): Boolean =
         record.packageName == client.packageName &&
             record.signingCertificateSha256 == client.signingCertificateSha256
+
+    /** Old combined approvals are reset once so detailed tracing must be explicitly re-confirmed. */
+    fun clearRuntimeTraceConsent(
+        records: Collection<EndXrInputGrantRecord>
+    ): List<EndXrInputGrantRecord> = records.map { it.copy(runtimeTraceGranted = false) }
+
+    /** Updates only the detailed-trace scope; a matching lifecycle grant is mandatory. */
+    fun withRuntimeTraceConsent(
+        records: Collection<EndXrInputGrantRecord>,
+        client: EndXrInputClient,
+        enabled: Boolean
+    ): List<EndXrInputGrantRecord> {
+        require(records.any {
+            matches(it, client) && it.runtimeTelemetryGranted
+        }) {
+            "Detailed runtime tracing requires an existing package- and signer-bound lifecycle consent."
+        }
+        return records.map { record ->
+            if (matches(record, client)) record.copy(runtimeTraceGranted = enabled) else record
+        }
+    }
 
     fun encode(records: Collection<EndXrInputGrantRecord>): Set<String> =
         records.asSequence()

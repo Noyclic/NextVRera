@@ -32,6 +32,7 @@ import com.noyclic.questphonexr.runtime.AndroidRuntimeBrokerProbe
 import com.noyclic.questphonexr.runtime.EndXrHandTrackingService
 import com.noyclic.questphonexr.runtime.EndXrInputAccessManager
 import com.noyclic.questphonexr.runtime.EndXrRuntimeEventContentProvider
+import com.noyclic.questphonexr.runtime.EndXrRuntimeTraceJournal
 import com.noyclic.questphonexr.runtime.RuntimeBrokerAbiSelector
 import com.noyclic.questphonexr.ui.applyNextVreraStyle
 import com.noyclic.questphonexr.ui.nextVreraToneFor
@@ -57,6 +58,7 @@ class ApkImportActivity : ComponentActivity() {
     private var pendingInstallResultInfoId: String? = null
     private var pendingRuntimeTelemetryPackage: String? = null
     private var pendingRuntimeTelemetryBaselineSequence: Long = 0L
+    private var pendingRuntimeTraceGranted: Boolean = false
     private var runtimeTelemetryCheckGeneration: Long = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
     private var endXrPrepDialog: AlertDialog? = null
@@ -67,7 +69,8 @@ class ApkImportActivity : ComponentActivity() {
         val infoId: String,
         val brokerReport: String,
         val inputIpcGranted: Boolean,
-        val cameraPermissionGranted: Boolean? = null
+        val cameraPermissionGranted: Boolean? = null,
+        val runtimeTraceGranted: Boolean = false
     )
 
     private data class RuntimeTelemetrySnapshot(
@@ -84,7 +87,8 @@ class ApkImportActivity : ComponentActivity() {
         val instanceSeen: Boolean,
         val sessionSeen: Boolean,
         val sessionEverRunning: Boolean,
-        val frameCount: Long
+        val frameCount: Long,
+        val traceJsonLines: String
     )
 
     private val endXrCameraPermission = registerForActivityResult(
@@ -999,7 +1003,12 @@ class ApkImportActivity : ComponentActivity() {
                     0xFF8FE0B5.toInt()
                 )
                 requestCameraThenLaunch(
-                    PendingEndXrLaunch(info.id, brokerReport, inputIpcGranted = true),
+                    PendingEndXrLaunch(
+                        info.id,
+                        brokerReport,
+                        inputIpcGranted = true,
+                        runtimeTraceGranted = manager.isRuntimeTraceAuthorized(client)
+                    ),
                     launchIntent,
                     assessment
                 )
@@ -1038,7 +1047,12 @@ class ApkImportActivity : ComponentActivity() {
                             0xFF8FE0B5.toInt()
                         )
                         requestCameraThenLaunch(
-                            PendingEndXrLaunch(info.id, brokerReport, inputIpcGranted = true),
+                            PendingEndXrLaunch(
+                                info.id,
+                                brokerReport,
+                                inputIpcGranted = true,
+                                runtimeTraceGranted = manager.isRuntimeTraceAuthorized(client)
+                            ),
                             launchIntent,
                             assessment
                         )
@@ -1254,6 +1268,12 @@ class ApkImportActivity : ComponentActivity() {
             return
         }
 
+        val traceManager = EndXrInputAccessManager(this)
+        val traceClient = traceManager.installedLaunchableClient(info.packageName)
+        val traceGranted = pending.runtimeTraceGranted &&
+            traceClient?.let(traceManager::isRuntimeTraceAuthorized) == true
+        pendingRuntimeTraceGranted = traceGranted
+
         val launchDetails = buildString {
             appendLine()
             appendLine("[NEXTVRERA ENDXR MANAGED LAUNCH]")
@@ -1261,6 +1281,7 @@ class ApkImportActivity : ComponentActivity() {
             appendLine("loader_broker_query_target=${broker.loaderSelectedBroker}")
             appendLine("loader_selected_package=${broker.loaderSelectedRuntimePackage}")
             appendLine("loader_abi=${broker.loaderAbi}")
+            appendLine("runtime_trace_granted=$traceGranted")
             appendLine("input_uri_granted=${pending.inputIpcGranted}")
             appendLine("camera_tracking=${if (trackingStarted) "READY" else "NOT_READY"}")
             appendLine("camera_tracking_status=$trackingStatus")
@@ -1282,7 +1303,8 @@ class ApkImportActivity : ComponentActivity() {
                 launcherActivityFound = true,
                 inputIpcGranted = pending.inputIpcGranted,
                 launchError = null,
-                launchResult = "NextVRera preflight passed; Android accepted startActivity."
+                launchResult = "NextVRera preflight passed; Android accepted startActivity.",
+                runtimeTraceGranted = traceGranted
             ) + launchDetails
             updateEndXrPrepStep("launch", "Передаём запрос запуска в Android…")
             startActivity(launchIntent)
@@ -1314,6 +1336,7 @@ class ApkImportActivity : ComponentActivity() {
             runtimeTelemetryCheckGeneration += 1L
             pendingRuntimeTelemetryPackage = null
             pendingRuntimeTelemetryBaselineSequence = 0L
+            pendingRuntimeTraceGranted = false
             val report = buildLaunchReport(
                 info,
                 assessment,
@@ -1321,7 +1344,8 @@ class ApkImportActivity : ComponentActivity() {
                 launcherActivityFound = true,
                 inputIpcGranted = pending.inputIpcGranted,
                 launchError = error.message ?: error.javaClass.simpleName,
-                launchResult = "NextVRera preflight passed, but Android rejected startActivity."
+                launchResult = "NextVRera preflight passed, but Android rejected startActivity.",
+                runtimeTraceGranted = traceGranted
             ) + launchDetails
             statusView.text = "Не удалось запустить ${info.displayName}: ${error.message ?: error.javaClass.simpleName}"
             showLaunchDiagnostic("Ошибка NextVRera / EndXR запуска", report)
@@ -1335,7 +1359,8 @@ class ApkImportActivity : ComponentActivity() {
         launcherActivityFound: Boolean,
         inputIpcGranted: Boolean,
         launchError: String?,
-        launchResult: String
+        launchResult: String,
+        runtimeTraceGranted: Boolean = false
     ): String = buildString {
         appendLine("NextVRera / EndXR — Quest APK launch diagnostic")
         appendLine("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
@@ -1358,6 +1383,7 @@ class ApkImportActivity : ComponentActivity() {
         appendLine("[ENDXR INPUT / TELEMETRY IPC]")
         appendLine("Read-only controller_state URI grant: ${if (inputIpcGranted) "GRANTED" else "NOT GRANTED"}")
         appendLine("Write-only runtime_event URI grant: ${if (inputIpcGranted) "GRANTED" else "NOT GRANTED"}")
+        appendLine("Detailed OpenXR trace consent: ${if (runtimeTraceGranted) "GRANTED" else "NOT GRANTED (separate opt-in)"}")
         appendLine("These scoped grants do not select the OpenXR runtime and do not prove the game consumes controller data.")
         appendLine()
         appendLine("[OPENXR CAPTURE]")
@@ -1417,7 +1443,8 @@ class ApkImportActivity : ComponentActivity() {
             expectedPackage,
             baselineSequence,
             telemetry,
-            telemetryMatchesLaunch
+            telemetryMatchesLaunch,
+            traceConsentGranted = pendingRuntimeTraceGranted
         )
         val captureLevel = when {
             !telemetryMatchesLaunch || telemetry == null -> 0
@@ -1432,6 +1459,7 @@ class ApkImportActivity : ComponentActivity() {
         )
         pendingRuntimeTelemetryPackage = null
         pendingRuntimeTelemetryBaselineSequence = 0L
+        pendingRuntimeTraceGranted = false
     }
 
     private fun readLatestRuntimeTelemetry(): RuntimeTelemetrySnapshot? {
@@ -1453,7 +1481,8 @@ class ApkImportActivity : ComponentActivity() {
                     "instance_seen",
                     "session_seen",
                     "session_ever_running",
-                    "frame_count"
+                    "frame_count",
+                    "trace_jsonl"
                 ),
                 null,
                 null,
@@ -1474,7 +1503,8 @@ class ApkImportActivity : ComponentActivity() {
                     instanceSeen = cursor.getInt(10) != 0,
                     sessionSeen = cursor.getInt(11) != 0,
                     sessionEverRunning = cursor.getInt(12) != 0,
-                    frameCount = cursor.getLong(13)
+                    frameCount = cursor.getLong(13),
+                    traceJsonLines = cursor.getString(14).orEmpty()
                 )
             }
         }.getOrNull()
@@ -1484,12 +1514,41 @@ class ApkImportActivity : ComponentActivity() {
         expectedPackage: String?,
         baselineSequence: Long,
         telemetry: RuntimeTelemetrySnapshot?,
-        matchesLaunch: Boolean
+        matchesLaunch: Boolean,
+        traceConsentGranted: Boolean
     ): String = buildString {
         appendLine()
         appendLine("[ENDXR RUNTIME TELEMETRY]")
         appendLine("Expected game package: ${expectedPackage ?: "unknown"}")
         appendLine("Baseline sequence before launch: $baselineSequence")
+        appendLine()
+        appendLine("[ENDXR LOW-LEVEL TRACE]")
+        when {
+            !traceConsentGranted -> appendLine("Status: NOT ENABLED — separate detailed-trace consent was not granted.")
+            !matchesLaunch || telemetry == null ->
+                appendLine("Status: NO NEW TRACE — the game did not submit a confirmed EndXR instance event during this launch.")
+            else -> {
+                val packageTrace = EndXrRuntimeTraceJournal.filterByCallerPackage(
+                    telemetry.traceJsonLines,
+                    expectedPackage.orEmpty()
+                )
+                val packageTraceCount = EndXrRuntimeTraceJournal.count(packageTrace)
+                if (packageTraceCount <= 0) {
+                    appendLine("Status: CONSENT ENABLED, BUT NO TRACE EVENTS FOR THIS GAME WERE RECEIVED.")
+                } else {
+                    appendLine("Status: ENABLED · current game package only")
+                    append(EndXrRuntimeTraceJournal.formatText(
+                        expectedPackage,
+                        telemetry.runtimePid,
+                        packageTraceCount,
+                        EndXrRuntimeTraceJournal.firstFailureStage(packageTrace),
+                        EndXrRuntimeTraceJournal.lastSuccessfulStage(packageTrace),
+                        packageTrace
+                    ))
+                    appendLine()
+                }
+            }
+        }
         if (!matchesLaunch || telemetry == null) {
             appendLine("Status: NO NEW AUTHORIZED RUNTIME EVENT RECEIVED")
             appendLine("The game may not have loaded EndXR, may not have reached xrCreateInstance, or may not have runtime-event permission.")

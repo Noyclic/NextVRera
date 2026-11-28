@@ -78,6 +78,31 @@ internal object EndXrRuntimeTraceJournal {
     fun count(jsonLines: String?): Int =
         jsonLines.orEmpty().lineSequence().count { it.isNotBlank() }
 
+    /** Keeps only entries attributed to the selected Android package. */
+    fun filterByCallerPackage(jsonLines: String?, packageName: String): String {
+        if (packageName.isBlank()) return ""
+        val marker = "\"caller_package\":\"$packageName\""
+        return jsonLines.orEmpty().lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.contains(marker) }
+            .joinToString("\n")
+    }
+
+    fun firstFailureStage(jsonLines: String?): String? =
+        jsonLines.orEmpty().lineSequence().mapNotNull { line ->
+            val resultCode = RESULT_CODE_PATTERN.find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if (resultCode != null && resultCode < 0) STAGE_PATTERN.find(line)?.groupValues?.getOrNull(1) else null
+        }.firstOrNull()
+
+    fun lastSuccessfulStage(jsonLines: String?): String? =
+        jsonLines.orEmpty().lineSequence().mapNotNull { line ->
+            val resultCode = RESULT_CODE_PATTERN.find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if (resultCode != null && resultCode >= 0) STAGE_PATTERN.find(line)?.groupValues?.getOrNull(1) else null
+        }.lastOrNull()
+
+    private val STAGE_PATTERN = Regex("\"stage\":\"([A-Z][A-Z0-9_]*)\"")
+    private val RESULT_CODE_PATTERN = Regex("\"result_code\":(-?[0-9]+)")
+
     fun asJsonArray(jsonLines: String?): String =
         jsonLines.orEmpty().lineSequence()
             .map { it.trim() }
