@@ -13,6 +13,10 @@
 - Keep the last eight compact stage-only assessments in app-private storage and compare each run with the previous run to highlight verified-stage regressions and improvements; raw traces, camera data and native paths are not persisted.
 - Add regression coverage for history ordering, bounded retention, status transitions, malformed storage and privacy boundaries.
 - Correct the loader-validation documentation to describe swapchain-image FBO readback accurately; it is not compositor/display readback.
+- Add an offline OpenXR result-code catalogue with stage-aware next steps, retry guidance and safe handling for unknown or vendor-specific errors.
+- Cross-check service and loader reports for contradictory instance/session/swapchain/frame/projection/hand-tracking/input evidence before export; retain original stage verdicts and surface integrity findings separately.
+- Extend the JSON report with integrity findings and contextual first-failure diagnosis; preserve only compact stage snapshots in local history.
+- Add JVM regression cases for result-code mapping, untrusted numeric values, duplicate log observations, prerequisite ordering, broker disagreement and cross-field contradictions.
 
 - Added a conservative READY / DEGRADED / BLOCKED assessment combining runtime service metadata, the Khronos-selected RuntimeBroker provider, and the current native GLES/OpenXR self-test.
 - Report the selected broker's provider/query failure distinctly instead of inferring provider visibility from a successful query string.
