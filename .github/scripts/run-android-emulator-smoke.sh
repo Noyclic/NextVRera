@@ -110,6 +110,10 @@ for report in runtime-broker-probe.txt external-client-probe.txt openxr-loader-c
     cp "ci-results/device-artifacts/$report" ci-results/diagnostics/
   fi
 done
+# MediaStore may append a MIME-derived extension on some Android builds.
+if [[ ! -s ci-results/diagnostics/external-openxr-compatibility.json && -s ci-results/device-artifacts/external-openxr-compatibility.json.txt ]]; then
+  cp ci-results/device-artifacts/external-openxr-compatibility.json.txt ci-results/diagnostics/external-openxr-compatibility.json
+fi
 
 # Keep an independent final emulator screenshot even if a UI test failed.
 adb exec-out screencap -p > ci-results/screenshots/emulator-final.png || true
