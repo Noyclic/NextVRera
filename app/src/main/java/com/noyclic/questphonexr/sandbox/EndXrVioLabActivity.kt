@@ -7,6 +7,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraMetadata
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
@@ -14,6 +16,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -29,6 +33,7 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /** Sandbox VIO lab: sparse image flow + IMU orientation, with explicit scale limitations. */
+@OptIn(ExperimentalCamera2Interop::class)
 class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private val worker = Executors.newSingleThreadExecutor()
     private val running = AtomicBoolean(false)
@@ -57,6 +62,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private var cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
     private var cameraFacingLabel = "задняя"
     private var cameraMessage = "Камера выключена"
+    private var cameraImuClockStatus = "не проверен"
 
     private data class Metrics(
         val rotationEvents: Long,
@@ -181,9 +187,21 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
                 analysis.setAnalyzer(worker) { image ->
                     try { analyzeFeatures(image) } finally { image.close() }
                 }
-                provider.bindToLifecycle(this, cameraSelector, analysis)
+                val boundCamera = provider.bindToLifecycle(this, cameraSelector, analysis)
+                val timestampSource = runCatching {
+                    Camera2CameraInfo.from(boundCamera.cameraInfo)
+                        .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)
+                }.getOrNull()
+                val cameraClockComparable = timestampSource == CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+                vio.setCameraTimestampComparable(cameraClockComparable)
+                cameraImuClockStatus = when (timestampSource) {
+                    CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME -> "REALTIME · синхронизация разрешена"
+                    CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_UNKNOWN -> "UNKNOWN · IMU/camera fusion отключён"
+                    else -> "недоступен · IMU/camera fusion отключён"
+                }
                 activeAnalysis = analysis
-                cameraMessage = cameraFacingLabel.replaceFirstChar { it.uppercase() } + " камера активна · " + mode.width + "×" + mode.height
+                cameraMessage = cameraFacingLabel.replaceFirstChar { it.uppercase() } + " камера активна · " +
+                    mode.width + "×" + mode.height + " · " + cameraImuClockStatus
             }.onFailure { error ->
                 running.set(false)
                 cameraMessage = "Ошибка камеры: " + error.javaClass.simpleName + ": " + error.message
@@ -343,6 +361,8 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
             appendLine("Gyroscope: " + values.gyroscopeEvents + " · " + (gyroscope?.name ?: "нет"))
             appendLine("Accelerometer: " + values.accelerationEvents + " · |a| " + "%.2f".format(values.accelerationMagnitude) + " m/s²")
             appendLine("Camera frames: " + values.cameraFrames + " · FPS " + "%.1f".format(values.cameraFps))
+            appendLine("Camera/IMU clock: " + cameraImuClockStatus)
+            appendLine("Clock comparable: " + imu.cameraImuClockComparable)
             appendLine("Frames skipped by cap: " + values.skippedCameraFrames)
             appendLine("Sparse features / inliers: " + (visual?.matches ?: 0) + " / " + (visual?.inliers ?: 0))
             appendLine("Visual flow: " + (visual?.reason ?: "waiting for camera"))
