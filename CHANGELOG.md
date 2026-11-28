@@ -5,6 +5,9 @@
 ### Qualcomm QNN HTP probe hardening
 - Correct the probe's evidence wording: requesting the QNN HTP delegate and completing an Interpreter invocation do not prove every operator ran on HTP; LiteRT may retain unsupported partitions on builtin CPU kernels.
 - Report all model input tensors instead of assuming exactly one FLOAT32 input, and keep HTP placement explicitly unverified until backend/operator evidence is available.
+- Fix the probe report contract so execution evidence is represented in `HtpReport` and surfaced by the diagnostic screen.
+- Label the current invocation honestly as synthetic zero-filled input: it validates model/delegate invocation only, not camera preprocessing, hand detection, two-hand tracking, or DSP-only placement.
+- Rename the action from a strict HTP test to a QNN HTP delegate probe because unsupported graph partitions may still execute on CPU.
 
 
 ### NextVRera / Qualcomm standalone tracker foundations
