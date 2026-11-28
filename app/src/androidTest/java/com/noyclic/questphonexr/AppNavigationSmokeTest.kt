@@ -452,8 +452,19 @@ class AppNavigationSmokeTest {
 
         // Android 15 may suppress or expose toast overlays inconsistently to UiAutomator.
         // Verify the app's own post-setPrimaryClip log instead of reading another process's clipboard.
+        device.waitForIdle()
+        val diagnosticsReturned = device.wait(Until.hasObject(diagnosticsButton), 5_000)
+        saveScreenshot(context, device, "sandbox-diagnostics-after-external-probe.png")
+        assertTrue(
+            "Returning from the external OpenXR probe did not restore the always-visible EndXR diagnostics action. " +
+                "Current package: ${device.currentPackageName}",
+            diagnosticsReturned
+        )
+        val restoredDiagnosticsButton = requireNotNull(device.findObject(diagnosticsButton)) {
+            "EndXR diagnostics button disappeared after its visibility wait"
+        }
         device.executeShellCommand("logcat -c")
-        device.findObject(diagnosticsButton).click()
+        restoredDiagnosticsButton.click()
         val copyDeadline = android.os.SystemClock.uptimeMillis() + 5_000
         var copyLog = ""
         while (
