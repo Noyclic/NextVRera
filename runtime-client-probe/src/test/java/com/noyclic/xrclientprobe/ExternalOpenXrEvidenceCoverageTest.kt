@@ -131,7 +131,7 @@ class ExternalOpenXrEvidenceCoverageTest {
     }
 
     @Test
-    fun missingBothEnumerationAlternativesIsPartialWhenSomeStageEvidenceExists() {
+    fun missingBothEnumerationAlternativesIsAbsentWhenNoStageEvidenceExists() {
         val raw = loader().lineSequence()
             .filterNot { it.startsWith("xrEnumerateInstanceExtensionProperties(") }
             .joinToString("\n")
