@@ -73,6 +73,13 @@ object LiteRtStandaloneModelStore {
     }
 
     fun areInstalled(context: Context): Boolean = installedFiles(context) != null
+    /**
+     * Loads the pinned palm anchor table once from the bundled asset.
+     * Call during model/session initialization and retain the result for all frames.
+     */
+    fun loadPalmAnchors(context: Context): List<QualcommPalmAnchor> =
+        QualcommPalmAnchorAssetLoader.load(context)
+
 
     /** Call on a worker thread after an explicit install request. */
     fun download(
