@@ -352,7 +352,7 @@ class MainActivity : ComponentActivity() {
         pollingJob = null
         captureActive = false
         runCatching { remote?.stopCapture() }
-        if (bound) {
+        if (bound || bindingRequested) {
             runCatching { Shizuku.unbindUserService(serviceArgs, serviceConnection, true) }
             bound = false
             remote = null
