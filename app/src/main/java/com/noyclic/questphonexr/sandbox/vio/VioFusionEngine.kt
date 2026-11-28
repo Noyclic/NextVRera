@@ -1,23 +1,18 @@
 package com.noyclic.questphonexr.sandbox.vio
 
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
 data class VioFusionConfig(
     val cameraFocalLengthPixels: Double? = null,
     val maximumVisualGapSeconds: Double = 0.25,
-    val orientationVisualWeight: Double = 0.08,
     val minimumVisualConfidence: Double = 0.18,
     val maximumRelativeStep: Double = 0.08,
-    val stationaryAccelerationThreshold: Double = 0.18
 ) {
     init {
         require(maximumVisualGapSeconds > 0.0)
-        require(orientationVisualWeight in 0.0..1.0)
         require(minimumVisualConfidence in 0.0..1.0)
         require(maximumRelativeStep > 0.0)
-        require(stationaryAccelerationThreshold > 0.0)
         require(cameraFocalLengthPixels == null || cameraFocalLengthPixels > 0.0)
     }
 }
@@ -50,6 +45,7 @@ class VioFusionEngine(
     private var position = Vec3.ZERO
     private var lastImuTimestamp = 0L
     private var lastVisualTimestamp = 0L
+    private var lastAcceptedVisualTimestamp = 0L
     private var imuSamples = 0
     private var visualFrames = 0
     private var acceptedVisual = 0
@@ -71,6 +67,7 @@ class VioFusionEngine(
         position = Vec3.ZERO
         lastImuTimestamp = 0L
         lastVisualTimestamp = 0L
+        lastAcceptedVisualTimestamp = 0L
         imuSamples = 0
         visualFrames = 0
         acceptedVisual = 0
@@ -184,15 +181,16 @@ class VioFusionEngine(
         val weight = estimate.confidence.coerceIn(0.0, 1.0)
         position += Vec3(-boundedX * weight, boundedY * weight, 0.0)
         lastVisualDelta = Vec2(boundedX, boundedY)
+        lastAcceptedVisualTimestamp = frame.timestampNanos
         acceptedVisual++
         return estimate
     }
 
     @Synchronized
     fun pose(timestampNanos: Long): VioPose {
-        val visualFresh = lastVisualTimestamp > 0L &&
-            timestampNanos >= lastVisualTimestamp &&
-            (timestampNanos - lastVisualTimestamp) * 1e-9 <= config.maximumVisualGapSeconds
+        val visualFresh = lastAcceptedVisualTimestamp > 0L &&
+            timestampNanos >= lastAcceptedVisualTimestamp &&
+            (timestampNanos - lastAcceptedVisualTimestamp) * 1e-9 <= config.maximumVisualGapSeconds
         val quality = if (visualFresh) {
             min(1.0, 0.35 + lastConfidence * 0.65)
         } else if (orientationSource != "not initialized") 0.2 else 0.0
