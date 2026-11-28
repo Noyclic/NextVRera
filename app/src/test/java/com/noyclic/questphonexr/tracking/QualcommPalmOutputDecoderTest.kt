@@ -26,10 +26,12 @@ class QualcommPalmOutputDecoderTest {
 
         // Letterbox is 256x192 at y=32 for a 640x480 source frame.
         // The model-space box (108,98)-(148,158) maps to (270,165)-(370,315).
-        assertEquals(0.55524f, hand.centerX, 0.0002f)
-        assertEquals(0.42634f, hand.centerY, 0.0002f)
-        assertEquals(0.390625f, hand.width, 0.0001f)
-        assertEquals(0.78125f, hand.height, 0.0001f)
+        // Pinned BlazePalm box ROI: center=(box center), dy=-0.5*box width,
+        // and a square ROI scaled by 2.6 from the detector box width.
+        assertEquals(0.5f, hand.centerX, 0.0002f)
+        assertEquals(0.39583334f, hand.centerY, 0.0002f)
+        assertEquals(0.40625f, hand.width, 0.0001f)
+        assertEquals(0.5416667f, hand.height, 0.0001f)
         assertEquals((PI / 4.0).toFloat(), hand.rotationRadians, 0.0002f)
         assertEquals(1f / (1f + kotlin.math.exp(-3f)), hand.confidence, 0.0001f)
     }
@@ -88,6 +90,38 @@ class QualcommPalmOutputDecoderTest {
         assertEquals(2, success.candidatesAfterNms)
         assertEquals(2, success.regions.size)
         assertTrue(success.regions[1].centerX > success.regions[0].centerX + 0.2f)
+    }
+
+    @Test
+    fun weightedNmsBlendsOverlappingBoxGeometryInsteadOfKeepingOnlyTheTopScore() {
+        val coordinates = FloatArray(2 * 18)
+        repeat(2) { index ->
+            val offset = index * 18
+            coordinates[offset] = 0f
+            coordinates[offset + 1] = 0f
+            coordinates[offset + 2] = 40f
+            coordinates[offset + 3] = 60f
+            floatArrayOf(
+                -18f, 2f, -8f, -8f, 2f, -18f, 0f, 22f,
+                7f, 22f, 12f, 22f, 17f, 32f
+            ).copyInto(coordinates, offset + 4)
+        }
+        val result = QualcommPalmOutputDecoder.decode(
+            outputs = QualcommPalmDetectorTensors(
+                coordinates = LiteRtFloatTensor(intArrayOf(1, 2, 18), coordinates),
+                scores = LiteRtFloatTensor(intArrayOf(1, 2), floatArrayOf(4f, 3f))
+            ),
+            anchors = listOf(anchor(0.5f), anchor(0.55f)),
+            inputTransform = transform()
+        )
+        val success = assertSuccess(result)
+        assertEquals(2, success.candidatesAfterThreshold)
+        assertEquals(1, success.candidatesAfterNms)
+        val hand = success.regions.single()
+        // The second box is shifted right by 32 source pixels. Weighted NMS must
+        // move the merged center right of 0.5 while keeping it short of the second box.
+        assertTrue("Expected a confidence-weighted center, got ${hand.centerX}", hand.centerX > 0.5f)
+        assertTrue(hand.centerX < 0.55f)
     }
 
     @Test
