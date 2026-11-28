@@ -62,7 +62,7 @@ class ExternalOpenXrFailureCatalogTest {
             "external_egl_context"
         )
         assertEquals(
-            ExternalOpenXrFailureCatalog.StageId.GRAPHICS_BINDING,
+            ExternalOpenXrCompatibilityAssessment.StageId.GRAPHICS_BINDING,
             result?.stageHint
         )
         assertTrue(result?.checks.orEmpty().any { it.contains("EGL display/context") })
