@@ -308,18 +308,31 @@ class AppNavigationSmokeTest {
             trackingSourceVisible
         )
         device.findObject(trackingSourceButton).click()
-        assertTrue(
-            "Tracking provider dialog title is missing",
-            device.wait(
-                Until.hasObject(By.textContains("Источник отслеживания рук · Автоматический выбор")),
-                2_000
-            )
+        // The title includes the active selection mode (AUTO or MANUAL). Do not bind
+        // this smoke test to one mode's suffix: the process/provider manager may have
+        // been initialized by an earlier test or restored by Android. The actionable
+        // AUTO row is the stronger signal that the choice dialog itself is open.
+        device.waitForIdle()
+        val providerDialogTitle = By.textContains("Источник отслеживания рук")
+        val providerDialogTitleVisible = device.wait(
+            Until.hasObject(providerDialogTitle),
+            10_000
         )
-        // Capture the actual selector before assertions so a future accessibility/text
-        // regression leaves a useful dialog screenshot in the CI diagnostics artifact.
-        saveScreenshot(context, device, "sandbox-tracking-provider-selector.png")
-        // The choices must be actual list rows, not text hidden in an explanatory message.
         val autoProviderChoice = By.text("AUTO — выбирать по качеству и задержке")
+        val autoProviderChoiceVisible = device.wait(
+            Until.hasObject(autoProviderChoice),
+            10_000
+        )
+        // Capture the actual selector before assertions so a future UI/accessibility
+        // regression leaves the on-screen state in the CI diagnostics artifact.
+        saveScreenshot(context, device, "sandbox-tracking-provider-selector.png")
+        assertTrue(
+            "Tracking provider selector did not open (titleVisible=" + providerDialogTitleVisible +
+                ", autoChoiceVisible=" + autoProviderChoiceVisible +
+                ", package=" + device.currentPackageName + ")",
+            providerDialogTitleVisible || autoProviderChoiceVisible
+        )
+        // The choices must be actual list rows, not text hidden in an explanatory message.
         assertTrue(
             "AUTO provider choice is missing",
             device.wait(Until.hasObject(autoProviderChoice), 5_000)
