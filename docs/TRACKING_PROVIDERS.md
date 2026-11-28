@@ -182,3 +182,19 @@ activate or replace the production tracker. A successful warm-up still does not 
 operator placement on HTP.
 
 The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.
+
+
+### Qualcomm palm and landmark model adapters (pre-integration)
+
+The standalone Qualcomm model pair now has pure Kotlin boundaries for:
+- full-frame RGB input resize/letterbox with an exact inverse transform;
+- anchor asset loading from the pinned palm model revision;
+- palm detector tensor validation, score decoding, box/keypoint mapping and two-hand ROI generation;
+- oriented square ROI extraction into reusable NHWC/NCHW RGB float buffers, including raw camera rotation;
+- 21-point landmark tensor validation and conversion back to source-image coordinates.
+
+The palm postprocessor follows the pinned BlazePalm `detection2roi(method="box")` contract: detector box center, scale from box width, vertical shift `dy=-0.5`, square ROI scale `dscale=2.6`, and `theta0=PI/2`. Overlapping detections use confidence-weighted NMS, including weighted keypoint blending, rather than dropping every lower-scored overlap.
+
+These are preprocessing/postprocessing adapters only. They do not create a QNN delegate, run either model, claim HTP/DSP placement, publish `HandTrackingFrame`, or register a provider. The isolated QNN HTP probe remains the only backend evidence path. Google currently documents the Qualcomm AI Engine Direct delegate for a list of supported Snapdragon devices that does not explicitly include Snapdragon 685; therefore the Redmi Note 13 4G remains an unverified target until a real device run succeeds. MediaPipe remains the default and is not modified by these adapters.
+
+Reference used for geometry and weighted suppression: pinned MediaPipePyTorch source revision `65f2549ba35cd61dfd29f402f6c21882a32fabb1` (`blazebase.py` / `blazepalm.py`). The model anchor file provenance and license are retained under `third_party/licenses/`.
