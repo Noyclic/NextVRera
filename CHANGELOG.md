@@ -2,8 +2,25 @@
 
 ## 2026-11-28
 
+### Qualcomm QNN HTP probe hardening
+- Correct the probe's evidence wording: requesting the QNN HTP delegate and completing an Interpreter invocation do not prove every operator ran on HTP; LiteRT may retain unsupported partitions on builtin CPU kernels.
+- Report all model input tensors instead of assuming exactly one FLOAT32 input, and keep HTP placement explicitly unverified until backend/operator evidence is available.
+- Fix the probe report contract so execution evidence is represented in `HtpReport` and surfaced by the diagnostic screen.
+- Label the current invocation honestly as synthetic zero-filled input: it validates model/delegate invocation only, not camera preprocessing, hand detection, two-hand tracking, or DSP-only placement.
+- Rename the action from a strict HTP test to a QNN HTP delegate probe because unsupported graph partitions may still execute on CPU.
+
+
+### NextVRera / Qualcomm standalone tracker foundations
+- Import the pinned Qualcomm palm/landmark model anchor and tensor adapters with explicit provenance and license.
+- Correct palm ROI generation to match pinned BlazePalm box-mode geometry (`dy=-0.5`, `dscale=2.6`, square ROI) and replace greedy suppression with confidence-weighted NMS over boxes and keypoints.
+- Add regression coverage for ROI geometry and weighted suppression; keep the adapters disconnected from provider registration until QNN backend execution and physical-device validation are proven.
+
+
 ### NextVRera / emulator smoke coverage
 - Make the Sandbox tracking-provider selector smoke test mode-aware (AUTO/MANUAL), wait for actionable dialog content, and preserve a selector screenshot before assertions so UI failures are diagnosable.
+- After returning from the external OpenXR probe, wait for the always-visible EndXR diagnostics action to reappear, save a screenshot, and fail with an explicit restoration error instead of dereferencing a missing UiObject2.
+- Explicitly wait for the missing-probe AlertDialog to disappear after tapping Close; use Back only as a deterministic fallback if Android 15 leaves the modal accessibility window active, and verify Sandbox restoration before continuing.
+- Verify the actual underlying diagnostics action is accessible after dialog dismissal before continuing, since a missing accessibility root can make a modal appear absent while it still blocks Sandbox controls.
 
 ### NextVRera / EndXR runtime readiness
 ### NextVRera / external OpenXR compatibility

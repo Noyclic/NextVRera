@@ -182,3 +182,19 @@ activate or replace the production tracker. A successful warm-up still does not 
 operator placement on HTP.
 
 The main app's MediaPipe + RTMPose GPU path remains unchanged while this isolated test runs.
+
+
+### Qualcomm palm and landmark model adapters (pre-integration)
+
+The standalone Qualcomm model pair now has pure Kotlin boundaries for:
+- full-frame RGB input resize/letterbox with an exact inverse transform;
+- anchor asset loading from the pinned palm model revision;
+- palm detector tensor validation, score decoding, box/keypoint mapping and two-hand ROI generation;
+- oriented square ROI extraction into reusable NHWC/NCHW RGB float buffers, including raw camera rotation;
+- 21-point landmark tensor validation and conversion back to source-image coordinates.
+
+The palm postprocessor follows the pinned Qualcomm AI Hub `MediaPipeHandApp` wrapper: detector box center, directional offset `0.5 × box width` along wrist-to-middle-finder, independent width/height scale `2.5`, and rotation offset `PI/2`. Its app calls the shared `batched_nms` implementation (TorchVision NMS); this adapter uses score-ordered IoU suppression and does not substitute weighted blending. The reference demo currently breaks after the first accepted palm candidate for each frame; NextVRera's two-hand path must explicitly crop and invoke the landmark model once per accepted ROI (or batch the crops), rather than assuming the demo wrapper already returns two landmark predictions.
+
+These are preprocessing/postprocessing adapters only. They do not create a QNN delegate, run either model, claim HTP/DSP placement, publish `HandTrackingFrame`, or register a provider. The isolated QNN HTP probe remains the only backend evidence path. Google currently documents the Qualcomm AI Engine Direct delegate for a list of supported Snapdragon devices that does not explicitly include Snapdragon 685; therefore the Redmi Note 13 4G remains an unverified target until a real device run succeeds. MediaPipe remains the default and is not modified by these adapters.
+
+Reference used for the actual model wrapper contract: pinned Qualcomm AI Hub Models revision `9b426b5942a45ae64d31ab275c290e1dcd467f9e` (`mediapipe_hand/model.py` and `mediapipe_hand/app.py`). The anchor asset provenance and its upstream license are retained under `third_party/licenses/`.
