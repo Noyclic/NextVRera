@@ -247,7 +247,7 @@ class ExternalOpenXrRecoveryAdvisorTest {
             diagnosis = null,
             integrity = ExternalOpenXrReportIntegrity.Report(emptyList())
         )
-        assertEquals(ExternalOpenXrRecoveryAdvisor.PlanState.PROBE_STAGES_VERIFIED, plan.state)
+        assertEquals(ExternalOpenXrRecoveryAdvisor.PlanState.EVIDENCE_INCOMPLETE, plan.state)
         assertNotNull(plan.scopeWarning)
     }
 }
