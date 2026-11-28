@@ -954,7 +954,16 @@ class SandboxActivity : ComponentActivity(), SensorEventListener, InputManager.I
                 )
             )
             addView(
-                controlButton("EndXR 6DoF Lab · камера + IMU") {\n                    startActivity(Intent(this@SandboxActivity, EndXrVioLabActivity::class.java))\n                },\n                LinearLayout.LayoutParams(\n                    LinearLayout.LayoutParams.MATCH_PARENT,\n                    LinearLayout.LayoutParams.WRAP_CONTENT\n                )\n            )\n            addView(\n                controlButton("Калибровка рук") { showHandCalibrationDialog() },
+                controlButton("EndXR 6DoF Lab · камера + IMU") {\n                    startActivity(Intent(this@SandboxActivity, EndXrVioLabActivity::class.java))\n                },\n                LinearLayout.LayoutParams(\n                    LinearLayout.LayoutParams.MATCH_PARENT,\n                    LinearLayout.LayoutParams.WRAP_CONTENT\n                )\n            )\n            addView(\n                controlButton("EndXR 6DoF Lab · камера + IMU") {
+                    startActivity(Intent(this@SandboxActivity, EndXrVioLabActivity::class.java))
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                controlButton("Калибровка рук") { showHandCalibrationDialog() },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
