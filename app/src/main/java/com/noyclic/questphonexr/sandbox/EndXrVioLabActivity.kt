@@ -46,7 +46,7 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private var mode = Mode.BALANCED
     private var cameraMessage = "Камера выключена"
 
-    private enum class Mode(val width: Int, val height: Int, val fpsLabel: String) {
+    private data class Metrics(\n        val rotationEvents: Long, val accelerationEvents: Long, val cameraFrames: Long,\n        val cameraFps: Float, val featureCount: Int, val motionX: Float, val motionY: Float,\n        val accelerationMagnitude: Float\n    )\n\n    private enum class Mode(val width: Int, val height: Int, val fpsLabel: String) {
         ECONOMY(320, 240, "5–8 FPS target"),
         BALANCED(480, 360, "10–15 FPS target"),
         PRECISION(640, 480, "20–30 FPS target")
@@ -263,16 +263,16 @@ class EndXrVioLabActivity : ComponentActivity(), SensorEventListener {
     private fun refresh() {
         if (!::report.isInitialized) return
         val values = synchronized(this) {
-            listOf(rotationEvents, accelerationEvents, cameraFrames, cameraFps,
+            Metrics(rotationEvents, accelerationEvents, cameraFrames, cameraFps,
                 featureCount, featureMotionX, featureMotionY, accelerationMagnitude)
         }
         report.text = buildString {
             appendLine("Режим: " + mode.name + " · " + mode.fpsLabel)
-            appendLine("Rotation-vector events: " + values[0].toLong() + " · " + (rotation?.name ?: "нет"))
-            appendLine("Accelerometer events: " + values[1].toLong() + " · |a|: " + "%.2f".format(values[7]) + " m/s²")
-            appendLine("Camera frames: " + values[2].toLong() + " · FPS: " + "%.1f".format(values[3]))
-            appendLine("Image gradient features: " + values[4].toInt())
-            appendLine("Feature-centroid delta: dx=" + "%.4f".format(values[5]) + ", dy=" + "%.4f".format(values[6]))
+            appendLine("Rotation-vector events: " + values.rotationEvents + " · " + (rotation?.name ?: "нет"))
+            appendLine("Accelerometer events: " + values.accelerationEvents + " · |a|: " + "%.2f".format(values.accelerationMagnitude) + " m/s²")
+            appendLine("Camera frames: " + values.cameraFrames + " · FPS: " + "%.1f".format(values.cameraFps))
+            appendLine("Image gradient features: " + values.featureCount)
+            appendLine("Feature-centroid delta: dx=" + "%.4f".format(values.motionX) + ", dy=" + "%.4f".format(values.motionY))
             appendLine()
             appendLine("Camera: " + cameraMessage)
             appendLine("Status: " + if (running.get()) "RUNNING" else "IDLE")
