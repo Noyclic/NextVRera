@@ -120,7 +120,7 @@ class QualcommPalmInputPreprocessorTest {
     }
 
     @Test
-    fun decoderMappingUsesTheSameNominalResizeScaleAsQualcommResizePad() {
+    fun decoderMappingUsesExactIntegerResizeDimensionsAfterFlooring() {
         val transform = LiteRtPalmInputTransform.centeredLetterbox(
             sourceWidthPx = 1_001,
             sourceHeightPx = 333,
@@ -129,9 +129,11 @@ class QualcommPalmInputPreprocessorTest {
         )
 
         val source = transform.toSourcePixel(128f, 128f)!!
-        val expectedScale = 256f / 1_001f
-        assertEquals((128f - transform.padLeftPx) / expectedScale, source.first, 0.0001f)
-        assertEquals((128f - transform.padTopPx) / expectedScale, source.second, 0.0001f)
+        val exactScaleX = transform.contentWidthPx.toFloat() / transform.sourceWidthPx
+        val exactScaleY = transform.contentHeightPx.toFloat() / transform.sourceHeightPx
+        assertEquals((128f - transform.padLeftPx) / exactScaleX, source.first, 0.0001f)
+        assertEquals((128f - transform.padTopPx) / exactScaleY, source.second, 0.0001f)
+        assertTrue(kotlin.math.abs(exactScaleX - exactScaleY) > 0.0001f)
     }
 
     @Test
