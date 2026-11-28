@@ -70,6 +70,8 @@ class ExternalRuntimeClientDiscoveryTest {
         try {
             val serviceReport = activity.serviceReportText
             val loaderReport = activity.loaderReportText
+            val assessmentJson = activity.assessmentJsonText
+            val combinedReport = activity.combinedReportText
 
             val externalReportFile = File(context.cacheDir, "external-client-probe.txt")
             externalReportFile.writeText(serviceReport)
@@ -79,7 +81,17 @@ class ExternalRuntimeClientDiscoveryTest {
             loaderReportFile.writeText(loaderReport)
             publishReport(context, loaderReportFile, "openxr-loader-client-probe.txt")
 
+            val assessmentFile = File(context.cacheDir, "external-openxr-compatibility.json")
+            assessmentFile.writeText(assessmentJson)
+            publishReport(context, assessmentFile, "external-openxr-compatibility.json")
+
             assertEquals("com.noyclic.xrclientprobe", context.packageName)
+            assertTrue(
+                "The combined diagnostic must include the staged compatibility summary.",
+                combinedReport.contains("EXTERNAL OPENXR COMPATIBILITY ASSESSMENT")
+            )
+            assertEquals(1, org.json.JSONObject(assessmentJson).getInt("assessment_version"))
+            assertTrue(org.json.JSONObject(assessmentJson).has("stages"))
             assertTrue(
                 "External package could not discover EndXR's exported runtime service:\n$serviceReport",
                 serviceReport.contains("EndXR service visible: YES")
