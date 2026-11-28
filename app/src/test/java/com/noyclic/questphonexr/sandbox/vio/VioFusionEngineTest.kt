@@ -8,7 +8,7 @@ class VioFusionEngineTest {
     @Test fun rotationVectorProducesOrientationOnlyPoseWithoutClaimingTranslation() {
         val engine = VioFusionEngine()
         val half = (PI / 4.0).toFloat()
-        assertTrue(engine.onRotationVector(1_000_000_000L, floatArrayOf(0f, half, 0f, kotlin.math.cos(half))))
+        assertTrue(engine.onRotationVector(1_000_000_000L, floatArrayOf(0f, half, 0f, kotlin.math.cos(half.toDouble()).toFloat())))
         val pose = engine.pose(1_010_000_000L)
         assertTrue(pose.isValid)
         assertEquals(TranslationScale.UNKNOWN, pose.translationScale)
