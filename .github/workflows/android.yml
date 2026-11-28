@@ -2,7 +2,7 @@ name: Android CI — build, unit tests and emulator smoke test
 
 on:
   push:
-    branches: [main, "tracking/**", "integration/**"]
+    branches: [main, "tracking/**", "integration/**", "feat/**"]
   pull_request:
     branches: [main, "integration/**"]
   workflow_dispatch:
@@ -12,8 +12,6 @@ permissions:
 
 concurrency:
   group: questphonexr-android-${{ github.ref }}
-  # Do not kill a running emulator validation when another agent pushes a newer commit.
-  # GitHub keeps one active run and queues the newest pending run.
   cancel-in-progress: false
 
 jobs:
@@ -91,6 +89,18 @@ jobs:
       - name: Build isolated Qualcomm LiteRT HTP probe APK
         run: gradle --no-daemon :litert-htp-probe:assembleDebug
 
+      - name: Build NextVRera Logcat APK
+        run: gradle --no-daemon :nextvrera-logcat:assembleDebug
+
+      - name: Validate NextVRera Logcat package
+        run: |
+          set -euo pipefail
+          APK="nextvrera-logcat/build/outputs/apk/debug/nextvrera-logcat-debug.apk"
+          test -s "$APK"
+          mkdir -p ci-results
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee ci-results/logcat-apk-metadata.txt
+          grep -q "package: name='com.noyclic.nextvrera.logcat'" ci-results/logcat-apk-metadata.txt
+
       - name: Validate APK package and required payload
         run: |
           set -euo pipefail
@@ -99,7 +109,6 @@ jobs:
           mkdir -p ci-results
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee ci-results/apk-metadata.txt
           grep -q "package: name='com.noyclic.questphonexr'" ci-results/apk-metadata.txt
-
           APK_FILES="$(unzip -Z1 "$APK")"
           grep -qx "assets/hand_landmarker.task" <<< "$APK_FILES"
           grep -qx "lib/arm64-v8a/libquestphonexr_native.so" <<< "$APK_FILES"
@@ -166,9 +175,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Emulator startup is flaky on hosted runners. Keep the APK available
-      # whenever the build and validation steps produced it, even if the
-      # later connected-device smoke test fails.
+      - name: Upload NextVRera Logcat APK
+        if: always() && !cancelled() && hashFiles('nextvrera-logcat/build/outputs/apk/debug/nextvrera-logcat-debug.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextVRera-Logcat-apk
+          path: nextvrera-logcat/build/outputs/apk/debug/nextvrera-logcat-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload debug APK
         if: always() && !cancelled() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
         uses: actions/upload-artifact@v4

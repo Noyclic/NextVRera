@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-29
+
+### NextVRera / Logcat utility
+- Added a separate NextVRera Logcat APK with Shizuku permission flow, shell-identity logcat capture, live preview filtering, stop control and TXT export.
+- Kept capture read-only and isolated from the main NextVRera application; documented Android shell permission and tombstone limitations.
+
 ## 2026-11-28
 
 ### NextVRera / emulator smoke coverage
@@ -44,14 +50,12 @@
 - Surfaced the current tracking health verdict in the live Sandbox status without enabling the front camera or changing the user camera switch.
 - Kept local Sandbox and persistent EndXR service diagnostics on one stable key/value contract for easier Redmi device debugging.
 
-
 ## 2026-11-21
 
 ### NextVRera tracking / EndXR
 - Added a copy-ready tracking health diagnostic formatter with explicit IDLE/HEALTHY/DEGRADED/STALE/RECOVERED verdicts.
 - Kept the diagnostic contract monotonic and evidence-based: it reports accepted frames, gaps, stale transitions, recoveries and clear timestamps without fabricating poses.
-- Added regression coverage for grace, stale and reacquisition verdicts so Sandbox/EndXR reports can consume one stable health contract.
-
+- Added regression coverage for history ordering, bounded retention, status transitions, malformed storage and privacy boundaries.
 
 ## 2026-11-19
 
