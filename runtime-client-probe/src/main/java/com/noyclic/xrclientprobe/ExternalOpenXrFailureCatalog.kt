@@ -435,6 +435,7 @@ internal object ExternalOpenXrFailureCatalog {
     private fun stageForKey(key: String?): ExternalOpenXrCompatibilityAssessment.StageId? {
         if (key == null) return null
         return when {
+            key.contains("Broker", ignoreCase = true) -> ExternalOpenXrCompatibilityAssessment.StageId.RUNTIME_BROKER
             key.contains("InitializeLoader") -> ExternalOpenXrCompatibilityAssessment.StageId.LOADER_INITIALIZATION
             key.contains("Extension") -> ExternalOpenXrCompatibilityAssessment.StageId.EXTENSION_ENUMERATION
             key.contains("CreateInstance") -> ExternalOpenXrCompatibilityAssessment.StageId.INSTANCE_CREATION
