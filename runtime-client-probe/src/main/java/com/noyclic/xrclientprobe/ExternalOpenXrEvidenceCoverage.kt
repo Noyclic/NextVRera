@@ -37,7 +37,7 @@ internal object ExternalOpenXrEvidenceCoverage {
         val completeCount: Int get() = stages.count { it.completeness == Completeness.COMPLETE }
         val partialCount: Int get() = stages.count { it.completeness == Completeness.PARTIAL }
         val absentCount: Int get() = stages.count { it.completeness == Completeness.ABSENT }
-        val notApplicableCount: Int get = stages.count { it.completeness == Completeness.NOT_APPLICABLE }
+        val notApplicableCount: Int get() = stages.count { it.completeness == Completeness.NOT_APPLICABLE }
         val expectedFieldCount: Int get() = stages.sumOf { it.expectedCount }
         val observedFieldCount: Int get() = stages.sumOf { it.observedCount }
         val missingFieldCount: Int get() = stages.sumOf { it.missingKeys.size }
