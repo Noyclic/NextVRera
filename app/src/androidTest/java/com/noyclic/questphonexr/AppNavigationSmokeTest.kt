@@ -456,6 +456,16 @@ class AppNavigationSmokeTest {
                 "Missing-probe dialog remained open after the close action",
                 device.wait(Until.gone(missingProbeDialog), 2_000)
             )
+            if (!device.wait(Until.hasObject(diagnosticsButton), 2_000)) {
+                // A missing accessibility root can make Until.gone report a dialog as absent
+                // while the modal window still blocks Sandbox controls. Probe the actual
+                // underlying action before deciding that the screen has been restored.
+                device.pressBack()
+            }
+            assertTrue(
+                "Sandbox diagnostics action remained blocked after dismissing the missing-probe dialog",
+                device.wait(Until.hasObject(diagnosticsButton), 5_000)
+            )
             assertTrue(
                 "Closing the missing-probe dialog did not restore Sandbox",
                 device.wait(Until.hasObject(By.text("Показать настройки")), 5_000)
