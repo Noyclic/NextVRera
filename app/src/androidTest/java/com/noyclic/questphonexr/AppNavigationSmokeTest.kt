@@ -441,7 +441,25 @@ class AppNavigationSmokeTest {
                 "Missing external probe dialog has no close action",
                 device.wait(Until.hasObject(closeAction), 2_000)
             )
-            device.findObject(closeAction).click()
+            val closeActionNode = requireNotNull(device.findObject(closeAction)) {
+                "Missing-probe dialog close action disappeared after its visibility wait"
+            }
+            closeActionNode.click()
+            device.waitForIdle()
+            if (!device.wait(Until.gone(missingProbeDialog), 2_000)) {
+                // A modal AlertDialog can remain the active accessibility window on Android 15
+                // even after UiAutomator reports the negative-button tap. Back is a safe,
+                // deterministic dismissal fallback; never continue while the modal is present.
+                device.pressBack()
+            }
+            assertTrue(
+                "Missing-probe dialog remained open after the close action",
+                device.wait(Until.gone(missingProbeDialog), 2_000)
+            )
+            assertTrue(
+                "Closing the missing-probe dialog did not restore Sandbox",
+                device.wait(Until.hasObject(By.text("Показать настройки")), 5_000)
+            )
         } else {
             device.pressBack()
             assertTrue(
