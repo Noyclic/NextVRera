@@ -144,6 +144,10 @@ if [[ "$test_exit" -eq 0 ]]; then
     echo "Instrumentation tests passed but the official Khronos loader report is missing."
     test_exit=1
   }
+  test -s ci-results/diagnostics/external-openxr-compatibility.json || {
+    echo "Instrumentation tests passed but the structured external compatibility report is missing."
+    test_exit=1
+  }
   test -s ci-results/screenshots/mode-selection.png || {
     echo "Instrumentation tests passed but the mode-selection screenshot is missing."
     test_exit=1
