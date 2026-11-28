@@ -51,7 +51,7 @@ class ProbeActivity : Activity() {
         val previousSnapshot = historyStore.latest()
         historyComparisonText = previousSnapshot?.let {
             ExternalOpenXrAssessmentHistory.compare(it, currentSnapshot).toDisplayText()
-        } ?: "PREVIOUS RUN COMPARISON\\nNo earlier compatibility assessment is stored on this device."
+        } ?: "PREVIOUS RUN COMPARISON\nNo earlier compatibility assessment is stored on this device."
         val historySaved = historyStore.append(currentSnapshot)
 
         combinedReportText = buildString {
