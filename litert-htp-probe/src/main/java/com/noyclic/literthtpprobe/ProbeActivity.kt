@@ -33,7 +33,7 @@ class ProbeActivity : Activity() {
             typeface = android.graphics.Typeface.MONOSPACE
         })
         root.addView(TextView(this).apply {
-            text = "Изолированный тест. Основное приложение и MediaPipe не затрагиваются."
+            text = "Изолированный QNN HTP тест. Основное приложение и MediaPipe не затрагиваются."
             textSize = 13f
             setTextColor(0xffb8c5d0.toInt())
             setPadding(0, 8, 0, 12)
@@ -98,7 +98,7 @@ class ProbeActivity : Activity() {
     private fun runProbe() {
         if (!busy.compareAndSet(false, true)) return
         setBusy(true)
-        setStatus("QNN HTP: delegate initialization. NNAPI / XNNPACK disabled.")
+        setStatus("QNN HTP: delegate initialization. NNAPI / XNNPACK disabled; placement is not assumed.")
         worker.execute {
             val pair = ModelStore.installed(this)
             if (pair == null) {
@@ -115,11 +115,13 @@ class ProbeActivity : Activity() {
                     append("\n[$label]\n")
                     result.onSuccess { r ->
                         append("QNN HTP warm-up: PASS\n")
-                        append("Input: ${r.input.name} ${r.input.shape} ${r.input.type}\n")
+                        r.inputs.forEach { input -> append("Input ${input.index}: ${input.name} ${input.shape} ${input.type}\n") }
                         r.outputs.forEach { out -> append("Output ${out.index}: ${out.name} ${out.shape} ${out.type}\n") }
                         append("Warm-up: ${"%.2f".format(r.warmupMs)} ms\n")
                         append("Median: ${"%.2f".format(r.medianMs)} ms · P95: ${"%.2f".format(r.p95Ms)} ms\n")
                         append("Operator placement: ${r.placement}\n")
+                        append("Execution evidence: ${r.executionEvidence}\n")
+                        append("Note: unsupported ops may still fall back to builtin CPU kernels.\n")
                     }.onFailure { e -> append("QNN HTP: FAIL\n${e.javaClass.simpleName}: ${e.message}\n") }
                 }
                 append("\nУспешный warm-up не доказывает полное размещение операций на HTP.")
