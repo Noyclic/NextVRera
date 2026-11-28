@@ -327,7 +327,7 @@ object QualcommPalmOutputDecoder {
         // wrist-to-middle-finder vector, scaled by the detector box width.
         val directionalOffset = ROI_DIRECTIONAL_OFFSET * boxWidth
         centerX += directionalOffset * vectorX / vectorLength
-        centerY += directionalOffset * vectorY / vectorLength + ROI_VERTICAL_SHIFT * boxWidth
+        centerY += directionalOffset * vectorY / vectorLength
 
         // Qualcomm's reference computes atan2(startY-endY, startX-endX) - PI/2.
         val rotation = atan2(wrist.second - middleFinder.second, wrist.first - middleFinder.first) -
